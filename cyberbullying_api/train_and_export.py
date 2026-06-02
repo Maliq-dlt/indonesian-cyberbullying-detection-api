@@ -168,30 +168,48 @@ for _ in range(12):
 df_aug = pd.DataFrame(augmented_records)
 print(f"Data augmentasi siap: {len(df_aug)} baris.")
 
-# Merge All Datasets
-final_df = pd.concat([
+# 1. Gabungkan dataset dasar asli
+base_df = pd.concat([
     df_twitter[['text_clean', 'is_toxic', 'is_bully']],
     df_kaira[['text_clean', 'is_toxic', 'is_bully']],
-    df_combined[['text_clean', 'is_toxic', 'is_bully']],
-    df_aug
+    df_combined[['text_clean', 'is_toxic', 'is_bully']]
 ], ignore_index=True)
 
-# Drop any nulls or empties
-final_df = final_df.dropna()
-final_df = final_df[final_df['text_clean'] != ""]
-print(f"Total baris data gabungan + augmentasi: {len(final_df)} baris.")
+base_df = base_df.dropna()
+base_df = base_df[base_df['text_clean'] != ""]
+print(f"Total data dasar asli: {len(base_df)} baris.")
+
+# 2. Stratified train_test_split berdasarkan kombinasi label joint
+stratify_key = base_df['is_toxic'].astype(str) + "_" + base_df['is_bully'].astype(str)
+min_class_count = stratify_key.value_counts().min()
+
+if min_class_count >= 2:
+    train_df, test_df = train_test_split(
+        base_df, test_size=0.15, random_state=42, stratify=stratify_key
+    )
+    print("Menggunakan stratified train_test_split berbasis kombinasi label joint.")
+else:
+    train_df, test_df = train_test_split(
+        base_df, test_size=0.15, random_state=42
+    )
+    print("Fallback ke standard train_test_split.")
+
+# 3. Tambahkan data augmentasi HANYA ke train set
+final_train_df = pd.concat([train_df, df_aug], ignore_index=True)
+final_train_df = final_train_df.dropna()
+final_train_df = final_train_df[final_train_df['text_clean'] != ""]
+
+print(f"Train Set Asli: {len(train_df)} -> Setelah Augmentasi: {len(final_train_df)} | Test Set Bersih: {len(test_df)}")
+
+X_train = final_train_df['text_clean']
+y_train = final_train_df[['is_toxic', 'is_bully']].astype(int)
+
+X_test = test_df['text_clean']
+y_test = test_df[['is_toxic', 'is_bully']].astype(int)
 
 # ----------------------------------------------------
-# 4. Splitting & Vectorization
+# 4. Vectorization
 # ----------------------------------------------------
-X = final_df['text_clean']
-y = final_df[['is_toxic', 'is_bully']].astype(int)
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.15, random_state=42
-)
-print(f"Train Set: {len(X_train)} | Test Set: {len(X_test)}")
-
 # Vectorizer (Unigram + Bigram)
 vectorizer = TfidfVectorizer(max_features=8000, ngram_range=(1, 2), min_df=2)
 X_train_tfidf = vectorizer.fit_transform(X_train)

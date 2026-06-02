@@ -20,7 +20,6 @@ def test_read_root(client):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "online"
-    assert "models_loaded" in data
 
 def test_predict_lexicon_safe(client):
     """Menguji bahwa kalimat positif diklasifikasikan sebagai AMAN oleh leksikon."""
@@ -120,3 +119,49 @@ def test_predict_batch_processing(client):
     assert data["results"][0]["is_toxic"] is False
     assert data["results"][1]["is_toxic"] is True
     assert data["results"][2]["is_toxic"] is True
+
+def test_health_endpoint(client):
+    """Menguji endpoint health check."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert "alive" in data["message"]
+
+def test_models_status_endpoint(client):
+    """Menguji endpoint status model."""
+    response = client.get("/models/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert "models_loaded" in data
+    assert "thresholds" in data
+
+def test_predict_text_length_validation(client):
+    """Menguji batas karakter input (max 500) dan min (1)."""
+    # Menguji input kosong
+    response = client.post("/predict/lexicon", json={"text": ""})
+    assert response.status_code == 422
+    
+    # Menguji input melebihi 500 karakter
+    long_text = "anjing " * 100
+    response = client.post("/predict/lexicon", json={"text": long_text})
+    assert response.status_code == 422
+
+def test_predict_batch_constraints(client):
+    """Menguji batasan pada input batch."""
+    # Menguji batch kosong
+    response = client.post("/predict/batch", json={"texts": []})
+    assert response.status_code == 422
+    
+    # Menguji batch melebihi 50 item
+    payload = {"texts": ["Semangat!"] * 51}
+    response = client.post("/predict/batch", json=payload)
+    assert response.status_code == 422
+    
+    # Menguji batch dengan salah satu item melebihi 500 karakter
+    long_text = "goblok " * 100
+    payload = {"texts": ["Semangat!", long_text]}
+    response = client.post("/predict/batch", json=payload)
+    assert response.status_code == 422
+

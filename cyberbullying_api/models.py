@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class TextRequest(BaseModel):
-    text: str = Field(..., max_length=500)
+    text: str = Field(..., min_length=1, max_length=500)
     use_fuzzy: Optional[bool] = False  # Dinonaktifkan secara default untuk performa maksimal
 
 class LexiconMatch(BaseModel):
@@ -55,7 +55,7 @@ class HybridResponse(BaseModel):
     reason: str
 
 class BatchTextRequest(BaseModel):
-    texts: List[str]
+    texts: List[str] = Field(..., min_length=1, max_length=50)
     model_name: Optional[str] = "qwen2.5-coder:7b"
 
 class BatchItemResponse(BaseModel):

@@ -10,10 +10,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
+import os
+
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=True if "*" not in allowed_origins else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -26,13 +31,27 @@ def startup_event():
 def read_root():
     return {
         "status": "online",
-        "message": "Cyberbullying & Hate Speech Detection API is running.",
+        "message": "Cyberbullying & Hate Speech Detection API is running."
+    }
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "message": "API is alive and running."
+    }
+
+@app.get("/models/status")
+def models_status():
+    return {
+        "status": "online" if classifier.ML_MODEL is not None else "offline",
         "models_loaded": {
             "lexicon": len(classifier.PREPARED_LEXICON) > 0,
             "machine_learning": classifier.ML_MODEL is not None,
             "transformers_onnx": classifier.TRANSFORMER_SESSION is not None,
             "transformers_pytorch": classifier.TRANSFORMER_MODEL is not None
-        }
+        },
+        "thresholds": classifier.THRESHOLDS
     }
 
 @app.post("/predict/lexicon", response_model=LexiconResponse)
@@ -68,6 +87,12 @@ async def predict_hybrid(req: TextRequest):
 
 @app.post("/predict/batch", response_model=BatchResponse)
 async def predict_batch(req: BatchTextRequest):
+    for text in req.texts:
+        if not text or len(text.strip()) == 0:
+            raise HTTPException(status_code=422, detail="Setiap teks dalam batch tidak boleh kosong.")
+        if len(text) > 500:
+            raise HTTPException(status_code=422, detail="Panjang setiap teks dalam batch maksimal 500 karakter.")
+            
     tasks = [classifier.predict_hybrid(text) for text in req.texts]
     predictions = await asyncio.gather(*tasks)
     

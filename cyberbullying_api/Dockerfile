@@ -21,7 +21,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # 6. Salin dataset kamus yang diperlukan untuk preprocessing
 COPY "dataset 1" /app/dataset\ 1
 COPY "dataset 2" /app/dataset\ 2
-COPY "cyberbullying-indonesia" /app/cyberbullying-indonesia
 
 # 7. Salin seluruh isi folder API beserta file model yang telah dilatih
 COPY cyberbullying_api /app/cyberbullying_api

@@ -274,10 +274,36 @@ for _ in range(12):
 
 df_aug = pd.DataFrame(augmented_records)
 
-# Gabung dan terapkan Perturbasi Slang/Typo acak pada record yang mengandung unsur toxic
-print("Melakukan augmentasi perturbasi teks (typo/leet) secara dinamis...")
+# 1. Gabungkan dataset dasar asli
+base_df = pd.concat([
+    df_twitter[['text_clean', 'is_toxic', 'is_bully']],
+    df_kaira[['text_clean', 'is_toxic', 'is_bully']],
+    df_combined[['text_clean', 'is_toxic', 'is_bully']]
+], ignore_index=True)
+
+base_df = base_df.dropna()
+base_df = base_df[base_df['text_clean'] != ""]
+print(f"Total data dasar asli: {len(base_df)} baris.")
+
+# 2. Stratified train_test_split berdasarkan kombinasi label joint
+stratify_key = base_df['is_toxic'].astype(str) + "_" + base_df['is_bully'].astype(str)
+min_class_count = stratify_key.value_counts().min()
+
+if min_class_count >= 2:
+    train_df, test_df = train_test_split(
+        base_df, test_size=0.15, random_state=42, stratify=stratify_key
+    )
+    print("Menggunakan stratified train_test_split berbasis kombinasi label joint.")
+else:
+    train_df, test_df = train_test_split(
+        base_df, test_size=0.15, random_state=42
+    )
+    print("Fallback ke standard train_test_split.")
+
+# 3. Terapkan Perturbasi Slang/Typo acak HANYA pada train set yang mengandung unsur toxic
+print("Melakukan augmentasi perturbasi teks (typo/leet) secara dinamis pada train set...")
 perturbed_records = []
-for idx, row in pd.concat([df_twitter, df_kaira, df_combined], ignore_index=True).iterrows():
+for idx, row in train_df.iterrows():
     if row['is_toxic'] and random.random() < 0.3:
         perturbed_text = perturb_text(row['text_clean'])
         if perturbed_text and perturbed_text != row['text_clean']:
@@ -288,29 +314,28 @@ for idx, row in pd.concat([df_twitter, df_kaira, df_combined], ignore_index=True
             })
 
 df_perturbed = pd.DataFrame(perturbed_records)
-print(f"Ditambahkan {len(df_perturbed)} baris data hasil perturbasi teks.")
+print(f"Ditambahkan {len(df_perturbed)} baris data hasil perturbasi teks pada train set.")
 
-# Gabung semuanya
-final_df = pd.concat([
-    df_twitter[['text_clean', 'is_toxic', 'is_bully']],
-    df_kaira[['text_clean', 'is_toxic', 'is_bully']],
-    df_combined[['text_clean', 'is_toxic', 'is_bully']],
+# 4. Gabungkan train set dengan augmented dan perturbed data
+final_train_df = pd.concat([
+    train_df,
     df_aug,
     df_perturbed
 ], ignore_index=True)
 
-final_df = final_df.dropna()
-final_df = final_df[final_df['text_clean'] != ""]
-print(f"Total baris data retraining gabungan: {len(final_df)} baris.")
+final_train_df = final_train_df.dropna()
+final_train_df = final_train_df[final_train_df['text_clean'] != ""]
+print(f"Total baris data retraining train set (+ augmented & perturbed): {len(final_train_df)} baris.")
+print(f"Total baris data test set (bersih): {len(test_df)} baris.")
 
-# 6. Splitting & Vectorization
-X = final_df['text_clean']
-y = final_df[['is_toxic', 'is_bully']].astype(int)
+# 5. Siapkan X dan y
+X_train = final_train_df['text_clean']
+y_train = final_train_df[['is_toxic', 'is_bully']].astype(int)
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.15, random_state=42
-)
+X_test = test_df['text_clean']
+y_test = test_df[['is_toxic', 'is_bully']].astype(int)
 
+# 6. Vectorization
 vectorizer = TfidfVectorizer(max_features=8000, ngram_range=(1, 2), min_df=2)
 X_train_tfidf = vectorizer.fit_transform(X_train)
 X_test_tfidf = vectorizer.transform(X_test)

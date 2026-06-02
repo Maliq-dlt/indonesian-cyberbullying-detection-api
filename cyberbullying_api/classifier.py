@@ -26,6 +26,10 @@ from normalizer import (
 # Tentukan direktori dasar dinamis untuk pathing absolut
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Konfigurasi Ollama dinamis dari environment variables
+OLLAMA_URL = os.getenv("OLLAMA_URL", "")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+
 # Global variables for models and prepared lexicon
 PREPARED_LEXICON = []
 ML_MODEL = None
@@ -298,10 +302,18 @@ def predict_ensemble(text: str) -> EnsembleResponse:
     )
 
 async def query_ollama_async(text: str, model_name: str = None) -> Dict[str, Any]:
-    url = "http://localhost:11434/api/generate"
+    if not OLLAMA_URL:
+        return {
+            "is_toxic": False,
+            "is_bully": False,
+            "reason": "Ollama URL tidak dikonfigurasi.",
+            "success": False
+        }
+    
+    url = f"{OLLAMA_URL.rstrip('/')}/api/generate"
     
     if not model_name:
-        model_name = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+        model_name = OLLAMA_MODEL
     
     # Skema output terstruktur yang formal
     schema = {
@@ -368,9 +380,9 @@ async def predict_hybrid(text: str) -> HybridResponse:
     if ML_MODEL is None or ML_VECTORIZER is None:
         return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.")
     
-    # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat)
+    # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat dan Ollama terkonfigurasi)
     is_sarcasm_candidate = detect_sentiment_contrast(text)
-    if is_sarcasm_candidate:
+    if is_sarcasm_candidate and OLLAMA_URL:
         print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Ollama LLM) untuk: '{text}'")
         ollama_res = await query_ollama_async(text)
         if ollama_res["success"]:
@@ -434,22 +446,23 @@ async def predict_hybrid(text: str) -> HybridResponse:
             reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer."
         )
             
-    # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3)
-    print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{text}'")
-    ollama_res = await query_ollama_async(text)
-    if ollama_res["success"]:
-        is_toxic = ollama_res["is_toxic"]
-        is_bully = ollama_res["is_bully"]
-        return HybridResponse(
-            text=text,
-            is_toxic=is_toxic,
-            is_bully=is_bully,
-            probability_toxic=1.0 if is_toxic else 0.0,
-            probability_bully=1.0 if is_bully else 0.0,
-            category=determine_category(is_toxic, is_bully),
-            decision_source="Tier 3 (Ollama Qwen LLM)",
-            reason=ollama_res["reason"]
-        )
+    # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3 jika terkonfigurasi)
+    if OLLAMA_URL:
+        print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{text}'")
+        ollama_res = await query_ollama_async(text)
+        if ollama_res["success"]:
+            is_toxic = ollama_res["is_toxic"]
+            is_bully = ollama_res["is_bully"]
+            return HybridResponse(
+                text=text,
+                is_toxic=is_toxic,
+                is_bully=is_bully,
+                probability_toxic=1.0 if is_toxic else 0.0,
+                probability_bully=1.0 if is_bully else 0.0,
+                category=determine_category(is_toxic, is_bully),
+                decision_source="Tier 3 (Ollama Qwen LLM)",
+                reason=ollama_res["reason"]
+            )
         
     # Fallback
     is_toxic = ens_toxic >= t_t
