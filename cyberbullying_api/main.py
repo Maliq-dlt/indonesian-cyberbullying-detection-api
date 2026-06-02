@@ -1,18 +1,22 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-import re
-import html
-import unicodedata
-import pandas as pd
-import numpy as np
-import joblib
 import os
 import json
 import httpx
+import joblib
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+# Impor skema dan utilitas yang sudah dipisahkan (modular)
+from models import *
+from normalizer import (
+    normalize_text,
+    prepare_lexicon,
+    contains_word_or_phrase,
+    fuzzy_contains,
+    init_slang_map
+)
 
 app = FastAPI(
     title="Cyberbullying & Hate Speech Detection API",
@@ -28,92 +32,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ----------------------------------------------------
-# 1. Models & Global Configurations
-# ----------------------------------------------------
-
-class TextRequest(BaseModel):
-    text: str
-    use_fuzzy: Optional[bool] = False  # Dinonaktifkan secara default untuk performa maksimal
-
-class LexiconMatch(BaseModel):
-    matched_phrase: str
-    category: str
-    severity: str
-    method: str
-
-class LexiconResponse(BaseModel):
-    text: str
-    normalized_spaced: str
-    normalized_compact: str
-    is_cyberbullying: bool
-    risk_label: str
-    score: int
-    matches: List[LexiconMatch]
-
-class MLResponse(BaseModel):
-    text: str
-    is_toxic: bool
-    is_bully: bool
-    probability_toxic: float
-    probability_bully: float
-    category: str
-
-class TransformerResponse(BaseModel):
-    text: str
-    is_toxic: bool
-    is_bully: bool
-    probability_toxic: float
-    probability_bully: float
-    category: str
-
-class EnsembleResponse(BaseModel):
-    text: str
-    is_toxic: bool
-    is_bully: bool
-    probability_toxic: float
-    probability_bully: float
-    category: str
-
-class HybridResponse(BaseModel):
-    text: str
-    is_toxic: bool
-    is_bully: bool
-    probability_toxic: float
-    probability_bully: float
-    category: str
-    decision_source: str
-    reason: str
-
-class BatchTextRequest(BaseModel):
-    texts: List[str]
-    model_name: Optional[str] = "qwen2.5:3b"
-
-class BatchItemResponse(BaseModel):
-    text: str
-    is_toxic: bool
-    is_bully: bool
-    probability_toxic: float
-    probability_bully: float
-    category: str
-    decision_source: str
-    reason: str
-
-class BatchResponse(BaseModel):
-    results: List[BatchItemResponse]
-
-def determine_category(is_toxic: bool, is_bully: bool) -> str:
-    if is_toxic and is_bully:
-        return "Toxic & Bully (Serangan Langsung)"
-    elif is_toxic and not is_bully:
-        return "Toxic but Non-Bully (Casual Slang / Swearing)"
-    elif not is_toxic and is_bully:
-        return "Non-Toxic but Bully (Sarcasm / Insult)"
-    else:
-        return "Non-Toxic & Non-Bully (Aman)"
-
-# Global variables for models and dictionaries
-SLANG_MAP = {}
+# Global variables for models and prepared lexicon
 PREPARED_LEXICON = []
 ML_MODEL = None
 ML_VECTORIZER = None
@@ -148,129 +67,18 @@ BASE_CYBERBULLYING_LEXICON = [
     {"phrase": "kampret", "category": "kata kasar", "severity": "rendah"},
 ]
 
-LEET_MAP = {
-    "0": "o", "1": "i", "!": "i", "|": "i", "¡": "i", "3": "e", "4": "a",
-    "@": "a", "5": "s", "$": "s", "7": "t", "+": "t", "8": "b", "9": "g", "6": "g"
-}
-
-ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
-NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
-MULTISPACE_RE = re.compile(r"\s+")
-REPEATED_CHAR_RE = re.compile(r"(.)\1{2,}")
-REPEATED_CHAR_ANY_RE = re.compile(r"(.)\1+")
-
-# ----------------------------------------------------
-# 2. Text Preprocessing & Normalization logic
-# ----------------------------------------------------
-
-def replace_leet(text: str) -> str:
-    return "".join(LEET_MAP.get(ch, ch) for ch in text)
-
-def reduce_repeated_chars(text: str, max_repeat: int = 2) -> str:
-    if max_repeat < 1:
-        return text
-    if max_repeat == 1:
-        return REPEATED_CHAR_ANY_RE.sub(lambda m: m.group(1), text)
-    return REPEATED_CHAR_RE.sub(lambda m: m.group(1) * max_repeat, text)
-
-def normalize_text(text: str, reduce_repeats: bool = True) -> Dict[str, str]:
-    raw = html.unescape(text)
-    raw = unicodedata.normalize("NFKC", raw)
-    raw = ZERO_WIDTH_RE.sub("", raw)
-    raw = raw.lower()
-    leet_replaced = replace_leet(raw)
-    spaced = NON_ALNUM_RE.sub(" ", leet_replaced)
-    spaced = MULTISPACE_RE.sub(" ", spaced).strip()
-    
-    # Slang mapping
-    if SLANG_MAP:
-        words = spaced.split()
-        spaced = " ".join(SLANG_MAP.get(w, w) for w in words)
-        
-    compact_raw = NON_ALNUM_RE.sub("", leet_replaced)
-    if reduce_repeats:
-        spaced = reduce_repeated_chars(spaced, max_repeat=2)
-        compact = reduce_repeated_chars(compact_raw, max_repeat=2)
-        compact_strict = reduce_repeated_chars(compact_raw, max_repeat=1)
-    else:
-        compact = compact_raw
-        compact_strict = compact_raw
-        
-    return {
-        "raw": text,
-        "spaced": spaced,
-        "compact": compact,
-        "compact_strict": compact_strict,
-    }
-
-def prepare_lexicon(lexicon: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    prepared = []
-    for item in lexicon:
-        norm = normalize_text(item["phrase"], reduce_repeats=False)
-        prepared.append({
-            **item,
-            "norm_spaced": norm["spaced"],
-            "norm_compact": norm["compact"],
-            "word_count": len(norm["spaced"].split()),
-        })
-    return prepared
-
-def contains_word_or_phrase(spaced_text: str, spaced_pattern: str) -> bool:
-    if not spaced_pattern:
-        return False
-    pattern = r"(?<![a-z0-9])" + re.escape(spaced_pattern) + r"(?![a-z0-9])"
-    return re.search(pattern, spaced_text) is not None
-
-def fuzzy_contains(compact_text: str, compact_pattern: str, threshold: float = 0.92, max_delta: int = 2) -> bool:
-    if not compact_text or not compact_pattern:
-        return False
-    n = len(compact_pattern)
-    if n < 5 or len(compact_text) < max(3, n - max_delta):
-        return False
-    min_len = max(3, n - max_delta)
-    max_len = n + max_delta
-    from difflib import SequenceMatcher
-    for size in range(min_len, max_len + 1):
-        if size > len(compact_text):
-            continue
-        for i in range(0, len(compact_text) - size + 1):
-            segment = compact_text[i:i + size]
-            ratio = SequenceMatcher(None, segment, compact_pattern).ratio()
-            if ratio >= threshold:
-                return True
-    return False
-
-# ----------------------------------------------------
-# 3. Startup Event: Load Dictionaries and Models
-# ----------------------------------------------------
-
 @app.on_event("startup")
 def startup_event():
-    global SLANG_MAP, PREPARED_LEXICON, ML_MODEL, ML_VECTORIZER, TRANSFORMER_PIPELINE
+    global PREPARED_LEXICON, ML_MODEL, ML_VECTORIZER, TRANSFORMER_MODEL, TRANSFORMER_TOKENIZER
     
     print("=== Memulai Startup API Server ===")
     
-    # 1. Load Slang Mapping
+    # 1. Load Slang Mapping (menggunakan normalizer)
     print("Memuat kamus slang alay & singkatan...")
-    try:
-        alay_path = os.path.join("..", "dataset 1", "new_kamusalay.csv")
-        alay_df = pd.read_csv(alay_path, encoding='latin-1', header=None, names=['slang', 'formal'])
-        alay_map = dict(zip(alay_df['slang'], alay_df['formal']))
-    except Exception as e:
-        print("Warning: Gagal memuat new_kamusalay.csv:", e)
-        alay_map = {}
-
-    try:
-        singkatan_path = os.path.join("..", "dataset 2", "kamus_singkatan.csv")
-        singkatan_df = pd.read_csv(singkatan_path, encoding='latin-1')
-        singkatan_df = singkatan_df.dropna(subset=['singkatan', 'asli'])
-        singkatan_map = dict(zip(singkatan_df['singkatan'], singkatan_df['asli']))
-    except Exception as e:
-        print("Warning: Gagal memuat kamus_singkatan.csv:", e)
-        singkatan_map = {}
-
-    SLANG_MAP = {**singkatan_map, **alay_map}
-    print(f"Berhasil memuat {len(SLANG_MAP)} pemetaan slang/singkatan.")
+    alay_path = os.path.join("..", "dataset 1", "new_kamusalay.csv")
+    singkatan_path = os.path.join("..", "dataset 2", "kamus_singkatan.csv")
+    slang_map = init_slang_map(alay_path, singkatan_path)
+    print(f"Berhasil memuat {len(slang_map)} pemetaan slang/singkatan di normalizer.")
 
     # 2. Load and Prepare Lexicon (Base + Abusive Wordlist)
     print("Memuat kata kasar dari abusive.csv...")
@@ -279,7 +87,6 @@ def startup_event():
         df_abusive = pd.read_csv(abusive_path)
         abusive_words = df_abusive['ABUSIVE'].dropna().unique().tolist()
         
-        # Merge to lexicon
         existing_phrases = {item["phrase"].lower() for item in BASE_CYBERBULLYING_LEXICON}
         new_terms = []
         for word in abusive_words:
@@ -294,6 +101,7 @@ def startup_event():
         full_lexicon = BASE_CYBERBULLYING_LEXICON + new_terms
     except Exception as e:
         print("Warning: Gagal memuat abusive.csv, menggunakan baseline lexicon:", e)
+        import pandas as pd # fallback import if needed
         full_lexicon = BASE_CYBERBULLYING_LEXICON
 
     PREPARED_LEXICON = prepare_lexicon(full_lexicon)
@@ -320,8 +128,11 @@ def startup_event():
 
     print("=== API Server Siap Menerima Request! ===")
 
+# Helper: check imports
+import pandas as pd
+
 # ----------------------------------------------------
-# 4. API Endpoints
+# 2. API Endpoints
 # ----------------------------------------------------
 
 @app.get("/")
@@ -372,7 +183,6 @@ def predict_lexicon(req: TextRequest):
             })
             seen_phrases.add(phrase)
 
-    # Compute scores
     severity_score = {"rendah": 1, "sedang": 2, "tinggi": 3}
     score = sum(severity_score.get(m["severity"], 1) for m in matches)
     has_high = any(m["severity"] == "tinggi" for m in matches)
@@ -403,7 +213,6 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
     with torch.no_grad():
         logits = TRANSFORMER_MODEL(**inputs).logits[0]
     probs = torch.sigmoid(logits).tolist()
-    # Model label: index 0 -> HS (bully), index 1 -> Abusive (toxic)
     return {
         "bully_prob": probs[0],
         "toxic_prob": probs[1]
@@ -412,13 +221,11 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
 @app.post("/predict/ml", response_model=MLResponse)
 def predict_ml(req: TextRequest):
     if ML_MODEL is None or ML_VECTORIZER is None:
-        raise HTTPException(status_code=503, detail="Model Machine Learning belum termuat di server.")
+        raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     
-    # Normalisasi teks sebelum ekstraksi TF-IDF (sangat krusial untuk konsistensi slang!)
     norm = normalize_text(req.text)["spaced"]
     tfidf_text = ML_VECTORIZER.transform([norm])
     
-    # Prediksi
     pred_probs = ML_MODEL.predict_proba(tfidf_text)
     prob_toxic = float(pred_probs[0][0][1])
     prob_bully = float(pred_probs[1][0][1])
@@ -439,7 +246,7 @@ def predict_ml(req: TextRequest):
 @app.post("/predict/transformers", response_model=TransformerResponse)
 def predict_transformers(req: TextRequest):
     if TRANSFORMER_MODEL is None or TRANSFORMER_TOKENIZER is None:
-        raise HTTPException(status_code=503, detail="Model Transformer XLM-RoBERTa belum termuat di server.")
+        raise HTTPException(status_code=503, detail="Model Transformer belum termuat.")
     
     try:
         res = predict_transformer_raw(req.text)
@@ -458,14 +265,13 @@ def predict_transformers(req: TextRequest):
             category=determine_category(is_toxic, is_bully)
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal melakukan inferensi Transformer: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/predict/ensemble", response_model=EnsembleResponse)
 def predict_ensemble(req: TextRequest):
     if ML_MODEL is None or ML_VECTORIZER is None:
-        raise HTTPException(status_code=503, detail="Model Machine Learning belum termuat di server.")
+        raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     
-    # 1. Normalisasi & Prediksi ML
     norm = normalize_text(req.text)["spaced"]
     tfidf_text = ML_VECTORIZER.transform([norm])
     
@@ -473,7 +279,6 @@ def predict_ensemble(req: TextRequest):
     ml_toxic = float(pred_probs_ml[0][0][1])
     ml_bully = float(pred_probs_ml[1][0][1])
     
-    # 2. Prediksi Transformer (jika termuat)
     tr_toxic = 0.0
     tr_bully = 0.0
     if TRANSFORMER_MODEL is not None and TRANSFORMER_TOKENIZER is not None:
@@ -484,12 +289,9 @@ def predict_ensemble(req: TextRequest):
         except Exception as e:
             print("Warning: Gagal memproses Transformer di Ensemble:", e)
             
-    # 3. Ensemble Rata-Rata Berbobot (Weighted Ensemble)
-    # ML diberi bobot lebih besar untuk bully (0.65 vs 0.35) agar sensitif terhadap sarkasme
     final_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
     final_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
     
-    # 4. Lexicon Booster (Mencegah false negative pada kata kasar eksplisit)
     lex_res = predict_lexicon(req)
     if lex_res.is_cyberbullying:
         final_toxic = max(final_toxic, 0.90)
@@ -556,7 +358,7 @@ def query_ollama(text: str, model_name: str = "qwen2.5:3b") -> Dict[str, Any]:
 @app.post("/predict/hybrid", response_model=HybridResponse)
 def predict_hybrid(req: TextRequest):
     if ML_MODEL is None or ML_VECTORIZER is None:
-        raise HTTPException(status_code=503, detail="Model Machine Learning belum termuat di server.")
+        raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     
     # 1. Jalankan ML (Tier 1)
     norm = normalize_text(req.text)["spaced"]
@@ -590,11 +392,9 @@ def predict_hybrid(req: TextRequest):
             tr_toxic = res_tr["toxic_prob"]
             tr_bully = res_tr["bully_prob"]
             
-            # Hitung gabungan Ensemble (ML + Transformer)
             ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic
             ens_bully = 0.65 * ml_bully + 0.35 * tr_bully
             
-            # Cek jika Ensemble cukup yakin
             if (ens_toxic > 0.75 or ens_toxic < 0.25) and (ens_bully > 0.75 or ens_bully < 0.25):
                 is_toxic = ens_toxic >= 0.5
                 is_bully = ens_bully >= 0.5
@@ -632,7 +432,6 @@ def predict_hybrid(req: TextRequest):
     fallback_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_loaded else ml_toxic
     fallback_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_loaded else ml_bully
     
-    # Lexicon Booster
     lex_res = predict_lexicon(req)
     if lex_res.is_cyberbullying:
         fallback_toxic = max(fallback_toxic, 0.90)
