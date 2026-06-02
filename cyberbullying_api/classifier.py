@@ -297,8 +297,11 @@ def predict_ensemble(text: str) -> EnsembleResponse:
         category=determine_category(is_toxic, is_bully)
     )
 
-async def query_ollama_async(text: str, model_name: str = "qwen2.5-coder:7b") -> Dict[str, Any]:
+async def query_ollama_async(text: str, model_name: str = None) -> Dict[str, Any]:
     url = "http://localhost:11434/api/generate"
+    
+    if not model_name:
+        model_name = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
     
     # Skema output terstruktur yang formal
     schema = {
