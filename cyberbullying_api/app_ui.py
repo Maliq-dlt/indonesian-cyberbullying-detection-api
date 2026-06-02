@@ -57,15 +57,15 @@ def make_html_card(category, prob_toxic, prob_bully, decision_source, reason):
     """
     return html
 
-def predict_single_hybrid(text):
+async def predict_single_hybrid(text):
     if not text.strip():
         empty_card = "<div style='padding:15px; border:1px dashed #ccc; border-radius:8px; text-align:center;'>Silakan masukkan teks terlebih dahulu.</div>"
-        return empty_card, 0.0, 0.0, "Teks kosong", 0.0, 0.0, "Teks kosong"
+        return empty_card, 0.0, 0.0, "Teks kosong", 0.0, 0.0, "Teks kosong", 0.0, 0.0
 
     # Prediksi menggunakan hybrid bertingkat
     try:
         req = main.TextRequest(text=text)
-        res = main.predict_hybrid(req)
+        res = await main.predict_hybrid(req)
         
         html_card = make_html_card(res.category, res.probability_toxic, res.probability_bully, res.decision_source, res.reason)
         
@@ -84,6 +84,11 @@ def predict_single_hybrid(text):
         html_card = f"<div style='color:red; padding:10px; border:1px solid red; border-radius:8px;'>Gagal memproses: {str(e)}</div>"
         ml_cat, ml_toxic, ml_bully = "Gagal", 0.0, 0.0
         tr_cat, tr_toxic, tr_bully = "Gagal", 0.0, 0.0
+        # Initialize res fallback to avoid NameError
+        class FallbackRes:
+            probability_toxic = 0.0
+            probability_bully = 0.0
+        res = FallbackRes()
 
     return (
         html_card,
@@ -99,7 +104,7 @@ def predict_single_hybrid(text):
         tr_bully
     )
 
-def run_scraper_and_batch_classify(platform, target, max_items):
+async def run_scraper_and_batch_classify(platform, target, max_items):
     if not target.strip():
         return None, None, "Silakan masukkan URL video TikTok atau Kata Kunci X terlebih dahulu."
     
@@ -116,9 +121,11 @@ def run_scraper_and_batch_classify(platform, target, max_items):
     classified_data = []
     print(f"Memulai proses batch klasifikasi untuk {len(raw_texts)} teks...")
     
-    for text in raw_texts:
-        try:
-            pred = main.predict_hybrid(main.TextRequest(text=text))
+    try:
+        batch_req = main.BatchTextRequest(texts=raw_texts)
+        batch_res = await main.predict_batch(batch_req)
+        
+        for pred in batch_res.results:
             classified_data.append({
                 "Teks": pred.text,
                 "Is_Toxic": "Ya" if pred.is_toxic else "Tidak",
@@ -129,17 +136,32 @@ def run_scraper_and_batch_classify(platform, target, max_items):
                 "Sumber_Keputusan": pred.decision_source,
                 "Alasan": pred.reason
             })
-        except Exception as e:
-            classified_data.append({
-                "Teks": text,
-                "Is_Toxic": "Error",
-                "Is_Bully": "Error",
-                "Prob_Toxicity": "0%",
-                "Prob_Bullying": "0%",
-                "Kategori": f"Gagal: {e}",
-                "Sumber_Keputusan": "None",
-                "Alasan": str(e)
-            })
+    except Exception as e:
+        print(f"Error dalam batch klasifikasi: {e}. Menggunakan fallback pemrosesan sekuensial.")
+        for text in raw_texts:
+            try:
+                pred = await main.predict_hybrid(main.TextRequest(text=text))
+                classified_data.append({
+                    "Teks": pred.text,
+                    "Is_Toxic": "Ya" if pred.is_toxic else "Tidak",
+                    "Is_Bully": "Ya" if pred.is_bully else "Tidak",
+                    "Prob_Toxicity": f"{pred.probability_toxic*100:.1f}%",
+                    "Prob_Bullying": f"{pred.probability_bully*100:.1f}%",
+                    "Kategori": pred.category,
+                    "Sumber_Keputusan": pred.decision_source,
+                    "Alasan": pred.reason
+                })
+            except Exception as ex:
+                classified_data.append({
+                    "Teks": text,
+                    "Is_Toxic": "Error",
+                    "Is_Bully": "Error",
+                    "Prob_Toxicity": "0%",
+                    "Prob_Bullying": "0%",
+                    "Kategori": f"Gagal: {ex}",
+                    "Sumber_Keputusan": "None",
+                    "Alasan": str(ex)
+                })
             
     # 3. Konversi ke DataFrame
     df = pd.DataFrame(classified_data)

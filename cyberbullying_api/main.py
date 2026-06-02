@@ -15,7 +15,9 @@ from normalizer import (
     prepare_lexicon,
     contains_word_or_phrase,
     fuzzy_contains,
-    init_slang_map
+    init_slang_map,
+    detect_sentiment_contrast,
+    BASE_CYBERBULLYING_LEXICON
 )
 
 app = FastAPI(
@@ -39,33 +41,7 @@ ML_VECTORIZER = None
 TRANSFORMER_MODEL = None
 TRANSFORMER_TOKENIZER = None
 
-# Base 24 cyberbullying words
-BASE_CYBERBULLYING_LEXICON = [
-    {"phrase": "mati lu", "category": "ancaman/serangan personal", "severity": "tinggi"},
-    {"phrase": "mati lo", "category": "ancaman/serangan personal", "severity": "tinggi"},
-    {"phrase": "mati loe", "category": "ancaman/serangan personal", "severity": "tinggi"},
-    {"phrase": "mati kamu", "category": "ancaman/serangan personal", "severity": "tinggi"},
-    {"phrase": "mending mati", "category": "dorongan menyakiti diri", "severity": "tinggi"},
-    {"phrase": "bunuh diri", "category": "dorongan menyakiti diri", "severity": "tinggi"},
-    {"phrase": "ga usah hidup", "category": "dorongan menyakiti diri", "severity": "tinggi"},
-    {"phrase": "nggak usah hidup", "category": "dorongan menyakiti diri", "severity": "tinggi"},
-    {"phrase": "dasar bodoh", "category": "hinaan", "severity": "sedang"},
-    {"phrase": "dasar goblok", "category": "hinaan", "severity": "sedang"},
-    {"phrase": "dasar tolol", "category": "hinaan", "severity": "sedang"},
-    {"phrase": "dasar bego", "category": "hinaan", "severity": "sedang"},
-    {"phrase": "dasar sampah", "category": "hinaan", "severity": "sedang"},
-    {"phrase": "otak kosong", "category": "hinaan", "severity": "sedang"},
-    {"phrase": "goblok", "category": "kata kasar", "severity": "sedang"},
-    {"phrase": "tolol", "category": "kata kasar", "severity": "sedang"},
-    {"phrase": "bodoh", "category": "kata kasar", "severity": "rendah"},
-    {"phrase": "bego", "category": "kata kasar", "severity": "rendah"},
-    {"phrase": "idiot", "category": "kata kasar", "severity": "sedang"},
-    {"phrase": "sampah", "category": "kata kasar", "severity": "sedang"},
-    {"phrase": "anjing", "category": "kata kasar", "severity": "sedang"},
-    {"phrase": "bangsat", "category": "kata kasar", "severity": "sedang"},
-    {"phrase": "babi", "category": "kata kasar", "severity": "sedang"},
-    {"phrase": "kampret", "category": "kata kasar", "severity": "rendah"},
-]
+
 
 @app.on_event("startup")
 def startup_event():
@@ -308,18 +284,18 @@ def predict_ensemble(req: TextRequest):
         category=determine_category(is_toxic, is_bully)
     )
 
-def query_ollama(text: str, model_name: str = "qwen2.5-coder:7b") -> Dict[str, Any]:
+async def query_ollama_async(text: str, model_name: str = "qwen2.5-coder:7b") -> Dict[str, Any]:
     url = "http://localhost:11434/api/generate"
     prompt = f"""
-    Analisis teks Bahasa Indonesia di bawah ini untuk mendeteksi dua parameter:
-    1. "is_toxic": Apakah teks menggunakan kata kasar, kotor, atau umpatan gaul secara eksplisit? (true/false)
-    2. "is_bully": Apakah teks berniat untuk menghina, merendahkan, mencemooh, atau merundung seseorang secara personal (termasuk sarkasme/sindiran halus)? (true/false)
+    Tugas Anda adalah menganalisis teks Bahasa Indonesia di bawah ini secara logis untuk mendeteksi dua parameter:
+    1. "is_toxic": Apakah teks menggunakan kata kasar, kotor, atau umpatan gaul secara eksplisit?
+    2. "is_bully": Apakah teks berniat untuk menghina, merendahkan, mencemooh, atau merundung seseorang secara personal (termasuk sarkasme/sindiran halus)?
 
-    Format output wajib JSON valid seperti ini tanpa penjelasan lain:
+    Lakukan analisis secara logis terlebih dahulu (Chain of Thought), lalu kembalikan hasil akhir dalam format JSON valid yang ketat seperti contoh di bawah ini tanpa teks penjelasan tambahan apapun:
     {{
-        "is_toxic": true,
-        "is_bully": false,
-        "reason": "alasan singkat dalam bahasa Indonesia"
+        "is_toxic": true/false,
+        "is_bully": true/false,
+        "reason": "Penjelasan singkat analisis Anda dalam bahasa Indonesia"
     }}
 
     Teks yang dianalisis:
@@ -334,8 +310,8 @@ def query_ollama(text: str, model_name: str = "qwen2.5-coder:7b") -> Dict[str, A
     }
     
     try:
-        with httpx.Client(timeout=6.0) as client:
-            response = client.post(url, json=payload)
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(url, json=payload)
             if response.status_code == 200:
                 res_json = response.json()
                 content = json.loads(res_json["response"])
@@ -346,7 +322,7 @@ def query_ollama(text: str, model_name: str = "qwen2.5-coder:7b") -> Dict[str, A
                     "success": True
                 }
     except Exception as e:
-        print("Warning: Gagal menghubungi Ollama lokal:", e)
+        print("Warning: Gagal menghubungi Ollama secara async:", e)
         
     return {
         "is_toxic": False,
@@ -356,10 +332,29 @@ def query_ollama(text: str, model_name: str = "qwen2.5-coder:7b") -> Dict[str, A
     }
 
 @app.post("/predict/hybrid", response_model=HybridResponse)
-def predict_hybrid(req: TextRequest):
+async def predict_hybrid(req: TextRequest):
     if ML_MODEL is None or ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     
+    # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat)
+    is_sarcasm_candidate = detect_sentiment_contrast(req.text)
+    if is_sarcasm_candidate:
+        print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Ollama LLM) untuk: '{req.text}'")
+        ollama_res = await query_ollama_async(req.text)
+        if ollama_res["success"]:
+            is_toxic = ollama_res["is_toxic"]
+            is_bully = ollama_res["is_bully"]
+            return HybridResponse(
+                text=req.text,
+                is_toxic=is_toxic,
+                is_bully=is_bully,
+                probability_toxic=1.0 if is_toxic else 0.0,
+                probability_bully=1.0 if is_bully else 0.0,
+                category=determine_category(is_toxic, is_bully),
+                decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
+                reason=f"[Sarcasm Bypass] {ollama_res['reason']}"
+            )
+
     # 1. Jalankan ML (Tier 1)
     norm = normalize_text(req.text)["spaced"]
     tfidf_text = ML_VECTORIZER.transform([norm])
@@ -413,7 +408,7 @@ def predict_hybrid(req: TextRequest):
             
     # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3)
     print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{req.text}'")
-    ollama_res = query_ollama(req.text)
+    ollama_res = await query_ollama_async(req.text)
     if ollama_res["success"]:
         is_toxic = ollama_res["is_toxic"]
         is_bully = ollama_res["is_bully"]
@@ -450,11 +445,16 @@ def predict_hybrid(req: TextRequest):
         reason="Ollama lokal tidak merespons, menggunakan keputusan cadangan dari model lokal."
     )
 
+import asyncio
+
 @app.post("/predict/batch", response_model=BatchResponse)
-def predict_batch(req: BatchTextRequest):
+async def predict_batch(req: BatchTextRequest):
+    # Menjalankan seluruh proses klasifikasi secara paralel (konkuren)
+    tasks = [predict_hybrid(TextRequest(text=text)) for text in req.texts]
+    predictions = await asyncio.gather(*tasks)
+    
     results = []
-    for text in req.texts:
-        pred = predict_hybrid(TextRequest(text=text))
+    for pred in predictions:
         results.append(BatchItemResponse(
             text=pred.text,
             is_toxic=pred.is_toxic,

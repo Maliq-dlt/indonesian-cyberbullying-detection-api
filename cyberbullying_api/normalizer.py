@@ -125,3 +125,43 @@ def fuzzy_contains(compact_text: str, compact_pattern: str, threshold: float = 0
             if ratio >= threshold:
                 return True
     return False
+
+def detect_sentiment_contrast(spaced_text: str) -> bool:
+    """Mendeteksi kontras sentimen sederhana (pujian + indikator kegagalan/ejekan) untuk menyaring sarkasme awal."""
+    text_lower = spaced_text.lower()
+    
+    pos_words = ["pintar", "pinter", "hebat", "ganteng", "cantik", "indah", "cakep", "rajin", "cepat", "cepet", "suci", "sopan", "baik", "mulia"]
+    neg_words = ["nol", "0", "salah", "gagal", "spakbor", "badut", "monyet", "panci", "gosong", "sirkus", "siang", "sore", "deadline", "menit", "tahun", "minus", "kasar", "bayaran", "belakang"]
+    
+    has_pos = any(w in text_lower for w in pos_words)
+    has_neg = any(w in text_lower for w in neg_words)
+    
+    return has_pos and has_neg
+
+BASE_CYBERBULLYING_LEXICON = [
+    {"phrase": "mati lu", "category": "ancaman/serangan personal", "severity": "tinggi"},
+    {"phrase": "mati lo", "category": "ancaman/serangan personal", "severity": "tinggi"},
+    {"phrase": "mati loe", "category": "ancaman/serangan personal", "severity": "tinggi"},
+    {"phrase": "mati kamu", "category": "ancaman/serangan personal", "severity": "tinggi"},
+    {"phrase": "mending mati", "category": "dorongan menyakiti diri", "severity": "tinggi"},
+    {"phrase": "bunuh diri", "category": "dorongan menyakiti diri", "severity": "tinggi"},
+    {"phrase": "ga usah hidup", "category": "dorongan menyakiti diri", "severity": "tinggi"},
+    {"phrase": "nggak usah hidup", "category": "dorongan menyakiti diri", "severity": "tinggi"},
+    {"phrase": "dasar bodoh", "category": "hinaan", "severity": "sedang"},
+    {"phrase": "dasar goblok", "category": "hinaan", "severity": "sedang"},
+    {"phrase": "dasar tolol", "category": "hinaan", "severity": "sedang"},
+    {"phrase": "dasar bego", "category": "hinaan", "severity": "sedang"},
+    {"phrase": "dasar sampah", "category": "hinaan", "severity": "sedang"},
+    {"phrase": "otak kosong", "category": "hinaan", "severity": "sedang"},
+    {"phrase": "goblok", "category": "kata kasar", "severity": "sedang"},
+    {"phrase": "tolol", "category": "kata kasar", "severity": "sedang"},
+    {"phrase": "bodoh", "category": "kata kasar", "severity": "rendah"},
+    {"phrase": "bego", "category": "kata kasar", "severity": "rendah"},
+    {"phrase": "idiot", "category": "kata kasar", "severity": "sedang"},
+    {"phrase": "sampah", "category": "kata kasar", "severity": "sedang"},
+    {"phrase": "anjing", "category": "kata kasar", "severity": "sedang"},
+    {"phrase": "bangsat", "category": "kata kasar", "severity": "sedang"},
+    {"phrase": "babi", "category": "kata kasar", "severity": "sedang"},
+    {"phrase": "kampret", "category": "kata kasar", "severity": "rendah"},
+]
+
