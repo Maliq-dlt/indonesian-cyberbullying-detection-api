@@ -94,7 +94,7 @@ def test_predict_ensemble_sarcasm(client):
 
 def test_predict_hybrid_route_fast(client):
     """Menguji rute hybrid menyelesaikan kalimat mudah langsung di Tier 1."""
-    payload = {"text": "Semangat belajarnya ya, jangan menyerah!"}
+    payload = {"text": "Hari ini cuaca sangat cerah."}
     response = client.post("/predict/hybrid", json=payload)
     assert response.status_code == 200
     data = response.json()

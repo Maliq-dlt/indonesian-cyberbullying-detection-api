@@ -1,8 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class TextRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=500)
     use_fuzzy: Optional[bool] = False  # Dinonaktifkan secara default untuk performa maksimal
 
 class LexiconMatch(BaseModel):
