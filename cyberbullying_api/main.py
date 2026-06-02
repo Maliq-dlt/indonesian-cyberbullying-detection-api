@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
+import json
+import httpx
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
@@ -72,6 +74,33 @@ class EnsembleResponse(BaseModel):
     probability_toxic: float
     probability_bully: float
     category: str
+
+class HybridResponse(BaseModel):
+    text: str
+    is_toxic: bool
+    is_bully: bool
+    probability_toxic: float
+    probability_bully: float
+    category: str
+    decision_source: str
+    reason: str
+
+class BatchTextRequest(BaseModel):
+    texts: List[str]
+    model_name: Optional[str] = "qwen2.5:3b"
+
+class BatchItemResponse(BaseModel):
+    text: str
+    is_toxic: bool
+    is_bully: bool
+    probability_toxic: float
+    probability_bully: float
+    category: str
+    decision_source: str
+    reason: str
+
+class BatchResponse(BaseModel):
+    results: List[BatchItemResponse]
 
 def determine_category(is_toxic: bool, is_bully: bool) -> str:
     if is_toxic and is_bully:
@@ -476,3 +505,165 @@ def predict_ensemble(req: TextRequest):
         probability_bully=final_bully,
         category=determine_category(is_toxic, is_bully)
     )
+
+def query_ollama(text: str, model_name: str = "qwen2.5:3b") -> Dict[str, Any]:
+    url = "http://localhost:11434/api/generate"
+    prompt = f"""
+    Analisis teks Bahasa Indonesia di bawah ini untuk mendeteksi dua parameter:
+    1. "is_toxic": Apakah teks menggunakan kata kasar, kotor, atau umpatan gaul secara eksplisit? (true/false)
+    2. "is_bully": Apakah teks berniat untuk menghina, merendahkan, mencemooh, atau merundung seseorang secara personal (termasuk sarkasme/sindiran halus)? (true/false)
+
+    Format output wajib JSON valid seperti ini tanpa penjelasan lain:
+    {{
+        "is_toxic": true,
+        "is_bully": false,
+        "reason": "alasan singkat dalam bahasa Indonesia"
+    }}
+
+    Teks yang dianalisis:
+    "{text}"
+    """
+    
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json"
+    }
+    
+    try:
+        with httpx.Client(timeout=6.0) as client:
+            response = client.post(url, json=payload)
+            if response.status_code == 200:
+                res_json = response.json()
+                content = json.loads(res_json["response"])
+                return {
+                    "is_toxic": bool(content.get("is_toxic", False)),
+                    "is_bully": bool(content.get("is_bully", False)),
+                    "reason": str(content.get("reason", "Analisis Ollama selesai.")),
+                    "success": True
+                }
+    except Exception as e:
+        print("Warning: Gagal menghubungi Ollama lokal:", e)
+        
+    return {
+        "is_toxic": False,
+        "is_bully": False,
+        "reason": "Gagal terhubung ke Ollama lokal (pastikan Ollama berjalan di port 11434).",
+        "success": False
+    }
+
+@app.post("/predict/hybrid", response_model=HybridResponse)
+def predict_hybrid(req: TextRequest):
+    if ML_MODEL is None or ML_VECTORIZER is None:
+        raise HTTPException(status_code=503, detail="Model Machine Learning belum termuat di server.")
+    
+    # 1. Jalankan ML (Tier 1)
+    norm = normalize_text(req.text)["spaced"]
+    tfidf_text = ML_VECTORIZER.transform([norm])
+    pred_probs_ml = ML_MODEL.predict_proba(tfidf_text)
+    ml_toxic = float(pred_probs_ml[0][0][1])
+    ml_bully = float(pred_probs_ml[1][0][1])
+    
+    # Jika ML sangat yakin (di luar rentang 0.25 - 0.75 untuk kedua label)
+    if (ml_toxic > 0.75 or ml_toxic < 0.25) and (ml_bully > 0.75 or ml_bully < 0.25):
+        is_toxic = ml_toxic >= 0.5
+        is_bully = ml_bully >= 0.5
+        return HybridResponse(
+            text=req.text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=ml_toxic,
+            probability_bully=ml_bully,
+            category=determine_category(is_toxic, is_bully),
+            decision_source="Tier 1 (ML Klasik)",
+            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik."
+        )
+        
+    # 2. Ragu-ragu -> Jalankan Transformer XLM-RoBERTa (Tier 2)
+    tr_toxic = 0.0
+    tr_bully = 0.0
+    tr_loaded = TRANSFORMER_MODEL is not None and TRANSFORMER_TOKENIZER is not None
+    if tr_loaded:
+        try:
+            res_tr = predict_transformer_raw(req.text)
+            tr_toxic = res_tr["toxic_prob"]
+            tr_bully = res_tr["bully_prob"]
+            
+            # Hitung gabungan Ensemble (ML + Transformer)
+            ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic
+            ens_bully = 0.65 * ml_bully + 0.35 * tr_bully
+            
+            # Cek jika Ensemble cukup yakin
+            if (ens_toxic > 0.75 or ens_toxic < 0.25) and (ens_bully > 0.75 or ens_bully < 0.25):
+                is_toxic = ens_toxic >= 0.5
+                is_bully = ens_bully >= 0.5
+                return HybridResponse(
+                    text=req.text,
+                    is_toxic=is_toxic,
+                    is_bully=is_bully,
+                    probability_toxic=ens_toxic,
+                    probability_bully=ens_bully,
+                    category=determine_category(is_toxic, is_bully),
+                    decision_source="Tier 2 (Ensemble ML & Transformer)",
+                    reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer."
+                )
+        except Exception as e:
+            print("Warning: Gagal memproses Tier 2 di Hybrid:", e)
+            
+    # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3)
+    print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{req.text}'")
+    ollama_res = query_ollama(req.text)
+    if ollama_res["success"]:
+        is_toxic = ollama_res["is_toxic"]
+        is_bully = ollama_res["is_bully"]
+        return HybridResponse(
+            text=req.text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=1.0 if is_toxic else 0.0,
+            probability_bully=1.0 if is_bully else 0.0,
+            category=determine_category(is_toxic, is_bully),
+            decision_source="Tier 3 (Ollama Qwen LLM)",
+            reason=ollama_res["reason"]
+        )
+        
+    # Jika Ollama gagal/mati, gunakan fallback hasil ensemble/ML
+    fallback_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_loaded else ml_toxic
+    fallback_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_loaded else ml_bully
+    
+    # Lexicon Booster
+    lex_res = predict_lexicon(req)
+    if lex_res.is_cyberbullying:
+        fallback_toxic = max(fallback_toxic, 0.90)
+        
+    is_toxic = fallback_toxic >= 0.5
+    is_bully = fallback_bully >= 0.5
+    
+    return HybridResponse(
+        text=req.text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=fallback_toxic,
+        probability_bully=fallback_bully,
+        category=determine_category(is_toxic, is_bully),
+        decision_source="Fallback (Ensemble Terbatas)",
+        reason="Ollama lokal tidak merespons, menggunakan keputusan cadangan dari model lokal."
+    )
+
+@app.post("/predict/batch", response_model=BatchResponse)
+def predict_batch(req: BatchTextRequest):
+    results = []
+    for text in req.texts:
+        pred = predict_hybrid(TextRequest(text=text))
+        results.append(BatchItemResponse(
+            text=pred.text,
+            is_toxic=pred.is_toxic,
+            is_bully=pred.is_bully,
+            probability_toxic=pred.probability_toxic,
+            probability_bully=pred.probability_bully,
+            category=pred.category,
+            decision_source=pred.decision_source,
+            reason=pred.reason
+        ))
+    return BatchResponse(results=results)

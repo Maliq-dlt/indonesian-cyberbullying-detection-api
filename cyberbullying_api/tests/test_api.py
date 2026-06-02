@@ -91,3 +91,32 @@ def test_predict_ensemble_sarcasm(client):
     assert data["is_toxic"] is False
     assert data["is_bully"] is True
     assert "Sarcasm" in data["category"]
+
+def test_predict_hybrid_route_fast(client):
+    """Menguji rute hybrid menyelesaikan kalimat mudah langsung di Tier 1."""
+    payload = {"text": "Semangat belajarnya ya, jangan menyerah!"}
+    response = client.post("/predict/hybrid", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_toxic"] is False
+    assert data["is_bully"] is False
+    assert "Tier 1" in data["decision_source"]
+    assert "Aman" in data["category"]
+
+def test_predict_batch_processing(client):
+    """Menguji endpoint prediksi batch untuk daftar komentar."""
+    payload = {
+        "texts": [
+            "Semangat belajarnya ya, jangan menyerah!",
+            "Kamu bodoh banget sih, dasar tolol!",
+            "kamu hebat banget sih anjing"
+        ]
+    }
+    response = client.post("/predict/batch", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "results" in data
+    assert len(data["results"]) == 3
+    assert data["results"][0]["is_toxic"] is False
+    assert data["results"][1]["is_toxic"] is True
+    assert data["results"][2]["is_toxic"] is True
