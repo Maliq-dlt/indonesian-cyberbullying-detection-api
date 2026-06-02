@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+*.log
+.gemini/
+.git/
+# Ignored cloned repositories inside the workspace (since we only want to push the API and notebook)
+cyber-bullying-dataset/
+cyberbullying-indonesia/
+id-multi-label-hate-speech-and-abusive-language-detection/
+Dataset-Sentimen-Analisis-Bahasa-Indonesia/
