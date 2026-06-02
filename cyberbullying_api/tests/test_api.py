@@ -43,19 +43,51 @@ def test_predict_lexicon_toxic(client):
     assert len(data["matches"]) > 0
 
 def test_predict_ml_safe(client):
-    """Menguji model Machine Learning mendeteksi kalimat positif sebagai aman."""
-    payload = {"text": "Selamat pagi semuanya, selamat beraktivitas!"}
+    """Menguji ML mendeteksi kalimat positif sebagai non-toxic & non-bully."""
+    payload = {"text": "Semangat belajarnya ya, jangan menyerah!"}
     response = client.post("/predict/ml", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["is_cyberbullying"] is False
-    assert data["probability"] < 0.5
+    assert data["is_toxic"] is False
+    assert data["is_bully"] is False
+    assert "Aman" in data["category"]
 
-def test_predict_ml_toxic(client):
-    """Menguji model Machine Learning mendeteksi kalimat kasar sebagai cyberbullying."""
-    payload = {"text": "dasar tolol goblok kamu"}
+def test_predict_ml_sarcasm(client):
+    """Menguji ML mendeteksi sarkasme sebagai non-toxic tapi bully."""
+    payload = {"text": "ganteng banget mukalu kaya spakbor mio"}
     response = client.post("/predict/ml", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["is_cyberbullying"] is True
-    assert data["probability"] > 0.5
+    assert data["is_toxic"] is False
+    assert data["is_bully"] is True
+    assert "Sarcasm" in data["category"]
+
+def test_predict_ml_slang_praise(client):
+    """Menguji ML mendeteksi slang pujian sebagai toxic tapi non-bully."""
+    payload = {"text": "kamu hebat banget sih anjing"}
+    response = client.post("/predict/ml", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_toxic"] is True
+    assert data["is_bully"] is False
+    assert "Casual Slang" in data["category"]
+
+def test_predict_ml_direct_bully(client):
+    """Menguji ML mendeteksi serangan langsung sebagai toxic & bully."""
+    payload = {"text": "Kamu bodoh banget sih, dasar tolol!"}
+    response = client.post("/predict/ml", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_toxic"] is True
+    assert data["is_bully"] is True
+    assert "Serangan Langsung" in data["category"]
+
+def test_predict_ensemble_sarcasm(client):
+    """Menguji Ensemble mendeteksi sarkasme halus ujian nol sebagai non-toxic & bully."""
+    payload = {"text": "Wah pintar sekali kamu ya, sampai nilai ujianmu nol."}
+    response = client.post("/predict/ensemble", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_toxic"] is False
+    assert data["is_bully"] is True
+    assert "Sarcasm" in data["category"]

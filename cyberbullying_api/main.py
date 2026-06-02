@@ -9,7 +9,8 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 app = FastAPI(
     title="Cyberbullying & Hate Speech Detection API",
@@ -50,20 +51,45 @@ class LexiconResponse(BaseModel):
 
 class MLResponse(BaseModel):
     text: str
-    is_cyberbullying: bool
-    probability: float
+    is_toxic: bool
+    is_bully: bool
+    probability_toxic: float
+    probability_bully: float
+    category: str
 
 class TransformerResponse(BaseModel):
     text: str
-    label: str
-    score: float
+    is_toxic: bool
+    is_bully: bool
+    probability_toxic: float
+    probability_bully: float
+    category: str
+
+class EnsembleResponse(BaseModel):
+    text: str
+    is_toxic: bool
+    is_bully: bool
+    probability_toxic: float
+    probability_bully: float
+    category: str
+
+def determine_category(is_toxic: bool, is_bully: bool) -> str:
+    if is_toxic and is_bully:
+        return "Toxic & Bully (Serangan Langsung)"
+    elif is_toxic and not is_bully:
+        return "Toxic but Non-Bully (Casual Slang / Swearing)"
+    elif not is_toxic and is_bully:
+        return "Non-Toxic but Bully (Sarcasm / Insult)"
+    else:
+        return "Non-Toxic & Non-Bully (Aman)"
 
 # Global variables for models and dictionaries
 SLANG_MAP = {}
 PREPARED_LEXICON = []
 ML_MODEL = None
 ML_VECTORIZER = None
-TRANSFORMER_PIPELINE = None
+TRANSFORMER_MODEL = None
+TRANSFORMER_TOKENIZER = None
 
 # Base 24 cyberbullying words
 BASE_CYBERBULLYING_LEXICON = [
@@ -257,9 +283,8 @@ def startup_event():
     print("Memuat model Deep Learning Transformers XLM-RoBERTa (sekitar 1.1 GB)...")
     try:
         model_name = "nahiar/hatespeech-abusive-xlm-roberta-v1"
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForSequenceClassification.from_pretrained(model_name)
-        TRANSFORMER_PIPELINE = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+        TRANSFORMER_TOKENIZER = AutoTokenizer.from_pretrained(model_name)
+        TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name)
         print("Model Transformer berhasil dimuat!")
     except Exception as e:
         print("Warning: Gagal memuat model Transformer:", e)
@@ -278,7 +303,7 @@ def read_root():
         "models_loaded": {
             "lexicon": len(PREPARED_LEXICON) > 0,
             "machine_learning": ML_MODEL is not None,
-            "transformers": TRANSFORMER_PIPELINE is not None
+            "transformers": TRANSFORMER_MODEL is not None
         }
     }
 
@@ -342,37 +367,112 @@ def predict_lexicon(req: TextRequest):
         matches=matches
     )
 
+def predict_transformer_raw(text: str) -> Dict[str, float]:
+    if TRANSFORMER_MODEL is None or TRANSFORMER_TOKENIZER is None:
+        return {"toxic_prob": 0.0, "bully_prob": 0.0}
+    inputs = TRANSFORMER_TOKENIZER(text, padding=True, truncation=True, return_tensors="pt")
+    with torch.no_grad():
+        logits = TRANSFORMER_MODEL(**inputs).logits[0]
+    probs = torch.sigmoid(logits).tolist()
+    # Model label: index 0 -> HS (bully), index 1 -> Abusive (toxic)
+    return {
+        "bully_prob": probs[0],
+        "toxic_prob": probs[1]
+    }
+
 @app.post("/predict/ml", response_model=MLResponse)
 def predict_ml(req: TextRequest):
     if ML_MODEL is None or ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model Machine Learning belum termuat di server.")
     
-    # Ekstraksi fitur
-    tfidf_text = ML_VECTORIZER.transform([req.text])
+    # Normalisasi teks sebelum ekstraksi TF-IDF (sangat krusial untuk konsistensi slang!)
+    norm = normalize_text(req.text)["spaced"]
+    tfidf_text = ML_VECTORIZER.transform([norm])
     
     # Prediksi
-    pred_label = bool(ML_MODEL.predict(tfidf_text)[0])
-    pred_prob = float(ML_MODEL.predict_proba(tfidf_text)[0][1])  # Probabilitas kelas True (cyberbullying)
+    pred_probs = ML_MODEL.predict_proba(tfidf_text)
+    prob_toxic = float(pred_probs[0][0][1])
+    prob_bully = float(pred_probs[1][0][1])
+    
+    pred_l = ML_MODEL.predict(tfidf_text)[0]
+    is_toxic = bool(pred_l[0])
+    is_bully = bool(pred_l[1])
     
     return MLResponse(
         text=req.text,
-        is_cyberbullying=pred_label,
-        probability=pred_prob
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=prob_toxic,
+        probability_bully=prob_bully,
+        category=determine_category(is_toxic, is_bully)
     )
 
 @app.post("/predict/transformers", response_model=TransformerResponse)
 def predict_transformers(req: TextRequest):
-    if TRANSFORMER_PIPELINE is None:
+    if TRANSFORMER_MODEL is None or TRANSFORMER_TOKENIZER is None:
         raise HTTPException(status_code=503, detail="Model Transformer XLM-RoBERTa belum termuat di server.")
     
     try:
-        pred = TRANSFORMER_PIPELINE(req.text)[0]
-        # LABEL_1 -> Toxic, LABEL_0 -> Aman
-        label_mapped = "TOXIC/CYBERBULLYING" if pred['label'] == 'LABEL_1' else "AMAN/NON-TOXIC"
+        res = predict_transformer_raw(req.text)
+        prob_toxic = res["toxic_prob"]
+        prob_bully = res["bully_prob"]
+        
+        is_toxic = prob_toxic >= 0.5
+        is_bully = prob_bully >= 0.5
+        
         return TransformerResponse(
             text=req.text,
-            label=label_mapped,
-            score=float(pred['score'])
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=prob_toxic,
+            probability_bully=prob_bully,
+            category=determine_category(is_toxic, is_bully)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal melakukan inferensi Transformer: {str(e)}")
+
+@app.post("/predict/ensemble", response_model=EnsembleResponse)
+def predict_ensemble(req: TextRequest):
+    if ML_MODEL is None or ML_VECTORIZER is None:
+        raise HTTPException(status_code=503, detail="Model Machine Learning belum termuat di server.")
+    
+    # 1. Normalisasi & Prediksi ML
+    norm = normalize_text(req.text)["spaced"]
+    tfidf_text = ML_VECTORIZER.transform([norm])
+    
+    pred_probs_ml = ML_MODEL.predict_proba(tfidf_text)
+    ml_toxic = float(pred_probs_ml[0][0][1])
+    ml_bully = float(pred_probs_ml[1][0][1])
+    
+    # 2. Prediksi Transformer (jika termuat)
+    tr_toxic = 0.0
+    tr_bully = 0.0
+    if TRANSFORMER_MODEL is not None and TRANSFORMER_TOKENIZER is not None:
+        try:
+            res_tr = predict_transformer_raw(req.text)
+            tr_toxic = res_tr["toxic_prob"]
+            tr_bully = res_tr["bully_prob"]
+        except Exception as e:
+            print("Warning: Gagal memproses Transformer di Ensemble:", e)
+            
+    # 3. Ensemble Rata-Rata Berbobot (Weighted Ensemble)
+    # ML diberi bobot lebih besar untuk bully (0.65 vs 0.35) agar sensitif terhadap sarkasme
+    final_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
+    final_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
+    
+    # 4. Lexicon Booster (Mencegah false negative pada kata kasar eksplisit)
+    lex_res = predict_lexicon(req)
+    if lex_res.is_cyberbullying:
+        final_toxic = max(final_toxic, 0.90)
+        
+    is_toxic = final_toxic >= 0.5
+    is_bully = final_bully >= 0.5
+    
+    return EnsembleResponse(
+        text=req.text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=final_toxic,
+        probability_bully=final_bully,
+        category=determine_category(is_toxic, is_bully)
+    )
