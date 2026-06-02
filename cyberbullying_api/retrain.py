@@ -16,14 +16,17 @@ from sklearn.metrics import classification_report, f1_score
 
 print("=== Memulai Skrip Pelatihan Ulang Otomatis (Active Learning + Perturbasi + Kalibrasi) ===")
 
-# 1. Konfigurasi Path dan Kamus Slang
-ALAY_PATH = os.path.join("..", "dataset 1", "new_kamusalay.csv")
-SINGKATAN_PATH = os.path.join("..", "dataset 2", "kamus_singkatan.csv")
-ABUSIVE_PATH = os.path.join("..", "dataset 1", "abusive.csv")
+# Tentukan direktori dasar dinamis untuk pathing absolut
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DATASET_TWITTER_PATH = os.path.join("..", "dataset 1", "data.csv")
-DATASET_INSTAGRAM_PATH = os.path.join("..", "cyberbullying-indonesia", "DATASET CYBERBULLYING INSTAGRAM - FINAL.xlsx")
-DATASET_COMBINED_PATH = os.path.join("..", "dataset 2", "combined_dataset.csv")
+# 1. Konfigurasi Path dan Kamus Slang
+ALAY_PATH = os.path.join(BASE_DIR, "..", "dataset 1", "new_kamusalay.csv")
+SINGKATAN_PATH = os.path.join(BASE_DIR, "..", "dataset 2", "kamus_singkatan.csv")
+ABUSIVE_PATH = os.path.join(BASE_DIR, "..", "dataset 1", "abusive.csv")
+
+DATASET_TWITTER_PATH = os.path.join(BASE_DIR, "..", "dataset 1", "data.csv")
+DATASET_INSTAGRAM_PATH = os.path.join(BASE_DIR, "..", "cyberbullying-indonesia", "DATASET CYBERBULLYING INSTAGRAM - FINAL.xlsx")
+DATASET_COMBINED_PATH = os.path.join(BASE_DIR, "..", "dataset 2", "combined_dataset.csv")
 
 LEET_MAP = {
     "0": "o", "1": "i", "!": "i", "|": "i", "¡": "i", "3": "e", "4": "a",
@@ -34,7 +37,6 @@ NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 MULTISPACE_RE = re.compile(r"\s+")
 REPEATED_CHAR_RE = re.compile(r"(.)\1{2,}")
 
-# Huruf pengganti leetspeak untuk perturbasi teks
 PERTURB_LEET = {'a': '4', 'i': '1', 'e': '3', 'o': '0', 's': '5', 'g': '9'}
 
 def replace_leet(text: str) -> str:
@@ -103,9 +105,9 @@ def perturb_text(text: str) -> str:
         new_words.append(w)
     return " ".join(new_words)
 
-# 2. Ingest Data Baru dari Hasil Scraping
+# 2. Ingest Data Baru dari Hasil Scraping (menggunakan path absolut dinamis)
 print("Mencari berkas hasil klasifikasi scraper (classified_*_data.csv)...")
-new_files = glob.glob("classified_*_data.csv")
+new_files = glob.glob(os.path.join(BASE_DIR, "classified_*_data.csv"))
 new_records = []
 
 if new_files:
@@ -171,7 +173,8 @@ if new_records:
         # Pindahkan atau rename file scraper agar tidak diproses berulang kali
         for file_path in new_files:
             try:
-                backup_path = f"processed_{file_path}"
+                base_name = os.path.basename(file_path)
+                backup_path = os.path.join(BASE_DIR, f"processed_{base_name}")
                 if os.path.exists(backup_path):
                     os.remove(backup_path)
                 os.rename(file_path, backup_path)
@@ -339,14 +342,15 @@ best_thresh_toxic = calibrate_threshold(probs_toxic, y_test['is_toxic'])
 best_thresh_bully = calibrate_threshold(probs_bully, y_test['is_bully'])
 print(f"Threshold Terkalibrasi -> Toxic: {best_thresh_toxic:.2f} | Bully: {best_thresh_bully:.2f}")
 
-# Simpan threshold ke file JSON
+# Simpan threshold ke file JSON menggunakan path absolut dinamis
+thresholds_path = os.path.join(BASE_DIR, "thresholds.json")
 thresholds_data = {
     "threshold_toxic": best_thresh_toxic,
     "threshold_bully": best_thresh_bully
 }
-with open("thresholds.json", "w") as f:
+with open(thresholds_path, "w") as f:
     json.dump(thresholds_data, f)
-print("Berkas thresholds.json berhasil disimpan.")
+print(f"Berkas thresholds.json berhasil disimpan di: {thresholds_path}")
 
 # 9. Evaluasi Akhir dengan Threshold Terkalibrasi
 preds_toxic = (probs_toxic >= best_thresh_toxic).astype(int)
@@ -358,8 +362,8 @@ print(classification_report(y_test['is_toxic'], preds_toxic))
 print("2. Target: BULLYING (is_bully)")
 print(classification_report(y_test['is_bully'], preds_bully))
 
-# 10. Simpan Model & Vectorizer yang Baru
+# 10. Simpan Model & Vectorizer yang Baru menggunakan path absolut dinamis
 print("Menyimpan model & vectorizer terbaru...")
-joblib.dump(clf, "model_lr.joblib")
-joblib.dump(vectorizer, "vectorizer.joblib")
+joblib.dump(clf, os.path.join(BASE_DIR, "model_lr.joblib"))
+joblib.dump(vectorizer, os.path.join(BASE_DIR, "vectorizer.joblib"))
 print("Proses retraining sukses! Model 'model_lr.joblib' dan 'vectorizer.joblib' telah diperbarui.")

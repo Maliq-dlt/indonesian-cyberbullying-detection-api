@@ -23,6 +23,9 @@ from normalizer import (
     BASE_CYBERBULLYING_LEXICON
 )
 
+# Tentukan direktori dasar dinamis untuk pathing absolut
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Global variables for models and prepared lexicon
 PREPARED_LEXICON = []
 ML_MODEL = None
@@ -38,9 +41,10 @@ THRESHOLDS = {
 
 def load_thresholds():
     global THRESHOLDS
-    if os.path.exists("thresholds.json"):
+    thresholds_path = os.path.join(BASE_DIR, "thresholds.json")
+    if os.path.exists(thresholds_path):
         try:
-            with open("thresholds.json", "r") as f:
+            with open(thresholds_path, "r") as f:
                 THRESHOLDS = json.load(f)
             print(f"Ambang batas perutean dinamis dimuat: Toxic={THRESHOLDS['threshold_toxic']:.2f}, Bully={THRESHOLDS['threshold_bully']:.2f}")
         except Exception as e:
@@ -51,17 +55,17 @@ def init_models():
     
     print("=== Inisialisasi Model Klasifikasi ===")
     
-    # 1. Load Slang Mapping
+    # 1. Load Slang Mapping (menggunakan path absolut dinamis)
     print("Memuat kamus slang alay & singkatan...")
-    alay_path = os.path.join("..", "dataset 1", "new_kamusalay.csv")
-    singkatan_path = os.path.join("..", "dataset 2", "kamus_singkatan.csv")
+    alay_path = os.path.join(BASE_DIR, "..", "dataset 1", "new_kamusalay.csv")
+    singkatan_path = os.path.join(BASE_DIR, "..", "dataset 2", "kamus_singkatan.csv")
     slang_map = init_slang_map(alay_path, singkatan_path)
     print(f"Berhasil memuat {len(slang_map)} pemetaan slang/singkatan.")
 
     # 2. Load and Prepare Lexicon
     print("Memuat kata kasar dari abusive.csv...")
     try:
-        abusive_path = os.path.join("..", "dataset 1", "abusive.csv")
+        abusive_path = os.path.join(BASE_DIR, "..", "dataset 1", "abusive.csv")
         df_abusive = pd.read_csv(abusive_path)
         abusive_words = df_abusive['ABUSIVE'].dropna().unique().tolist()
         
@@ -78,7 +82,7 @@ def init_models():
                 existing_phrases.add(word_lower)
         full_lexicon = BASE_CYBERBULLYING_LEXICON + new_terms
     except Exception as e:
-        print("Warning: Gagal memuat abusive.csv, menggunakan baseline lexicon:", e)
+        print("Warning: Gagal memuat abusive.csv, menggunakan baseline leksikon:", e)
         full_lexicon = BASE_CYBERBULLYING_LEXICON
 
     PREPARED_LEXICON = prepare_lexicon(full_lexicon)
@@ -87,8 +91,8 @@ def init_models():
     # 3. Load Machine Learning Models
     print("Memuat model Machine Learning (Logistic Regression & TF-IDF)...")
     try:
-        ML_MODEL = joblib.load("model_lr.joblib")
-        ML_VECTORIZER = joblib.load("vectorizer.joblib")
+        ML_MODEL = joblib.load(os.path.join(BASE_DIR, "model_lr.joblib"))
+        ML_VECTORIZER = joblib.load(os.path.join(BASE_DIR, "vectorizer.joblib"))
         print("Model ML berhasil dimuat!")
     except Exception as e:
         print("Error: Gagal memuat model Machine Learning:", e)
@@ -105,18 +109,20 @@ def init_models():
         print("Warning: Gagal memuat tokenizer:", e)
 
     # Cek model quantized ONNX
-    if not os.path.exists("model_quantized.onnx"):
+    onnx_path = os.path.join(BASE_DIR, "model_quantized.onnx")
+    if not os.path.exists(onnx_path):
         print("model_quantized.onnx tidak ditemukan. Menjalankan ekspor otomatis...")
         try:
             import subprocess
             import sys
-            subprocess.run([sys.executable, "export_onnx.py"], check=True)
+            export_script = os.path.join(BASE_DIR, "export_onnx.py")
+            subprocess.run([sys.executable, export_script], check=True)
         except Exception as e:
             print("Gagal ekspor ONNX otomatis, fallback ke PyTorch:", e)
 
-    if os.path.exists("model_quantized.onnx") and ort is not None:
+    if os.path.exists(onnx_path) and ort is not None:
         try:
-            TRANSFORMER_SESSION = ort.InferenceSession("model_quantized.onnx", providers=["CPUExecutionProvider"])
+            TRANSFORMER_SESSION = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
             print("Model ONNX terkuantisasi INT8 berhasil dimuat!")
         except Exception as e:
             print("Warning: Gagal memuat session ONNX runtime, fallback ke PyTorch:", e)
@@ -136,7 +142,6 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
     if TRANSFORMER_TOKENIZER is None:
         return {"toxic_prob": 0.0, "bully_prob": 0.0}
     
-    # 1. Menggunakan ONNX Runtime (Super cepat & Hemat memori)
     if TRANSFORMER_SESSION is not None:
         try:
             inputs = TRANSFORMER_TOKENIZER(text, padding=True, truncation=True, return_tensors="np")
@@ -154,7 +159,6 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
         except Exception as e:
             print("Warning: Gagal memproses menggunakan session ONNX, fallback ke PyTorch:", e)
 
-    # 2. Menggunakan PyTorch (Fallback)
     if TRANSFORMER_MODEL is not None:
         inputs = TRANSFORMER_TOKENIZER(text, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
@@ -307,10 +311,18 @@ async def query_ollama_async(text: str, model_name: str = "qwen2.5-coder:7b") ->
         "required": ["is_toxic", "is_bully", "reason"]
     }
     
+    # System prompt linguistik Indonesia yang mendalam (mengakomodasi casual slang vs bullying & sindiran/sarkasme)
+    system_instruction = (
+        "Sistem: Anda adalah ahli sosiolinguistik bahasa Indonesia yang spesifik mendeteksi cyberbullying, hate speech, dan sarkasme.\n"
+        "Tugas: Analisis teks secara objektif dan klasifikasikan ke parameter 'is_toxic' dan 'is_bully'.\n"
+        "Panduan Nuansa Bahasa Gaul Indonesia:\n"
+        "- Bedakan penggunaan kata kasar seperti 'anjing', 'bangsat', 'bego', 'goblok' jika digunakan sebagai pujian/casual slang (is_toxic=true, is_bully=false) seperti 'anjing keren banget lu bang'.\n"
+        "- Deteksi sarkasme / ejekan halus sebagai intimidasi personal (is_toxic=false, is_bully=true) seperti 'ganteng banget mukalu kaya spakbor mio' atau 'pintar sekali kamu, nilai ujianmu nol'.\n"
+        "- Serangan verbal kasar langsung dinilai sebagai keduanya (is_toxic=true, is_bully=true)."
+    )
+    
     prompt = f"""
-    Tugas Anda menganalisis teks Bahasa Indonesia berikut dan mengembalikan objek JSON valid yang memuat analisa parameter:
-    1. "is_toxic": Apakah teks menggunakan kata kasar, kotor, atau umpatan eksplisit secara kasar?
-    2. "is_bully": Apakah teks berniat intimidasi, rundungan, cemoohan, atau sindiran sarkasme personal?
+    {system_instruction}
 
     Gunakan format JSON yang valid mengikuti skema ini secara ketat:
     {json.dumps(schema, indent=2)}
@@ -327,7 +339,8 @@ async def query_ollama_async(text: str, model_name: str = "qwen2.5-coder:7b") ->
     }
     
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        # Peningkatan timeout menjadi 15.0 detik untuk keandalan loading VRAM
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(url, json=payload)
             if response.status_code == 200:
                 res_json = response.json()

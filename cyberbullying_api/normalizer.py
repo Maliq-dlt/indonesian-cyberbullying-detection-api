@@ -110,6 +110,11 @@ def fuzzy_contains(compact_text: str, compact_pattern: str, threshold: float = 0
     """Mencocokkan kata berdasar kesamaan difflib (fuzzy matching) untuk kata tersamar."""
     if not compact_text or not compact_pattern:
         return False
+    
+    # Batasi panjang teks untuk menghindari ReDoS (Denial of Service via CPU)
+    if len(compact_text) > 200:
+        compact_text = compact_text[:200]
+        
     n = len(compact_pattern)
     if n < 5 or len(compact_text) < max(3, n - max_delta):
         return False
