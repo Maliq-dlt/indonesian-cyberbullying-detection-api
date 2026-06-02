@@ -308,7 +308,7 @@ def predict_ensemble(req: TextRequest):
         category=determine_category(is_toxic, is_bully)
     )
 
-def query_ollama(text: str, model_name: str = "qwen2.5:3b") -> Dict[str, Any]:
+def query_ollama(text: str, model_name: str = "qwen2.5-coder:7b") -> Dict[str, Any]:
     url = "http://localhost:11434/api/generate"
     prompt = f"""
     Analisis teks Bahasa Indonesia di bawah ini untuk mendeteksi dua parameter:

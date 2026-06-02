@@ -56,7 +56,7 @@ class HybridResponse(BaseModel):
 
 class BatchTextRequest(BaseModel):
     texts: List[str]
-    model_name: Optional[str] = "qwen2.5:3b"
+    model_name: Optional[str] = "qwen2.5-coder:7b"
 
 class BatchItemResponse(BaseModel):
     text: str
