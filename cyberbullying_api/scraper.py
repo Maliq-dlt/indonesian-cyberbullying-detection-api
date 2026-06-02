@@ -1,11 +1,19 @@
 import re
+import json
 import urllib.parse
+import httpx
 import pandas as pd
 from typing import List, Dict, Any
 
+# Daftar instance Nitter publik untuk guest X scraping tanpa API Key
+NITTER_INSTANCES = [
+    "https://nitter.privacydev.net",
+    "https://nitter.poast.org",
+    "https://nitter.net"
+]
+
 def extract_tiktok_id(url: str) -> str:
     """Mengekstrak ID video dari URL TikTok."""
-    # Pattern contoh: https://www.tiktok.com/@user/video/1234567890123456789
     match = re.search(r'/video/(\d+)', url)
     if match:
         return match.group(1)
@@ -13,15 +21,47 @@ def extract_tiktok_id(url: str) -> str:
 
 def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> List[str]:
     """
-    Melakukan scraping komentar dari video TikTok.
-    Menggunakan fallback data jika terjadi pemblokiran anti-bot (cloud protection).
+    Melakukan scraping komentar dari video TikTok secara riil melalui parsing data rehidrasi.
+    Menggunakan fallback data jika diblokir anti-bot.
     """
     print(f"Memulai scraping komentar TikTok untuk: {url_or_id}")
+    comments = []
     
-    # Mencoba melakukan HTTP request simulasi (jika memungkinkan)
-    # Namun karena TikTok memiliki perlindungan Cloudflare/anti-bot yang sangat ketat di lokal,
-    # kita menyediakan dataset komentar media sosial Indonesia yang sangat realistis sebagai fallback.
-    
+    # Coba scrape riil dari rehydration script TikTok
+    if url_or_id.startswith("http"):
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+            }
+            with httpx.Client(timeout=6.0, follow_redirects=True) as client:
+                response = client.get(url_or_id, headers=headers)
+                if response.status_code == 200:
+                    # Mencari Universal Data Rehydration script
+                    json_matches = re.findall(r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>', response.text, re.DOTALL)
+                    if json_matches:
+                        raw_json = json_matches[0].strip()
+                        # Ekstrak teks komentar secara kasar melalui pola Regex '"text":"value"'
+                        comment_texts = re.findall(r'"text"\s*:\s*"([^"]+)"', raw_json)
+                        for c in comment_texts:
+                            c_clean = c.strip()
+                            # Abaikan string teknis/pendek
+                            if len(c_clean) > 4 and not c_clean.startswith("http") and c_clean not in comments:
+                                try:
+                                    decoded = c_clean.encode().decode('unicode-escape')
+                                    # Hapus unicode escape karakter yang tidak perlu
+                                    decoded = re.sub(r'\\u[0-9a-fA-F]{4}', '', decoded)
+                                    comments.append(decoded)
+                                except Exception:
+                                    comments.append(c_clean)
+                                if len(comments) >= max_comments:
+                                    break
+                    if comments:
+                        print(f"Sukses mendapatkan {len(comments)} komentar asli dari TikTok!")
+                        return comments
+        except Exception as e:
+            print(f"Warning: Gagal scraping TikTok secara langsung: {e}")
+
     # Realistis komentar TikTok Indonesia (beragam kelas: toxic, sarcasm, slang, aman)
     fallback_comments = [
         "Semangat terus bikin kontennya ya kak, suka banget!",
@@ -46,17 +86,43 @@ def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> List[str]:
         "pinter banget sih kamu, soal gampang begini aja salah semua."
     ]
     
-    # Mengembalikan data sesuai max_comments
+    print(f"Menggunakan {len(fallback_comments[:max_comments])} data fallback TikTok.")
     return fallback_comments[:max_comments]
 
 def scrape_x_tweets(query: str, max_tweets: int = 20) -> List[str]:
     """
-    Melakukan scraping tweet dari X (Twitter) berdasarkan query atau topik hangat.
-    Menggunakan fallback data jika API diblokir atau membutuhkan otentikasi premium.
+    Melakukan scraping tweet dari X (Twitter) secara riil menggunakan instance Nitter publik.
+    Menggunakan fallback data jika diblokir/rate-limited.
     """
     print(f"Memulai scraping tweet X untuk query: {query}")
+    tweets = []
     
+    encoded_query = urllib.parse.quote(query)
+    for instance in NITTER_INSTANCES:
+        url = f"{instance}/search?f=tweets&q={encoded_query}"
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            with httpx.Client(timeout=6.0) as client:
+                response = client.get(url, headers=headers)
+                if response.status_code == 200:
+                    html_content = response.text
+                    # Cari tweet-content menggunakan regex
+                    matches = re.findall(r'<div class="tweet-content[^>]*>(.*?)</div>', html_content, re.DOTALL)
+                    for m in matches:
+                        clean_tweet = re.sub(r'<[^>]+>', '', m).strip() # bersihkan tag HTML
+                        clean_tweet = html.unescape(clean_tweet)
+                        if clean_tweet and clean_tweet not in tweets:
+                            tweets.append(clean_tweet)
+                            if len(tweets) >= max_tweets:
+                                break
+                    if tweets:
+                        print(f"Sukses mendapatkan {len(tweets)} tweet asli dari {instance}!")
+                        return tweets
+        except Exception as e:
+            print(f"Warning: Gagal scraping X via {instance}: {e}")
+            
     # Realistis tweet X Indonesia (beragam kelas)
+    import html # Pastikan modul diimpor
     fallback_tweets = [
         "Wah pintar sekali politisi kita ya, rakyat kelaparan dia beli jet pribadi.",
         "Semoga hari ini menyenangkan untuk kita semua, jangan lupa sarapan!",
@@ -80,6 +146,7 @@ def scrape_x_tweets(query: str, max_tweets: int = 20) -> List[str]:
         "rajin sekali dia, bangun jam 1 siang terus minta warisan."
     ]
     
+    print(f"Menggunakan {len(fallback_tweets[:max_tweets])} data fallback X.")
     return fallback_tweets[:max_tweets]
 
 def save_scraped_data_to_csv(data: List[Dict[str, Any]], filepath: str) -> None:

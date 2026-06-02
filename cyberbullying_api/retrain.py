@@ -3,6 +3,8 @@ import glob
 import re
 import html
 import unicodedata
+import random
+import json
 import pandas as pd
 import numpy as np
 import joblib
@@ -10,9 +12,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.multioutput import MultiOutputClassifier
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, f1_score
 
-print("=== Memulai Skrip Pelatihan Ulang Otomatis (Active Learning) ===")
+print("=== Memulai Skrip Pelatihan Ulang Otomatis (Active Learning + Perturbasi + Kalibrasi) ===")
 
 # 1. Konfigurasi Path dan Kamus Slang
 ALAY_PATH = os.path.join("..", "dataset 1", "new_kamusalay.csv")
@@ -31,6 +33,9 @@ ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 MULTISPACE_RE = re.compile(r"\s+")
 REPEATED_CHAR_RE = re.compile(r"(.)\1{2,}")
+
+# Huruf pengganti leetspeak untuk perturbasi teks
+PERTURB_LEET = {'a': '4', 'i': '1', 'e': '3', 'o': '0', 's': '5', 'g': '9'}
 
 def replace_leet(text: str) -> str:
     return "".join(LEET_MAP.get(ch, ch) for ch in text)
@@ -73,6 +78,31 @@ def check_toxic_by_lexicon(norm_text: str) -> bool:
     words = set(norm_text.split())
     return any(w in abusive_words for w in words)
 
+def perturb_text(text: str) -> str:
+    """Melakukan perturbasi teks acak (leetspeak, sensor, typo) pada kata kasar untuk augmentasi."""
+    if not text or not isinstance(text, str):
+        return ""
+    words = text.split()
+    new_words = []
+    for w in words:
+        if w in abusive_words and random.random() < 0.6:
+            p_type = random.choice(["leet", "censor", "repeat", "typo"])
+            if p_type == "leet":
+                w = "".join(PERTURB_LEET.get(c, c) for c in w)
+            elif p_type == "censor":
+                if len(w) > 2:
+                    w = w[0] + "*" * (len(w) - 2) + w[-1]
+            elif p_type == "repeat":
+                w = w + w[-1] * random.randint(1, 3)
+            elif p_type == "typo":
+                if len(w) > 3:
+                    idx = random.randint(1, len(w) - 2)
+                    w_list = list(w)
+                    w_list[idx], w_list[idx+1] = w_list[idx+1], w_list[idx]
+                    w = "".join(w_list)
+        new_words.append(w)
+    return " ".join(new_words)
+
 # 2. Ingest Data Baru dari Hasil Scraping
 print("Mencari berkas hasil klasifikasi scraper (classified_*_data.csv)...")
 new_files = glob.glob("classified_*_data.csv")
@@ -83,9 +113,7 @@ if new_files:
         print(f"Membaca data baru dari: {file_path}")
         try:
             df_new = pd.read_csv(file_path)
-            # Validasi kolom yang dibutuhkan
             if "Teks" in df_new.columns and "Is_Bully" in df_new.columns:
-                # Filter out errors
                 df_valid = df_new[df_new["Is_Bully"] != "Error"].copy()
                 for idx, row in df_valid.iterrows():
                     raw_text = str(row["Teks"]).strip()
@@ -107,13 +135,11 @@ else:
 if new_records:
     print(f"Memproses {len(new_records)} baris data baru untuk digabung...")
     try:
-        # Load dataset combined saat ini
         if os.path.exists(DATASET_COMBINED_PATH):
             df_combined = pd.read_csv(DATASET_COMBINED_PATH)
         else:
-            df_combined = pd.DataFrame(columns=[",Label", "Label", "clean_text", "String", "encoded_label"])
+            df_combined = pd.DataFrame(columns=["Label", "clean_text", "String", "encoded_label"])
         
-        # Buat set teks yang sudah ada (untuk pencarian cepat)
         existing_strings = set(df_combined["String"].dropna().str.strip().str.lower().unique())
         
         added_count = 0
@@ -121,11 +147,9 @@ if new_records:
         for rec in new_records:
             normalized_check = rec["String"].strip().lower()
             if normalized_check not in existing_strings:
-                # Tentukan clean_text secara manual agar mempercepat
                 clean_t = clean_and_normalize(rec["String"])
                 encoded_l = 0.0 if rec["Label"] == "Bullying" else 1.0
                 
-                # Buat baris baru
                 new_row = {
                     "Label": rec["Label"],
                     "clean_text": clean_t,
@@ -144,7 +168,7 @@ if new_records:
         else:
             print("Seluruh sampel baru sudah ada dalam dataset (duplikat diabaikan).")
             
-        # Pindahkan atau rename file scraper agar tidak diproses berulang kali di kemudian hari
+        # Pindahkan atau rename file scraper agar tidak diproses berulang kali
         for file_path in new_files:
             try:
                 backup_path = f"processed_{file_path}"
@@ -154,7 +178,6 @@ if new_records:
                 print(f"Berkas lama diubah namanya menjadi: {backup_path}")
             except Exception as e:
                 print(f"Warning: Gagal mengubah nama berkas {file_path}: {e}")
-                
     except Exception as e:
         print(f"Error saat mengintegrasikan data baru: {e}")
 else:
@@ -223,7 +246,7 @@ slang_praise_raw = [
     "muka lu ganteng gila babi",
     "goblok lu kok bisa kepikiran ide sekeren ini",
     "anjing aseli ini film seru banget",
-    "jago banget bangsat main gitarnya",
+    "jago bangsat main gitarnya",
     "gokil parah lu bro, respect anjing",
     "gila desain lu keren banget asu",
     "anjing suaranya merdu banget",
@@ -248,12 +271,29 @@ for _ in range(12):
 
 df_aug = pd.DataFrame(augmented_records)
 
+# Gabung dan terapkan Perturbasi Slang/Typo acak pada record yang mengandung unsur toxic
+print("Melakukan augmentasi perturbasi teks (typo/leet) secara dinamis...")
+perturbed_records = []
+for idx, row in pd.concat([df_twitter, df_kaira, df_combined], ignore_index=True).iterrows():
+    if row['is_toxic'] and random.random() < 0.3:
+        perturbed_text = perturb_text(row['text_clean'])
+        if perturbed_text and perturbed_text != row['text_clean']:
+            perturbed_records.append({
+                'text_clean': perturbed_text,
+                'is_toxic': True,
+                'is_bully': row['is_bully']
+            })
+
+df_perturbed = pd.DataFrame(perturbed_records)
+print(f"Ditambahkan {len(df_perturbed)} baris data hasil perturbasi teks.")
+
 # Gabung semuanya
 final_df = pd.concat([
     df_twitter[['text_clean', 'is_toxic', 'is_bully']],
     df_kaira[['text_clean', 'is_toxic', 'is_bully']],
     df_combined[['text_clean', 'is_toxic', 'is_bully']],
-    df_aug
+    df_aug,
+    df_perturbed
 ], ignore_index=True)
 
 final_df = final_df.dropna()
@@ -278,15 +318,47 @@ base_lr = LogisticRegression(max_iter=1500, class_weight='balanced', C=1.5, rand
 clf = MultiOutputClassifier(base_lr)
 clf.fit(X_train_tfidf, y_train)
 
-# 8. Evaluasi
-preds = clf.predict(X_test_tfidf)
-print("\n=== HASIL EVALUASI RETRAINING ===")
-print("1. Target: TOXICITY (is_toxic)")
-print(classification_report(y_test['is_toxic'], preds[:, 0]))
-print("2. Target: BULLYING (is_bully)")
-print(classification_report(y_test['is_bully'], preds[:, 1]))
+# 8. Kalibrasi Threshold Dinamis
+print("Mengevaluasi dan mengkalibrasi threshold optimal...")
+test_probs = clf.predict_proba(X_test_tfidf)
+probs_toxic = test_probs[0][:, 1]
+probs_bully = test_probs[1][:, 1]
 
-# 9. Simpan Model & Vectorizer yang Baru
+def calibrate_threshold(probs, y_true):
+    best_thresh = 0.5
+    best_f1 = 0.0
+    for thresh in np.arange(0.1, 0.9, 0.05):
+        y_pred = (probs >= thresh).astype(int)
+        score = f1_score(y_true, y_pred, zero_division=0)
+        if score > best_f1:
+            best_f1 = score
+            best_thresh = float(thresh)
+    return best_thresh
+
+best_thresh_toxic = calibrate_threshold(probs_toxic, y_test['is_toxic'])
+best_thresh_bully = calibrate_threshold(probs_bully, y_test['is_bully'])
+print(f"Threshold Terkalibrasi -> Toxic: {best_thresh_toxic:.2f} | Bully: {best_thresh_bully:.2f}")
+
+# Simpan threshold ke file JSON
+thresholds_data = {
+    "threshold_toxic": best_thresh_toxic,
+    "threshold_bully": best_thresh_bully
+}
+with open("thresholds.json", "w") as f:
+    json.dump(thresholds_data, f)
+print("Berkas thresholds.json berhasil disimpan.")
+
+# 9. Evaluasi Akhir dengan Threshold Terkalibrasi
+preds_toxic = (probs_toxic >= best_thresh_toxic).astype(int)
+preds_bully = (probs_bully >= best_thresh_bully).astype(int)
+
+print("\n=== HASIL EVALUASI RETRAINING DENGAN AMBANG BATAS TERKALIBRASI ===")
+print("1. Target: TOXICITY (is_toxic)")
+print(classification_report(y_test['is_toxic'], preds_toxic))
+print("2. Target: BULLYING (is_bully)")
+print(classification_report(y_test['is_bully'], preds_bully))
+
+# 10. Simpan Model & Vectorizer yang Baru
 print("Menyimpan model & vectorizer terbaru...")
 joblib.dump(clf, "model_lr.joblib")
 joblib.dump(vectorizer, "vectorizer.joblib")

@@ -10,3 +10,7 @@ cyber-bullying-dataset/
 cyberbullying-indonesia/
 id-multi-label-hate-speech-and-abusive-language-detection/
 Dataset-Sentimen-Analisis-Bahasa-Indonesia/
+*.onnx
+*.onnx.data
+thresholds.json
+
