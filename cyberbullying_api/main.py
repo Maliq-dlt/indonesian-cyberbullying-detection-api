@@ -1,13 +1,20 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+from contextlib import asynccontextmanager
 from models import *
 import classifier
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    classifier.init_models()
+    yield
 
 app = FastAPI(
     title="Cyberbullying & Hate Speech Detection API",
     description="API untuk mendeteksi cyberbullying bahasa Indonesia menggunakan pendekatan Leksikon, Machine Learning, dan Deep Learning Transformers.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 import os
@@ -22,10 +29,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("startup")
-def startup_event():
-    classifier.init_models()
 
 @app.get("/")
 def read_root():
@@ -56,7 +59,7 @@ def models_status():
 
 @app.post("/predict/lexicon", response_model=LexiconResponse)
 def predict_lexicon(req: TextRequest):
-    return classifier.predict_lexicon(req.text, req.use_fuzzy)
+    return classifier.predict_lexicon(req.text, bool(req.use_fuzzy))
 
 @app.post("/predict/ml", response_model=MLResponse)
 def predict_ml(req: TextRequest):

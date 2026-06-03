@@ -8,8 +8,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.metrics import classification_report, accuracy_score
-import joblib
 import os
+import joblib
+from normalizer import init_slang_map, normalize_text
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 print("--- Memulai Proses Pelatihan Model Multi-Label ---")
 
@@ -17,52 +20,16 @@ print("--- Memulai Proses Pelatihan Model Multi-Label ---")
 # 1. Definisi Normalisasi Teks (Sama dengan API main.py)
 # ----------------------------------------------------
 
-LEET_MAP = {
-    "0": "o", "1": "i", "!": "i", "|": "i", "¡": "i", "3": "e", "4": "a",
-    "@": "a", "5": "s", "$": "s", "7": "t", "+": "t", "8": "b", "9": "g", "6": "g"
-}
-ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
-NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
-MULTISPACE_RE = re.compile(r"\s+")
-REPEATED_CHAR_RE = re.compile(r"(.)\1{2,}")
-
-def replace_leet(text: str) -> str:
-    return "".join(LEET_MAP.get(ch, ch) for ch in text)
-
-def reduce_repeated_chars(text: str, max_repeat: int = 2) -> str:
-    return REPEATED_CHAR_RE.sub(lambda m: m.group(1) * max_repeat, text)
-
-# Load Slang Map
-alay_path = os.path.join("..", "dataset 1", "new_kamusalay.csv")
-alay_df = pd.read_csv(alay_path, encoding='latin-1', header=None, names=['slang', 'formal'])
-alay_map = dict(zip(alay_df['slang'], alay_df['formal']))
-
-singkatan_path = os.path.join("..", "dataset 2", "kamus_singkatan.csv")
-singkatan_df = pd.read_csv(singkatan_path, encoding='latin-1')
-singkatan_df = singkatan_df.dropna(subset=['singkatan', 'asli'])
-singkatan_map = dict(zip(singkatan_df['singkatan'], singkatan_df['asli']))
-
-SLANG_MAP = {**singkatan_map, **alay_map}
-print(f"Memuat {len(SLANG_MAP)} pemetaan slang/singkatan.")
+# Inisialisasi peta slang secara global di normalizer
+alay_path = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "new_kamusalay.csv")
+singkatan_path = os.path.join(BASE_DIR, "..", "dataset", "ds_2", "kamus_singkatan.csv")
+init_slang_map(alay_path, singkatan_path)
 
 def clean_and_normalize(text: str) -> str:
-    if not isinstance(text, str):
-        return ""
-    raw = html.unescape(text)
-    raw = unicodedata.normalize("NFKC", raw)
-    raw = ZERO_WIDTH_RE.sub("", raw)
-    raw = raw.lower()
-    leet_replaced = replace_leet(raw)
-    spaced = NON_ALNUM_RE.sub(" ", leet_replaced)
-    spaced = MULTISPACE_RE.sub(" ", spaced).strip()
-    
-    words = spaced.split()
-    spaced = " ".join([SLANG_MAP.get(w, w) for w in words]) if SLANG_MAP else " ".join(words)
-    spaced = reduce_repeated_chars(spaced, max_repeat=2)
-    return spaced
+    return normalize_text(text)["spaced"]
 
 # Load Abusive Words List for Rule-Based Toxicity Labeling in other datasets
-abusive_path = os.path.join("..", "dataset 1", "abusive.csv")
+abusive_path = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "abusive.csv")
 df_abusive = pd.read_csv(abusive_path)
 abusive_words = set(df_abusive['ABUSIVE'].dropna().str.strip().str.lower().unique().tolist())
 
@@ -76,23 +43,31 @@ def check_toxic_by_lexicon(norm_text: str) -> bool:
 
 # Dataset 1 (Twitter)
 print("Memuat dataset Twitter...")
-df_twitter = pd.read_csv(os.path.join("..", "dataset 1", "data.csv"), encoding='latin-1')
+df_twitter = pd.read_csv(os.path.join(BASE_DIR, "..", "dataset", "ds_1", "data.csv"), encoding='latin-1')
 df_twitter = df_twitter.dropna(subset=['Tweet'])
 df_twitter['text_clean'] = df_twitter['Tweet'].apply(clean_and_normalize)
 df_twitter['is_toxic'] = df_twitter['Abusive'] == 1
 df_twitter['is_bully'] = df_twitter['HS'] == 1
 
 # Dataset Instagram (kairaamilanii)
-print("Memuat dataset Instagram...")
-df_kaira = pd.read_excel(os.path.join("..", "cyberbullying-indonesia", "DATASET CYBERBULLYING INSTAGRAM - FINAL.xlsx"))
-df_kaira = df_kaira.dropna(subset=['Komentar', 'Kategori'])
-df_kaira['text_clean'] = df_kaira['Komentar'].apply(clean_and_normalize)
-df_kaira['is_bully'] = df_kaira['Kategori'].map({'Bullying': True, 'Non-bullying': False})
-df_kaira['is_toxic'] = df_kaira['text_clean'].apply(check_toxic_by_lexicon)
+df_kaira = None
+instagram_path = os.path.join(BASE_DIR, "..", "dataset", "ds_instagram", "DATASET CYBERBULLYING INSTAGRAM - FINAL.xlsx")
+if os.path.exists(instagram_path):
+    print("Memuat dataset Instagram...")
+    try:
+        df_kaira = pd.read_excel(instagram_path)
+        df_kaira = df_kaira.dropna(subset=['Komentar', 'Kategori'])
+        df_kaira['text_clean'] = df_kaira['Komentar'].apply(clean_and_normalize)
+        df_kaira['is_bully'] = df_kaira['Kategori'].map({'Bullying': True, 'Non-bullying': False})
+        df_kaira['is_toxic'] = df_kaira['text_clean'].apply(check_toxic_by_lexicon)
+    except Exception as e:
+        print(f"Warning: Gagal memuat dataset Instagram: {e}")
+else:
+    print(f"Informasi: Dataset Instagram tidak ditemukan di {instagram_path}, dilewati.")
 
 # Dataset Kompilasi (dataset 2)
 print("Memuat dataset kompilasi...")
-df_combined = pd.read_csv(os.path.join("..", "dataset 2", "combined_dataset.csv"))
+df_combined = pd.read_csv(os.path.join(BASE_DIR, "..", "dataset", "ds_2", "combined_dataset.csv"))
 df_combined = df_combined.dropna(subset=['String', 'Label'])
 df_combined['text_clean'] = df_combined['String'].apply(clean_and_normalize)
 df_combined['is_bully'] = df_combined['Label'].isin(['Bullying', 'negatif', 'negative'])
@@ -168,12 +143,13 @@ for _ in range(12):
 df_aug = pd.DataFrame(augmented_records)
 print(f"Data augmentasi siap: {len(df_aug)} baris.")
 
-# 1. Gabungkan dataset dasar asli
-base_df = pd.concat([
-    df_twitter[['text_clean', 'is_toxic', 'is_bully']],
-    df_kaira[['text_clean', 'is_toxic', 'is_bully']],
-    df_combined[['text_clean', 'is_toxic', 'is_bully']]
-], ignore_index=True)
+# 1. Gabungkan dataset dasar asli yang berhasil dimuat
+dfs_to_concat = [df_twitter[['text_clean', 'is_toxic', 'is_bully']]]
+if df_kaira is not None:
+    dfs_to_concat.append(df_kaira[['text_clean', 'is_toxic', 'is_bully']])
+dfs_to_concat.append(df_combined[['text_clean', 'is_toxic', 'is_bully']])
+
+base_df = pd.concat(dfs_to_concat, ignore_index=True)
 
 base_df = base_df.dropna()
 base_df = base_df[base_df['text_clean'] != ""]
@@ -226,7 +202,7 @@ clf.fit(X_train_tfidf, y_train)
 # ----------------------------------------------------
 # 6. Evaluation
 # ----------------------------------------------------
-preds = clf.predict(X_test_tfidf)
+preds = np.asarray(clf.predict(X_test_tfidf))
 
 print("\n=== EVALUASI MODEL LATIH (TEST SET) ===")
 print("1. Target: TOXICITY (is_toxic)")
@@ -249,7 +225,7 @@ for s in test_sentences:
     norm = clean_and_normalize(s)
     feats = vectorizer.transform([norm])
     pred_probs = clf.predict_proba(feats)
-    pred_l = clf.predict(feats)[0]
+    pred_l = np.asarray(clf.predict(feats))[0]
     
     # Extract probabilities
     prob_toxic = pred_probs[0][0][1]
@@ -263,6 +239,6 @@ for s in test_sentences:
 # 7. Saving Models
 # ----------------------------------------------------
 print("\nMenyimpan model & vectorizer ke disk...")
-joblib.dump(clf, "model_lr.joblib")
-joblib.dump(vectorizer, "vectorizer.joblib")
+joblib.dump(clf, os.path.join(BASE_DIR, "models", "model_lr.joblib"))
+joblib.dump(vectorizer, os.path.join(BASE_DIR, "models", "vectorizer.joblib"))
 print("Semua berkas model berhasil diperbarui dan disimpan!")

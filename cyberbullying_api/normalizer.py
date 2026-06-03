@@ -107,29 +107,61 @@ def contains_word_or_phrase(spaced_text: str, spaced_pattern: str) -> bool:
     return re.search(pattern, spaced_text) is not None
 
 def fuzzy_contains(compact_text: str, compact_pattern: str, threshold: float = 0.92, max_delta: int = 2) -> bool:
-    """Mencocokkan kata berdasar kesamaan difflib (fuzzy matching) untuk kata tersamar."""
+    """Mencocokkan kata berdasar kesamaan difflib (fuzzy matching) untuk kata tersamar secara efisien."""
     if not compact_text or not compact_pattern:
         return False
     
-    # Batasi panjang teks untuk menghindari ReDoS (Denial of Service via CPU)
+    # Batasi panjang teks untuk menghindari CPU exhaustion
     if len(compact_text) > 200:
         compact_text = compact_text[:200]
         
     n = len(compact_pattern)
     if n < 5 or len(compact_text) < max(3, n - max_delta):
         return False
+        
     min_len = max(3, n - max_delta)
     max_len = n + max_delta
+    
+    from collections import Counter
     from difflib import SequenceMatcher
+    import math
+    
+    p_counts = Counter(compact_pattern)
+    
     for size in range(min_len, max_len + 1):
         if size > len(compact_text):
             continue
-        for i in range(0, len(compact_text) - size + 1):
-            segment = compact_text[i:i + size]
-            ratio = SequenceMatcher(None, segment, compact_pattern).ratio()
-            if ratio >= threshold:
+            
+        min_overlap = math.ceil(threshold * (size + n) / 2)
+        
+        # O(1) sliding window count
+        s_counts = Counter(compact_text[:size])
+        overlap = sum(min(s_counts[c], p_counts.get(c, 0)) for c in s_counts)
+        
+        if overlap >= min_overlap:
+            segment = compact_text[0:size]
+            if SequenceMatcher(None, segment, compact_pattern).ratio() >= threshold:
                 return True
+                
+        for i in range(1, len(compact_text) - size + 1):
+            char_out = compact_text[i - 1]
+            char_in = compact_text[i + size - 1]
+            
+            if s_counts[char_out] <= p_counts.get(char_out, 0):
+                overlap -= 1
+            s_counts[char_out] -= 1
+            
+            s_counts[char_in] = s_counts.get(char_in, 0) + 1
+            if s_counts[char_in] <= p_counts.get(char_in, 0):
+                overlap += 1
+                
+            if overlap >= min_overlap:
+                segment = compact_text[i:i + size]
+                if SequenceMatcher(None, segment, compact_pattern).ratio() >= threshold:
+                    return True
+                    
     return False
+
 
 def detect_sentiment_contrast(spaced_text: str) -> bool:
     """Mendeteksi kontras sentimen sederhana (pujian + indikator kegagalan/ejekan) untuk menyaring sarkasme awal."""

@@ -6,11 +6,13 @@ __pycache__/
 .gemini/
 .git/
 # Ignored cloned repositories inside the workspace (since we only want to push the API and notebook)
-cyber-bullying-dataset/
-cyberbullying-indonesia/
-id-multi-label-hate-speech-and-abusive-language-detection/
-Dataset-Sentimen-Analisis-Bahasa-Indonesia/
+dataset/ds_cyberbullying/
+dataset/ds_instagram/
+dataset/ds_hate_speech/
+dataset/ds_sentimen/
 *.onnx
 *.onnx.data
 thresholds.json
+cyberbullying_api/cache/
 
+*cookie*.json

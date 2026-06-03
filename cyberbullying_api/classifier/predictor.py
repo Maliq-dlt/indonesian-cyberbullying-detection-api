@@ -1,11 +1,15 @@
 import os
+import re
 import json
-import httpx
 import joblib
 import torch
 import numpy as np
 import pandas as pd
+import asyncio
+import subprocess
+import sys
 from typing import List, Dict, Any
+
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 try:
     import onnxruntime as ort
@@ -22,13 +26,12 @@ from normalizer import (
     detect_sentiment_contrast,
     BASE_CYBERBULLYING_LEXICON
 )
+from classifier.database import init_cache_db, save_classification_memory, get_classification_memory
+from classifier.llm import query_ollama_async, OLLAMA_URL
+import classifier.llm as llm_module
 
-# Tentukan direktori dasar dinamis untuk pathing absolut
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Konfigurasi Ollama dinamis dari environment variables
-OLLAMA_URL = os.getenv("OLLAMA_URL", "")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+# Tentukan direktori dasar dinamis untuk pathing absolut (parent dari classifier/ yaitu cyberbullying_api/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Global variables for models and prepared lexicon
 PREPARED_LEXICON = []
@@ -45,7 +48,7 @@ THRESHOLDS = {
 
 def load_thresholds():
     global THRESHOLDS
-    thresholds_path = os.path.join(BASE_DIR, "thresholds.json")
+    thresholds_path = os.path.join(BASE_DIR, "models", "thresholds.json")
     if os.path.exists(thresholds_path):
         try:
             with open(thresholds_path, "r") as f:
@@ -59,17 +62,20 @@ def init_models():
     
     print("=== Inisialisasi Model Klasifikasi ===")
     
+    # 0. Inisialisasi Basis Data Caching LLM
+    init_cache_db()
+    
     # 1. Load Slang Mapping (menggunakan path absolut dinamis)
     print("Memuat kamus slang alay & singkatan...")
-    alay_path = os.path.join(BASE_DIR, "..", "dataset 1", "new_kamusalay.csv")
-    singkatan_path = os.path.join(BASE_DIR, "..", "dataset 2", "kamus_singkatan.csv")
+    alay_path = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "new_kamusalay.csv")
+    singkatan_path = os.path.join(BASE_DIR, "..", "dataset", "ds_2", "kamus_singkatan.csv")
     slang_map = init_slang_map(alay_path, singkatan_path)
     print(f"Berhasil memuat {len(slang_map)} pemetaan slang/singkatan.")
 
     # 2. Load and Prepare Lexicon
     print("Memuat kata kasar dari abusive.csv...")
     try:
-        abusive_path = os.path.join(BASE_DIR, "..", "dataset 1", "abusive.csv")
+        abusive_path = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "abusive.csv")
         df_abusive = pd.read_csv(abusive_path)
         abusive_words = df_abusive['ABUSIVE'].dropna().unique().tolist()
         
@@ -88,6 +94,9 @@ def init_models():
     except Exception as e:
         print("Warning: Gagal memuat abusive.csv, menggunakan baseline leksikon:", e)
         full_lexicon = BASE_CYBERBULLYING_LEXICON
+        abusive_words = []
+
+    llm_module.ABUSIVE_WORDS_SET = set(abusive_words)
 
     PREPARED_LEXICON = prepare_lexicon(full_lexicon)
     print(f"Leksikon siap: total {len(PREPARED_LEXICON)} kata/frasa.")
@@ -95,11 +104,36 @@ def init_models():
     # 3. Load Machine Learning Models
     print("Memuat model Machine Learning (Logistic Regression & TF-IDF)...")
     try:
-        ML_MODEL = joblib.load(os.path.join(BASE_DIR, "model_lr.joblib"))
-        ML_VECTORIZER = joblib.load(os.path.join(BASE_DIR, "vectorizer.joblib"))
+        ML_MODEL = joblib.load(os.path.join(BASE_DIR, "models", "model_lr.joblib"))
+        ML_VECTORIZER = joblib.load(os.path.join(BASE_DIR, "models", "vectorizer.joblib"))
         print("Model ML berhasil dimuat!")
     except Exception as e:
         print("Error: Gagal memuat model Machine Learning:", e)
+
+    # 3.5. Load RAG Pool untuk Few-Shot LLM Dinamis
+    print("Memuat dataset RAG pool untuk LLM...")
+    try:
+        combined_path = os.path.join(BASE_DIR, "..", "dataset", "ds_2", "combined_dataset.csv")
+        if os.path.exists(combined_path):
+            df_combined = pd.read_csv(combined_path)
+            df_combined = df_combined.dropna(subset=["String", "Label"])
+            # Ambil sampel seimbang (150 bully, 150 non-bully) jika mencukupi
+            df_bully_pool = df_combined[df_combined["Label"].isin(["Bullying", "negatif", "negative"])]
+            df_nonbully_pool = df_combined[~df_combined["Label"].isin(["Bullying", "negatif", "negative"])]
+            df_bully = df_bully_pool.sample(min(150, len(df_bully_pool)), random_state=42, replace=False)
+            df_nonbully = df_nonbully_pool.sample(min(150, len(df_nonbully_pool)), random_state=42, replace=False)
+            df_sampled = pd.concat([df_bully, df_nonbully], ignore_index=True)
+            
+            llm_module.RAG_POOL_TEXTS = df_sampled["String"].tolist()
+            llm_module.RAG_POOL_LABELS = df_sampled["Label"].tolist()
+            
+            if ML_VECTORIZER is not None:
+                llm_module.RAG_POOL_VECTORS = ML_VECTORIZER.transform(llm_module.RAG_POOL_TEXTS)
+                print(f"RAG Pool siap dengan {len(llm_module.RAG_POOL_TEXTS)} sampel!")
+        else:
+            print("Warning: dataset combined tidak ditemukan untuk RAG pool, Few-Shot statis digunakan.")
+    except Exception as e:
+        print("Warning: Gagal memuat RAG pool:", e)
 
     # 4. Load thresholds.json
     load_thresholds()
@@ -113,12 +147,10 @@ def init_models():
         print("Warning: Gagal memuat tokenizer:", e)
 
     # Cek model quantized ONNX
-    onnx_path = os.path.join(BASE_DIR, "model_quantized.onnx")
+    onnx_path = os.path.join(BASE_DIR, "models", "model_quantized.onnx")
     if not os.path.exists(onnx_path):
         print("model_quantized.onnx tidak ditemukan. Menjalankan ekspor otomatis...")
         try:
-            import subprocess
-            import sys
             export_script = os.path.join(BASE_DIR, "export_onnx.py")
             subprocess.run([sys.executable, export_script], check=True)
         except Exception as e:
@@ -153,7 +185,7 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
                 "input_ids": inputs["input_ids"].astype(np.int64),
                 "attention_mask": inputs["attention_mask"].astype(np.int64)
             }
-            ort_outputs = TRANSFORMER_SESSION.run(None, ort_inputs)
+            ort_outputs: Any = TRANSFORMER_SESSION.run(None, ort_inputs)
             logits = ort_outputs[0][0]
             probs = sigmoid(logits)
             return {
@@ -301,82 +333,7 @@ def predict_ensemble(text: str) -> EnsembleResponse:
         category=determine_category(is_toxic, is_bully)
     )
 
-async def query_ollama_async(text: str, model_name: str = None) -> Dict[str, Any]:
-    if not OLLAMA_URL:
-        return {
-            "is_toxic": False,
-            "is_bully": False,
-            "reason": "Ollama URL tidak dikonfigurasi.",
-            "success": False
-        }
-    
-    url = f"{OLLAMA_URL.rstrip('/')}/api/generate"
-    
-    if not model_name:
-        model_name = OLLAMA_MODEL
-    
-    # Skema output terstruktur yang formal
-    schema = {
-        "type": "object",
-        "properties": {
-            "is_toxic": {"type": "boolean"},
-            "is_bully": {"type": "boolean"},
-            "reason": {"type": "string"}
-        },
-        "required": ["is_toxic", "is_bully", "reason"]
-    }
-    
-    # System prompt linguistik Indonesia yang mendalam (mengakomodasi casual slang vs bullying & sindiran/sarkasme)
-    system_instruction = (
-        "Sistem: Anda adalah ahli sosiolinguistik bahasa Indonesia yang spesifik mendeteksi cyberbullying, hate speech, dan sarkasme.\n"
-        "Tugas: Analisis teks secara objektif dan klasifikasikan ke parameter 'is_toxic' dan 'is_bully'.\n"
-        "Panduan Nuansa Bahasa Gaul Indonesia:\n"
-        "- Bedakan penggunaan kata kasar seperti 'anjing', 'bangsat', 'bego', 'goblok' jika digunakan sebagai pujian/casual slang (is_toxic=true, is_bully=false) seperti 'anjing keren banget lu bang'.\n"
-        "- Deteksi sarkasme / ejekan halus sebagai intimidasi personal (is_toxic=false, is_bully=true) seperti 'ganteng banget mukalu kaya spakbor mio' atau 'pintar sekali kamu, nilai ujianmu nol'.\n"
-        "- Serangan verbal kasar langsung dinilai sebagai keduanya (is_toxic=true, is_bully=true)."
-    )
-    
-    prompt = f"""
-    {system_instruction}
-
-    Gunakan format JSON yang valid mengikuti skema ini secara ketat:
-    {json.dumps(schema, indent=2)}
-
-    Teks yang dianalisis:
-    "{text}"
-    """
-    
-    payload = {
-        "model": model_name,
-        "prompt": prompt,
-        "stream": False,
-        "format": schema
-    }
-    
-    try:
-        # Peningkatan timeout menjadi 15.0 detik untuk keandalan loading VRAM
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(url, json=payload)
-            if response.status_code == 200:
-                res_json = response.json()
-                content = json.loads(res_json["response"])
-                return {
-                    "is_toxic": bool(content.get("is_toxic", False)),
-                    "is_bully": bool(content.get("is_bully", False)),
-                    "reason": str(content.get("reason", "Analisis Ollama selesai.")),
-                    "success": True
-                }
-    except Exception as e:
-        print("Warning: Gagal menghubungi Ollama dengan skema JSON:", e)
-        
-    return {
-        "is_toxic": False,
-        "is_bully": False,
-        "reason": "Gagal terhubung ke Ollama lokal dengan format skema.",
-        "success": False
-    }
-
-async def predict_hybrid(text: str) -> HybridResponse:
+async def _predict_hybrid_internal(text: str) -> HybridResponse:
     if ML_MODEL is None or ML_VECTORIZER is None:
         return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.")
     
@@ -429,8 +386,8 @@ async def predict_hybrid(text: str) -> HybridResponse:
     tr_toxic = res_tr["toxic_prob"]
     tr_bully = res_tr["bully_prob"]
     
-    ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic
-    ens_bully = 0.65 * ml_bully + 0.35 * tr_bully
+    ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
+    ens_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
     
     if (abs(ens_toxic - t_t) >= 0.25) and (abs(ens_bully - t_b) >= 0.25):
         is_toxic = ens_toxic >= t_t
@@ -477,3 +434,17 @@ async def predict_hybrid(text: str) -> HybridResponse:
         decision_source="Fallback (Ensemble Terbatas)",
         reason="Ollama lokal tidak merespons, menggunakan keputusan cadangan dari model lokal."
     )
+
+async def predict_hybrid(text: str) -> HybridResponse:
+    # 1. Cek memori klasifikasi historis terlebih dahulu
+    cached_memory = await get_classification_memory(text)
+    if cached_memory:
+        print(f"[MEMORY HIT] Mengambil keputusan klasifikasi historis (Redis/PostgreSQL) untuk: '{text}'")
+        return cached_memory
+
+    # Jalankan inferensi hybrid
+    res = await _predict_hybrid_internal(text)
+
+    # Simpan hasil analisis baru ke dalam memori database persistent
+    await save_classification_memory(res)
+    return res

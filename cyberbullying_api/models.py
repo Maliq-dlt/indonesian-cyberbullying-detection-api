@@ -56,7 +56,7 @@ class HybridResponse(BaseModel):
 
 class BatchTextRequest(BaseModel):
     texts: List[str] = Field(..., min_length=1, max_length=50)
-    model_name: Optional[str] = "qwen2.5-coder:7b"
+    model_name: Optional[str] = "llama3.2:3b"
 
 class BatchItemResponse(BaseModel):
     text: str

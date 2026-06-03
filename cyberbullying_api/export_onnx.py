@@ -18,8 +18,11 @@ onnx.shape_inference.infer_shapes_path = dummy_infer_shapes_path
 
 def export_to_onnx():
     model_name = "nahiar/hatespeech-abusive-xlm-roberta-v1"
-    onnx_path = "model.onnx"
-    quantized_path = "model_quantized.onnx"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    models_dir = os.path.join(base_dir, "models")
+    os.makedirs(models_dir, exist_ok=True)
+    onnx_path = os.path.join(models_dir, "model.onnx")
+    quantized_path = os.path.join(models_dir, "model_quantized.onnx")
 
     print(f"=== Menyiapkan Ekspor ONNX untuk model: {model_name} ===")
     
