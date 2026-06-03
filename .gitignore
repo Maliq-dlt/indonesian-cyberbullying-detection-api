@@ -16,3 +16,10 @@ thresholds.json
 cyberbullying_api/cache/
 
 *cookie*.json
+
+.env
+.env*
+
+# Ignore dynamically generated retraining model versions
+cyberbullying_api/models/model_lr_*.joblib
+cyberbullying_api/models/vectorizer_*.joblib

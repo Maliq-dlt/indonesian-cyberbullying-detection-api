@@ -4,13 +4,15 @@ import urllib.parse
 import httpx
 import os
 import time
+import asyncio
 from typing import List, Tuple
 
+
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.async_api import async_playwright
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
-    sync_playwright = None  # type: ignore
+    async_playwright = None  # type: ignore
     PLAYWRIGHT_AVAILABLE = False
 
 from scraper.templates import generate_dynamic_comments
@@ -25,15 +27,15 @@ def extract_tiktok_id(url: str) -> str:
         return match.group(1)
     return ""
 
-def get_first_tiktok_video_from_search(search_url: str) -> str:
+async def get_first_tiktok_video_from_search(search_url: str) -> str:
     """Mencari video pertama di TikTok berdasarkan halaman hasil pencarian."""
-    if not PLAYWRIGHT_AVAILABLE or sync_playwright is None:
+    if not PLAYWRIGHT_AVAILABLE or async_playwright is None:
         return ""
     video_url = ""
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
@@ -41,27 +43,28 @@ def get_first_tiktok_video_from_search(search_url: str) -> str:
             if os.path.exists(COOKIES_TIKTOK_PATH):
                 with open(COOKIES_TIKTOK_PATH, "r") as f:
                     cookies = json.load(f)
-                    context.add_cookies(cookies)
-            page = context.new_page()
-            page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
-            page.wait_for_selector("a[href*='/video/']", timeout=7000)
-            links = page.query_selector_all("a[href*='/video/']")
+                    await context.add_cookies(cookies)
+            page = await context.new_page()
+            await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
+            await page.wait_for_selector("a[href*='/video/']", timeout=7000)
+            links = await page.query_selector_all("a[href*='/video/']")
             for link in links:
-                href = link.get_attribute("href")
+                href = await link.get_attribute("href")
                 if href and "/video/" in href:
                     # Pastikan URL absolut, bukan path relatif
                     if href.startswith("/"):
                         href = "https://www.tiktok.com" + href
                     video_url = href
                     break
-            browser.close()
+            await browser.close()
     except Exception as e:
         print(f"Error mencari video TikTok via search: {e}")
     return video_url
 
-def scrape_tiktok_comments_playwright(url_or_id: str, max_comments: int = 20) -> List[str]:
+
+async def scrape_tiktok_comments_playwright(url_or_id: str, max_comments: int = 20) -> List[str]:
     """Mengikis komentar TikTok menggunakan Playwright + Session Cookies."""
-    if not PLAYWRIGHT_AVAILABLE or sync_playwright is None:
+    if not PLAYWRIGHT_AVAILABLE or async_playwright is None:
         print("Warning: Playwright tidak terpasang. Menjalankan fallback.")
         return []
     if not os.path.exists(COOKIES_TIKTOK_PATH):
@@ -77,74 +80,74 @@ def scrape_tiktok_comments_playwright(url_or_id: str, max_comments: int = 20) ->
         else:
             print(f"Mencari video TikTok terpopuler untuk kata kunci: '{url_or_id}'")
             search_url = f"https://www.tiktok.com/search/video?q={urllib.parse.quote(url_or_id)}"
-            url = get_first_tiktok_video_from_search(search_url)
+            url = await get_first_tiktok_video_from_search(search_url)
             if not url:
                 print("Warning: Tidak menemukan video untuk kata kunci tersebut.")
                 return []
 
     comments = []
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             
             with open(COOKIES_TIKTOK_PATH, "r") as f:
                 cookies = json.load(f)
-                context.add_cookies(cookies)
+                await context.add_cookies(cookies)
                 
-            page = context.new_page()
+            page = await context.new_page()
             
             # FITUR BARU: Mengambil video FYP teratas
             if url.lower() == "fyp":
                 print("Membuka halaman FYP TikTok untuk mencari video trending...")
-                page.goto("https://www.tiktok.com/foryou", wait_until="domcontentloaded", timeout=20000)
-                page.wait_for_selector("a[href*='/video/']", timeout=10000)
-                links = page.query_selector_all("a[href*='/video/']")
+                await page.goto("https://www.tiktok.com/foryou", wait_until="domcontentloaded", timeout=20000)
+                await page.wait_for_selector("a[href*='/video/']", timeout=10000)
+                links = await page.query_selector_all("a[href*='/video/']")
                 if links:
-                    url_attr = links[0].get_attribute("href")
+                    url_attr = await links[0].get_attribute("href")
                     if url_attr:
                         url = url_attr
                         print(f"Video FYP teratas ditemukan: {url}")
                     else:
                         print("Gagal menemukan href video FYP, membatalkan scraping.")
-                        browser.close()
+                        await browser.close()
                         return comments
                 else:
                     print("Gagal menemukan video FYP, membatalkan scraping.")
-                    browser.close()
+                    await browser.close()
                     return comments
 
             print(f"Membuka halaman video TikTok: {url}")
-            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
             
             # Tunggu elemen komentar dimuat
             try:
-                page.wait_for_selector("[data-e2e='comment-text']", timeout=7000)
+                await page.wait_for_selector("[data-e2e='comment-text']", timeout=7000)
             except Exception:
                 pass
                 
             # Scroll beberapa kali untuk lazy loading komentar
             for _ in range(5):
-                page.evaluate("window.scrollBy(0, window.innerHeight)")
-                time.sleep(1.2)
+                await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                await asyncio.sleep(1.2)
                 
-            elements = page.query_selector_all("[data-e2e='comment-text']")
+            elements = await page.query_selector_all("[data-e2e='comment-text']")
             for el in elements:
-                text = el.inner_text().strip()
+                text = (await el.inner_text()).strip()
                 # Menyaring komentar stiker/gambar (inner_text-nya kosong) dan memfilter duplikat
                 if text and text not in comments:
                     comments.append(text)
                     if len(comments) >= max_comments:
                         break
-            browser.close()
+            await browser.close()
     except Exception as e:
         print(f"Error scraping TikTok via Playwright: {e}")
     return comments
 
-def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> Tuple[List[str], bool]:
+async def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> Tuple[List[str], bool]:
     """
     Melakukan scraping komentar dari video TikTok secara riil menggunakan Playwright (utama)
     atau rehidrasi script (fallback), lalu generator tiruan dinamis jika semuanya gagal.
@@ -153,7 +156,7 @@ def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> Tuple[List
     
     # Coba Opsi Utama: Playwright dengan Session Cookies
     if PLAYWRIGHT_AVAILABLE and os.path.exists(COOKIES_TIKTOK_PATH):
-        comments = scrape_tiktok_comments_playwright(url_or_id, max_comments)
+        comments = await scrape_tiktok_comments_playwright(url_or_id, max_comments)
         if comments:
             print(f"Sukses mendapatkan {len(comments)} komentar asli dari TikTok via Playwright!")
             return comments, True
@@ -165,8 +168,8 @@ def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> Tuple[List
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
             }
-            with httpx.Client(timeout=6.0, follow_redirects=True) as client:
-                response = client.get(url_or_id, headers=headers)
+            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
+                response = await client.get(url_or_id, headers=headers)
                 if response.status_code == 200:
                     json_matches = re.findall(r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)</script>', response.text, re.DOTALL)
                     if json_matches:
@@ -192,3 +195,4 @@ def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> Tuple[List
 
     # Fallback ke generator dinamis jika semuanya gagal
     return generate_dynamic_comments(url_or_id, max_comments), False
+

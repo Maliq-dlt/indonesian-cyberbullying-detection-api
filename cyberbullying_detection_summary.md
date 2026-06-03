@@ -1,6 +1,12 @@
 # Dokumentasi Sistem: Mekanisme dan Rangkuman Deteksi Cyberbullying Indonesia
 
-Dokumen ini menjelaskan arsitektur, pipa normalisasi teks, mekanisme deteksi hibrida (Leksikon, Machine Learning, dan Deep Learning), serta hasil evaluasi performa pada proyek deteksi cyberbullying bahasa Indonesia.
+> **🚀 Enterprise Update (Juni 2026):** Sistem telah di- *upgrade* secara masif dengan kapabilitas *Enterprise-Tier*: 
+> - **LLM Streaming (SSE):** Pengguna dapat melihat hasil penalaran (Chain-of-Thought) AI mengetik secara *real-time*.
+> - **Vector Search (pgvector):** Pencarian *Few-Shot* RAG kini ditangani oleh PostgreSQL *pgvector* menggunakan model *sentence-transformers*, menaikkan skalabilitas hingga jutaan riwayat.
+> - **Active Learning & Rollback:** Terdapat mekanisme umpan balik (Koreksi Manusia) untuk pelatihan ulang otomatis, yang diproteksi oleh *Auto-Rollback* jika *F1-score* menurun lebih dari 8%.
+
+Dokumen ini menjelaskan arsitektur, pipa normalisasi teks, mekanisme deteksi hibrida (Leksikon, Machine Learning, dan Deep Learning), serta hasil evaluasi
+ performa pada proyek deteksi cyberbullying bahasa Indonesia.
 
 ---
 

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: cyberbullying_pg
     restart: always
     environment:
@@ -41,6 +41,7 @@ services:
       - PG_URL=postgresql://cyber_user:cyber_password@db:5432/cyberbullying_db
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://host.docker.internal:11434
+      - HF_TOKEN=${HF_TOKEN}
     depends_on:
       db:
         condition: service_healthy
@@ -66,6 +67,7 @@ services:
       - PG_URL=postgresql://cyber_user:cyber_password@db:5432/cyberbullying_db
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_URL=http://host.docker.internal:11434
+      - HF_TOKEN=${HF_TOKEN}
     depends_on:
       db:
         condition: service_healthy

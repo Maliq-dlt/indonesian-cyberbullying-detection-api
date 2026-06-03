@@ -1,0 +1,10 @@
+{
+    "active_version": "20260603_173200",
+    "model_file": "model_lr_20260603_173200.joblib",
+    "vectorizer_file": "vectorizer_20260603_173200.joblib",
+    "f1_toxic": 0.8793296089385475,
+    "f1_bully": 0.8390107326178254,
+    "threshold_toxic": 0.5500000000000002,
+    "threshold_bully": 0.5000000000000001,
+    "updated_at": "2026-06-03 17:32:01.196267"
+}

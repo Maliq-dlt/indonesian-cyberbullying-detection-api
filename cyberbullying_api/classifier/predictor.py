@@ -16,6 +16,11 @@ try:
 except ImportError:
     ort = None
 
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None
+
 from models import *
 from normalizer import (
     normalize_text,
@@ -40,6 +45,7 @@ ML_VECTORIZER = None
 TRANSFORMER_SESSION = None
 TRANSFORMER_TOKENIZER = None
 TRANSFORMER_MODEL = None
+EMBEDDING_MODEL = None
 
 THRESHOLDS = {
     "threshold_toxic": 0.5,
@@ -58,7 +64,7 @@ def load_thresholds():
             print("Warning: Gagal memuat thresholds.json, menggunakan default 0.5:", e)
 
 def init_models():
-    global PREPARED_LEXICON, ML_MODEL, ML_VECTORIZER, TRANSFORMER_SESSION, TRANSFORMER_TOKENIZER, TRANSFORMER_MODEL
+    global PREPARED_LEXICON, ML_MODEL, ML_VECTORIZER, TRANSFORMER_SESSION, TRANSFORMER_TOKENIZER, TRANSFORMER_MODEL, EMBEDDING_MODEL
     
     print("=== Inisialisasi Model Klasifikasi ===")
     
@@ -139,20 +145,28 @@ def init_models():
     load_thresholds()
 
     # 5. Load Deep Learning Transformers (ONNX / PyTorch)
-    print("Memuat model Deep Learning Transformers XLM-RoBERTa...")
-    model_name = "nahiar/hatespeech-abusive-xlm-roberta-v1"
+    model_name = os.getenv("TRANSFORMER_MODEL_PATH", "nahiar/hatespeech-abusive-xlm-roberta-v1")
+    print(f"Memuat model Deep Learning Transformers dari: {model_name}...")
     try:
         TRANSFORMER_TOKENIZER = AutoTokenizer.from_pretrained(model_name)
     except Exception as e:
         print("Warning: Gagal memuat tokenizer:", e)
 
-    # Cek model quantized ONNX
-    onnx_path = os.path.join(BASE_DIR, "models", "model_quantized.onnx")
+    # Cek model quantized ONNX (Gunakan nama file spesifik model agar tidak tertukar jika ganti model)
+    model_slug = model_name.replace("/", "_").replace("\\", "_").replace(".", "_")
+    onnx_filename = f"model_{model_slug}_quantized.onnx"
+    onnx_path = os.path.join(BASE_DIR, "models", onnx_filename)
+    
     if not os.path.exists(onnx_path):
-        print("model_quantized.onnx tidak ditemukan. Menjalankan ekspor otomatis...")
+        print(f"{onnx_filename} tidak ditemukan. Menjalankan ekspor otomatis...")
         try:
             export_script = os.path.join(BASE_DIR, "export_onnx.py")
-            subprocess.run([sys.executable, export_script], check=True)
+            subprocess.run([sys.executable, export_script], check=True, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+            # export_onnx.py hardcode ke model_quantized.onnx, kita pindahkan ke path spesifik model
+            legacy_onnx = os.path.join(BASE_DIR, "models", "model_quantized.onnx")
+            if os.path.exists(legacy_onnx):
+                import shutil
+                shutil.move(legacy_onnx, onnx_path)
         except Exception as e:
             print("Gagal ekspor ONNX otomatis, fallback ke PyTorch:", e)
 
@@ -170,6 +184,17 @@ def init_models():
             print("Model PyTorch berhasil dimuat (ONNX Fallback)!")
         except Exception as e:
             print("Warning: Gagal memuat model PyTorch:", e)
+
+    # 6. Load Sentence Transformer for pgvector/RAG
+    print("Memuat model sentence-transformer untuk vector embedding...")
+    try:
+        if SentenceTransformer is not None:
+            EMBEDDING_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            print("Model sentence-transformer (all-MiniLM-L6-v2) berhasil dimuat!")
+        else:
+            print("Warning: sentence-transformers tidak terinstal. Vector search dinonaktifkan.")
+    except Exception as e:
+        print("Warning: Gagal memuat sentence-transformer model:", e)
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
@@ -336,7 +361,7 @@ def predict_ensemble(text: str) -> EnsembleResponse:
 async def _predict_hybrid_internal(text: str) -> HybridResponse:
     if ML_MODEL is None or ML_VECTORIZER is None:
         return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.")
-    
+
     # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat dan Ollama terkonfigurasi)
     is_sarcasm_candidate = detect_sentiment_contrast(text)
     if is_sarcasm_candidate and OLLAMA_URL:
@@ -362,10 +387,10 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     pred_probs_ml = ML_MODEL.predict_proba(tfidf_text)
     ml_toxic = float(pred_probs_ml[0][0][1])
     ml_bully = float(pred_probs_ml[1][0][1])
-    
+
     t_t = THRESHOLDS.get("threshold_toxic", 0.5)
     t_b = THRESHOLDS.get("threshold_bully", 0.5)
-    
+
     # Jika ML sangat yakin (di luar rentang T - 0.25 s/d T + 0.25)
     if (abs(ml_toxic - t_t) >= 0.25) and (abs(ml_bully - t_b) >= 0.25):
         is_toxic = ml_toxic >= t_t
@@ -380,15 +405,15 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             decision_source="Tier 1 (ML Klasik)",
             reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik."
         )
-        
+
     # 2. Ragu-ragu -> Jalankan Transformer (Tier 2 ONNX / Fallback PyTorch)
-    res_tr = predict_transformer_raw(text)
+    res_tr = await asyncio.to_thread(predict_transformer_raw, text)
     tr_toxic = res_tr["toxic_prob"]
     tr_bully = res_tr["bully_prob"]
-    
+
     ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
     ens_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
-    
+
     if (abs(ens_toxic - t_t) >= 0.25) and (abs(ens_bully - t_b) >= 0.25):
         is_toxic = ens_toxic >= t_t
         is_bully = ens_bully >= t_b
@@ -402,7 +427,7 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             decision_source="Tier 2 (Ensemble ML & Transformer)",
             reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer."
         )
-            
+
     # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3 jika terkonfigurasi)
     if OLLAMA_URL:
         print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{text}'")
@@ -420,7 +445,7 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 decision_source="Tier 3 (Ollama Qwen LLM)",
                 reason=ollama_res["reason"]
             )
-        
+
     # Fallback
     is_toxic = ens_toxic >= t_t
     is_bully = ens_bully >= t_b
@@ -446,5 +471,224 @@ async def predict_hybrid(text: str) -> HybridResponse:
     res = await _predict_hybrid_internal(text)
 
     # Simpan hasil analisis baru ke dalam memori database persistent
-    await save_classification_memory(res)
+    embedding_json = None
+    if EMBEDDING_MODEL is not None:
+        try:
+            emb = EMBEDDING_MODEL.encode([text])[0]
+            embedding_json = str(emb.tolist())
+        except Exception:
+            pass
+    await save_classification_memory(res, embedding_json)
     return res
+
+# predict_hybrid_stream definition below handles streaming logic
+
+async def predict_hybrid_stream(text: str):
+    # 1. Cek memori klasifikasi historis terlebih dahulu
+    cached_memory = await get_classification_memory(text)
+    if cached_memory:
+        print(f"[MEMORY HIT] Mengambil keputusan klasifikasi historis (Redis/PostgreSQL) untuk: '{text}'")
+        yield {"chunk": cached_memory.reason, "done": True, "final_data": cached_memory}
+        return
+
+    if ML_MODEL is None or ML_VECTORIZER is None:
+        res = HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.")
+        yield {"chunk": res.reason, "done": True, "final_data": res}
+        return
+    
+    # 0. Pra-penyaringan Kontras Sentimen
+    is_sarcasm_candidate = detect_sentiment_contrast(text)
+    if is_sarcasm_candidate and OLLAMA_URL:
+        print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Ollama LLM) untuk: '{text}'")
+        async for state in query_ollama_stream_async(text):
+            if state["done"]:
+                ollama_res = state["final_data"]
+                if ollama_res["success"]:
+                    is_toxic = ollama_res["is_toxic"]
+                    is_bully = ollama_res["is_bully"]
+                    final_res = HybridResponse(
+                        text=text,
+                        is_toxic=is_toxic,
+                        is_bully=is_bully,
+                        probability_toxic=1.0 if is_toxic else 0.0,
+                        probability_bully=1.0 if is_bully else 0.0,
+                        category=determine_category(is_toxic, is_bully),
+                        decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
+                        reason=f"[Sarcasm Bypass] {ollama_res['reason']}"
+                    )
+                    embedding_json = None
+                    if EMBEDDING_MODEL is not None:
+                        try:
+                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            embedding_json = str(emb.tolist())
+                        except Exception:
+                            pass
+                    await save_classification_memory(final_res, embedding_json)
+                    yield {"chunk": state["chunk"], "done": True, "final_data": final_res}
+                else:
+                    final_res = HybridResponse(
+                        text=text,
+                        is_toxic=False,
+                        is_bully=False,
+                        probability_toxic=0.0,
+                        probability_bully=0.0,
+                        category="Aman",
+                        decision_source="Fallback",
+                        reason=ollama_res["reason"]
+                    )
+                    embedding_json = None
+                    if EMBEDDING_MODEL is not None:
+                        try:
+                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            embedding_json = str(emb.tolist())
+                        except Exception:
+                            pass
+                    await save_classification_memory(final_res, embedding_json)
+                    yield {"chunk": state["chunk"], "done": True, "final_data": final_res}
+            else:
+                yield {"chunk": state["chunk"], "done": False, "final_data": None}
+        return
+
+    # 1. Jalankan ML (Tier 1)
+    norm = normalize_text(text)["spaced"]
+    tfidf_text = ML_VECTORIZER.transform([norm])
+    pred_probs_ml = ML_MODEL.predict_proba(tfidf_text)
+    ml_toxic = float(pred_probs_ml[0][0][1])
+    ml_bully = float(pred_probs_ml[1][0][1])
+    
+    t_t = THRESHOLDS.get("threshold_toxic", 0.5)
+    t_b = THRESHOLDS.get("threshold_bully", 0.5)
+    
+    # Jika ML sangat yakin
+    if (abs(ml_toxic - t_t) >= 0.25) and (abs(ml_bully - t_b) >= 0.25):
+        is_toxic = ml_toxic >= t_t
+        is_bully = ml_bully >= t_b
+        res = HybridResponse(
+            text=text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=ml_toxic,
+            probability_bully=ml_bully,
+            category=determine_category(is_toxic, is_bully),
+            decision_source="Tier 1 (ML Klasik)",
+            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik."
+        )
+        embedding_json = None
+        if EMBEDDING_MODEL is not None:
+            try:
+                emb = EMBEDDING_MODEL.encode([text])[0]
+                embedding_json = str(emb.tolist())
+            except Exception:
+                pass
+        await save_classification_memory(res, embedding_json)
+        yield {"chunk": res.reason, "done": True, "final_data": res}
+        return
+        
+    # 2. Ragu-ragu -> Jalankan Transformer (Tier 2 ONNX / Fallback PyTorch)
+    res_tr = await asyncio.to_thread(predict_transformer_raw, text)
+    tr_toxic = res_tr["toxic_prob"]
+    tr_bully = res_tr["bully_prob"]
+    
+    ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
+    ens_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
+    
+    if (abs(ens_toxic - t_t) >= 0.25) and (abs(ens_bully - t_b) >= 0.25):
+        is_toxic = ens_toxic >= t_t
+        is_bully = ens_bully >= t_b
+        res = HybridResponse(
+            text=text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=ens_toxic,
+            probability_bully=ens_bully,
+            category=determine_category(is_toxic, is_bully),
+            decision_source="Tier 2 (Ensemble ML & Transformer)",
+            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer."
+        )
+        embedding_json = None
+        if EMBEDDING_MODEL is not None:
+            try:
+                emb = EMBEDDING_MODEL.encode([text])[0]
+                embedding_json = str(emb.tolist())
+            except Exception:
+                pass
+        await save_classification_memory(res, embedding_json)
+        yield {"chunk": res.reason, "done": True, "final_data": res}
+        return
+            
+    # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3 jika terkonfigurasi)
+    if OLLAMA_URL:
+        print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{text}'")
+        async for state in query_ollama_stream_async(text):
+            if state["done"]:
+                ollama_res = state["final_data"]
+                if ollama_res["success"]:
+                    is_toxic = ollama_res["is_toxic"]
+                    is_bully = ollama_res["is_bully"]
+                    final_res = HybridResponse(
+                        text=text,
+                        is_toxic=is_toxic,
+                        is_bully=is_bully,
+                        probability_toxic=1.0 if is_toxic else 0.0,
+                        probability_bully=1.0 if is_bully else 0.0,
+                        category=determine_category(is_toxic, is_bully),
+                        decision_source="Tier 3 (Ollama Qwen LLM)",
+                        reason=ollama_res["reason"]
+                    )
+                    embedding_json = None
+                    if EMBEDDING_MODEL is not None:
+                        try:
+                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            embedding_json = str(emb.tolist())
+                        except Exception:
+                            pass
+                    await save_classification_memory(final_res, embedding_json)
+                    yield {"chunk": state["chunk"], "done": True, "final_data": final_res}
+                else:
+                    is_toxic = ens_toxic >= t_t
+                    is_bully = ens_bully >= t_b
+                    final_res = HybridResponse(
+                        text=text,
+                        is_toxic=is_toxic,
+                        is_bully=is_bully,
+                        probability_toxic=ens_toxic,
+                        probability_bully=ens_bully,
+                        category=determine_category(is_toxic, is_bully),
+                        decision_source="Fallback (Ensemble Terbatas)",
+                        reason="Ollama lokal gagal merespons, menggunakan keputusan cadangan dari model lokal."
+                    )
+                    embedding_json = None
+                    if EMBEDDING_MODEL is not None:
+                        try:
+                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            embedding_json = str(emb.tolist())
+                        except Exception:
+                            pass
+                    await save_classification_memory(final_res, embedding_json)
+                    yield {"chunk": state["chunk"], "done": True, "final_data": final_res}
+            else:
+                yield {"chunk": state["chunk"], "done": False, "final_data": None}
+        return
+        
+    # Fallback jika Ollama tidak terkonfigurasi
+    is_toxic = ens_toxic >= t_t
+    is_bully = ens_bully >= t_b
+    res = HybridResponse(
+        text=text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=ens_toxic,
+        probability_bully=ens_bully,
+        category=determine_category(is_toxic, is_bully),
+        decision_source="Fallback (Ensemble Terbatas)",
+        reason="Ollama lokal tidak dikonfigurasi, menggunakan keputusan cadangan dari model lokal."
+    )
+    embedding_json = None
+    if EMBEDDING_MODEL is not None:
+        try:
+            emb = EMBEDDING_MODEL.encode([text])[0]
+            embedding_json = str(emb.tolist())
+        except Exception:
+            pass
+    await save_classification_memory(res, embedding_json)
+    yield {"chunk": res.reason, "done": True, "final_data": res}

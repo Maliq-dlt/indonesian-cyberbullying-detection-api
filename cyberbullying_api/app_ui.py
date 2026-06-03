@@ -8,7 +8,13 @@ classifier.init_models()
 
 from ui import (
     predict_single_hybrid,
-    run_scraper_and_batch_classify
+    run_scraper_and_batch_classify,
+    submit_user_feedback,
+    admin_login,
+    load_unvalidated_logs_df,
+    admin_bulk_validate,
+    run_retrain_script_async,
+    reload_models_handler
 )
 
 # Membangun antarmuka Gradio
@@ -18,7 +24,7 @@ theme = gr.themes.Soft(  # type: ignore
     neutral_hue="slate"
 )
 
-with gr.Blocks(theme=theme, title="Sistem Deteksi Cyberbullying Multilabel & Scraper") as demo:
+with gr.Blocks(title="Sistem Deteksi Cyberbullying Multilabel & Scraper") as demo:
     gr.Markdown(
         """
         # 🛡️ Sistem Deteksi Cyberbullying Multilabel, Scraper Media Sosial & Batch Processor
@@ -62,6 +68,7 @@ with gr.Blocks(theme=theme, title="Sistem Deteksi Cyberbullying Multilabel & Scr
                     ens_html_out = gr.HTML(
                         value="<div style='padding:15px; border:1px dashed #ccc; border-radius:8px; text-align:center;'>Hasil analisis akan ditampilkan di sini.</div>"
                     )
+                    streaming_output = gr.Markdown(value="")
                     
                     with gr.Row():
                         ens_toxic_out = gr.Slider(
@@ -76,6 +83,28 @@ with gr.Blocks(theme=theme, title="Sistem Deteksi Cyberbullying Multilabel & Scr
                             maximum=1.0,
                             interactive=False
                         )
+                    
+                    # Feedback & Koreksi (Human-in-the-Loop)
+                    with gr.Group():
+                        gr.Markdown("#### 🙋 Umpan Balik Pengguna (Active Learning)")
+                        with gr.Row():
+                            feedback_status = gr.Radio(
+                                choices=["👍 Akurat", "👎 Koreksi"],
+                                label="Apakah prediksi sistem di atas sudah tepat?",
+                                value="👍 Akurat"
+                            )
+                            correction_dropdown = gr.Dropdown(
+                                choices=[
+                                    "Aman (Non-Toxic & Non-Bully)",
+                                    "Casual Slang (Toxic but Non-Bully)",
+                                    "Sarcasm (Non-Toxic but Bully)",
+                                    "Serangan Langsung (Toxic & Bully)"
+                                ],
+                                label="Pilih label koreksi yang benar:",
+                                visible=False
+                            )
+                        btn_submit_feedback = gr.Button("Kirim Umpan Balik / Koreksi", variant="secondary")
+                        feedback_msg = gr.HTML(value="")
                     
                     with gr.Tabs():
                         with gr.TabItem("📋 Detail Perbandingan Model"):
@@ -92,31 +121,10 @@ with gr.Blocks(theme=theme, title="Sistem Deteksi Cyberbullying Multilabel & Scr
                                     tr_toxic_out = gr.Slider(label="Skor Toxicity (Transformer)", minimum=0.0, maximum=1.0, interactive=False)
                                     tr_bully_out = gr.Slider(label="Skor Bullying (Transformer)", minimum=0.0, maximum=1.0, interactive=False)
 
-            # Menghubungkan tombol klik ke fungsi prediksi tunggal
-            btn_detect.click(
-                fn=predict_single_hybrid,
-                inputs=input_text,
-                outputs=[
-                    ens_html_out,
-                    highlight_out,
-                    ens_toxic_out,
-                    ens_bully_out,
-                    
-                    ml_cat_out,
-                    ml_toxic_out,
-                    ml_bully_out,
-                    
-                    tr_cat_out,
-                    tr_toxic_out,
-                    tr_bully_out
-                ]
-            )
-            
-            # Fungsi tombol clear
             def clear_fields():
                 empty_card = "<div style='padding:15px; border:1px dashed #ccc; border-radius:8px; text-align:center;'>Hasil analisis akan ditampilkan di sini.</div>"
                 empty_highlight = "<div style='padding:10px; border:1px dashed #ccc; border-radius:6px; color:#666;'>Kata kasar yang terdeteksi akan disorot di sini.</div>"
-                return "", empty_card, empty_highlight, 0.0, 0.0, "", 0.0, 0.0, "", 0.0, 0.0
+                return "", empty_card, "", empty_highlight, 0.0, 0.0, "", 0.0, 0.0, "", 0.0, 0.0, "👍 Akurat", gr.update(visible=False), ""
                 
             btn_clear.click(
                 fn=clear_fields,
@@ -124,6 +132,7 @@ with gr.Blocks(theme=theme, title="Sistem Deteksi Cyberbullying Multilabel & Scr
                 outputs=[
                     input_text,
                     ens_html_out,
+                    streaming_output,
                     highlight_out,
                     ens_toxic_out,
                     ens_bully_out,
@@ -134,9 +143,60 @@ with gr.Blocks(theme=theme, title="Sistem Deteksi Cyberbullying Multilabel & Scr
                     
                     tr_cat_out,
                     tr_toxic_out,
-                    tr_bully_out
+                    tr_bully_out,
+
+                    feedback_status,
+                    correction_dropdown,
+                    feedback_msg
                 ]
             )
+
+            # Menghubungkan tombol klik ke fungsi prediksi tunggal (Streaming)
+            btn_detect.click(
+                fn=predict_single_hybrid,
+                inputs=input_text,
+                outputs=[
+                    ens_html_out,
+                    streaming_output,
+                    highlight_out,
+                    ens_toxic_out,
+                    ens_bully_out,
+                    
+                    ml_cat_out,
+                    ml_toxic_out,
+                    ml_bully_out,
+                    
+                    tr_cat_out,
+                    tr_toxic_out,
+                    tr_bully_out,
+
+                    feedback_status,
+                    correction_dropdown,
+                    feedback_msg
+                ]
+            )
+
+            def on_feedback_change(status):
+                if status == "👎 Koreksi":
+                    return gr.update(visible=True)
+                return gr.update(visible=False)
+                
+            feedback_status.change(
+                fn=on_feedback_change,
+                inputs=feedback_status,
+                outputs=correction_dropdown
+            )
+            
+            btn_submit_feedback.click(
+                fn=submit_user_feedback,
+                inputs=[
+                    input_text,
+                    feedback_status,
+                    correction_dropdown
+                ],
+                outputs=feedback_msg
+            )
+
 
         # TAB 2: SCRAPER & BATCH PROCESSOR (EKSPOR CSV LABELED)
         with gr.TabItem("📥 Scraper Media Sosial & Batch Ekspor CSV"):
@@ -203,6 +263,92 @@ with gr.Blocks(theme=theme, title="Sistem Deteksi Cyberbullying Multilabel & Scr
                 ]
             )
 
+        # TAB 3: ADMIN DASHBOARD (ACTIVE LEARNING CONTROL)
+        with gr.TabItem("🔑 Admin Dashboard"):
+            gr.Markdown("### 🔒 Halaman Khusus Administrator")
+            
+            with gr.Column(visible=True) as login_panel:
+                password_input = gr.Textbox(label="Password Admin", placeholder="Masukkan password...", type="password")
+                btn_login = gr.Button("Login", variant="primary")
+                login_msg = gr.Markdown(value="", visible=True)
+                
+            with gr.Column(visible=False) as admin_panel:
+                gr.Markdown("## ⚙️ Panel Kontrol Model & Active Learning")
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        gr.Markdown("### 📋 Riwayat Prediksi Belum Divalidasi")
+                        btn_refresh_logs = gr.Button("Muat / Segarkan Data Umpan Balik", variant="secondary")
+                        logs_dataframe = gr.Dataframe(
+                            label="Data Klasifikasi Memori (is_validated = 0)",
+                            wrap=True,
+                            interactive=False
+                        )
+                    
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 📝 Validasi & Koreksi Manual")
+                        target_text_input = gr.Textbox(label="Salin teks komentar di sini:", lines=3)
+                        correct_label_input = gr.Dropdown(
+                            choices=[
+                                "Aman (Non-Toxic & Non-Bully)",
+                                "Casual Slang (Toxic but Non-Bully)",
+                                "Sarcasm (Non-Toxic but Bully)",
+                                "Serangan Langsung (Toxic & Bully)"
+                            ],
+                            label="Kategori yang benar:"
+                        )
+                        btn_admin_validate = gr.Button("Validasi & Simpan Koreksi", variant="primary")
+                        admin_validate_msg = gr.Markdown(value="")
+                        
+                        gr.Markdown("---")
+                        gr.Markdown("### 🚀 Pembaruan Model Otomatis")
+                        with gr.Row():
+                            btn_trigger_retrain = gr.Button("Latih Ulang Model (Active Learning)", variant="stop")
+                            btn_reload_models = gr.Button("Muat Ulang Model ke Memori", variant="secondary")
+                        retrain_status_msg = gr.Markdown(value="")
+
+            # Hubungkan Event Handlers Admin
+            def process_login(pwd):
+                success, msg = admin_login(pwd)
+                if success:
+                    return gr.update(visible=False), gr.update(visible=True), msg
+                return gr.update(visible=True), gr.update(visible=False), f"<span style='color:red;'>{msg}</span>"
+                
+            btn_login.click(
+                fn=process_login,
+                inputs=password_input,
+                outputs=[login_panel, admin_panel, login_msg]
+            )
+
+            btn_refresh_logs.click(
+                fn=load_unvalidated_logs_df,
+                inputs=[],
+                outputs=logs_dataframe
+            )
+
+            btn_admin_validate.click(
+                fn=admin_bulk_validate,
+                inputs=[target_text_input, correct_label_input],
+                outputs=admin_validate_msg
+            ).then(
+                fn=load_unvalidated_logs_df,
+                inputs=[],
+                outputs=logs_dataframe
+            )
+
+            btn_trigger_retrain.click(
+                fn=run_retrain_script_async,
+                inputs=[],
+                outputs=retrain_status_msg
+            )
+
+            btn_reload_models.click(
+                fn=reload_models_handler,
+                inputs=[],
+                outputs=retrain_status_msg
+            )
+
 if __name__ == "__main__":
     print("Menjalankan Gradio Web UI di http://0.0.0.0:7860...")
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=False, theme=theme)
+

@@ -207,19 +207,72 @@ for idx, row in train_df.iterrows():
                 'is_bully': row['is_bully']
             })
 
+# 3.5. Ambil data tervalidasi dari database PostgreSQL / SQLite (Active Learning Oversampling)
+validated_records = []
+import asyncio
+from classifier.database import get_pg_pool
+import sqlite3
+
+async def fetch_validated_db():
+    recs = []
+    pool = await get_pg_pool()
+    if pool:
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch("SELECT text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
+                for r in rows:
+                    recs.append({
+                        'text_clean': clean_and_normalize(r['text']),
+                        'is_toxic': bool(r['is_toxic']),
+                        'is_bully': bool(r['is_bully'])
+                    })
+        except Exception as e:
+            print("Warning: Gagal fetch validated dari PostgreSQL:", e)
+    return recs
+
+try:
+    validated_records = asyncio.run(fetch_validated_db())
+except Exception:
+    pass
+
+if not validated_records:
+    try:
+        db_path = os.path.join(BASE_DIR, "cache", "ollama_cache.db")
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
+            rows = cursor.fetchall()
+            for r in rows:
+                validated_records.append({
+                    'text_clean': clean_and_normalize(r[0]),
+                    'is_toxic': bool(r[1]),
+                    'is_bully': bool(r[2])
+                })
+            conn.close()
+    except Exception as e:
+        print("Warning: Gagal fetch validated dari SQLite:", e)
+
+df_validated_oversampled = pd.DataFrame()
+if validated_records:
+    print(f"Ditemukan {len(validated_records)} sampel tervalidasi oleh manusia. Melakukan oversampling x5 untuk Active Learning...")
+    oversampled = []
+    for _ in range(5):
+        oversampled.extend(validated_records)
+    df_validated_oversampled = pd.DataFrame(oversampled)
+
 df_perturbed = pd.DataFrame(perturbed_records)
 print(f"Ditambahkan {len(df_perturbed)} baris data hasil perturbasi teks pada train set.")
 
-# 4. Gabungkan train set dengan augmented dan perturbed data
-final_train_df = pd.concat([
-    train_df,
-    df_aug,
-    df_perturbed
-], ignore_index=True)
+# 4. Gabungkan train set dengan augmented, perturbed, dan oversampled validated data
+concat_list = [train_df, df_aug, df_perturbed]
+if not df_validated_oversampled.empty:
+    concat_list.append(df_validated_oversampled)
 
+final_train_df = pd.concat(concat_list, ignore_index=True)
 final_train_df = final_train_df.dropna()
 final_train_df = final_train_df[final_train_df['text_clean'] != ""]
-print(f"Total baris data retraining train set (+ augmented & perturbed): {len(final_train_df)} baris.")
+print(f"Total baris data retraining train set (+ augmented & perturbed & validated): {len(final_train_df)} baris.")
 print(f"Total baris data test set (bersih): {len(test_df)} baris.")
 
 # 5. Siapkan X dan y
@@ -234,7 +287,7 @@ vectorizer = TfidfVectorizer(max_features=8000, ngram_range=(1, 2), min_df=2)
 X_train_tfidf = vectorizer.fit_transform(X_train)
 X_test_tfidf = vectorizer.transform(X_test)
 
-# 7. Melatih Ulang Model
+# 7. Melatih Ulang Model Baru
 print("Melatih ulang Multi-Label Classifier...")
 base_lr = LogisticRegression(max_iter=1500, class_weight='balanced', C=1.5, random_state=42)
 clf = MultiOutputClassifier(base_lr)
@@ -261,28 +314,99 @@ best_thresh_toxic = calibrate_threshold(probs_toxic, y_test['is_toxic'])
 best_thresh_bully = calibrate_threshold(probs_bully, y_test['is_bully'])
 print(f"Threshold Terkalibrasi -> Toxic: {best_thresh_toxic:.2f} | Bully: {best_thresh_bully:.2f}")
 
-# Simpan threshold ke file JSON menggunakan path absolut dinamis
-thresholds_path = os.path.join(BASE_DIR, "models", "thresholds.json")
+# Evaluasi model baru
+preds_toxic = (probs_toxic >= best_thresh_toxic).astype(int)
+preds_bully = (probs_bully >= best_thresh_bully).astype(int)
+new_f1_toxic = f1_score(y_test['is_toxic'], preds_toxic, zero_division=0)
+new_f1_bully = f1_score(y_test['is_bully'], preds_bully, zero_division=0)
+
+# 9. Mekanisme Rollback Otomatis
+old_model_path = os.path.join(BASE_DIR, "models", "model_lr.joblib")
+old_vect_path = os.path.join(BASE_DIR, "models", "vectorizer.joblib")
+old_f1_toxic = 0.0
+old_f1_bully = 0.0
+
+if os.path.exists(old_model_path) and os.path.exists(old_vect_path):
+    try:
+        old_clf = joblib.load(old_model_path)
+        old_vect = joblib.load(old_vect_path)
+        X_test_old_tfidf = old_vect.transform(X_test)
+        
+        old_thresholds = { "threshold_toxic": 0.5, "threshold_bully": 0.5 }
+        old_thresholds_path = os.path.join(BASE_DIR, "models", "thresholds.json")
+        if os.path.exists(old_thresholds_path):
+            with open(old_thresholds_path, "r") as f:
+                old_thresholds = json.load(f)
+                
+        old_probs = old_clf.predict_proba(X_test_old_tfidf)
+        old_probs_toxic = old_probs[0][:, 1]
+        old_probs_bully = old_probs[1][:, 1]
+        
+        old_preds_toxic = (old_probs_toxic >= old_thresholds.get("threshold_toxic", 0.5)).astype(int)
+        old_preds_bully = (old_probs_bully >= old_thresholds.get("threshold_bully", 0.5)).astype(int)
+        
+        old_f1_toxic = f1_score(y_test['is_toxic'], old_preds_toxic, zero_division=0)
+        old_f1_bully = f1_score(y_test['is_bully'], old_preds_bully, zero_division=0)
+        print(f"Perbandingan F1-Score -> Model Lama Toxic: {old_f1_toxic:.4f} | Model Baru Toxic: {new_f1_toxic:.4f}")
+        print(f"Perbandingan F1-Score -> Model Lama Bully: {old_f1_bully:.4f} | Model Baru Bully: {new_f1_bully:.4f}")
+    except Exception as e:
+        print("Warning: Gagal mengevaluasi model lama untuk perbandingan:", e)
+
+# Jika model baru mengalami penurunan drastis (penurunan F1-Score > 0.08 pada salah satu label)
+if old_f1_toxic > 0.0 and (old_f1_toxic - new_f1_toxic > 0.08 or old_f1_bully - new_f1_bully > 0.08):
+    print("\n❌ [ROLLBACK] Model baru mengalami penurunan performa yang signifikan (> 8% F1-Score).")
+    print("Membatalkan pembaruan model. Model lama tetap dipertahankan sebagai model aktif.")
+    exit(0)
+
+# 10. Menyimpan Model & Vectorizer dengan Versioning & Metadata
+import datetime
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+versioned_model_name = f"model_lr_{timestamp}.joblib"
+versioned_vect_name = f"vectorizer_{timestamp}.joblib"
+
+models_dir = os.path.join(BASE_DIR, "models")
+os.makedirs(models_dir, exist_ok=True)
+
+versioned_model_path = os.path.join(models_dir, versioned_model_name)
+versioned_vect_path = os.path.join(models_dir, versioned_vect_name)
+
+print(f"Menyimpan model & vectorizer versi terbaru: {versioned_model_name}...")
+joblib.dump(clf, versioned_model_path)
+joblib.dump(vectorizer, versioned_vect_path)
+
+# Simpan juga ke file default utama agar API langsung menggunakannya
+joblib.dump(clf, os.path.join(models_dir, "model_lr.joblib"))
+joblib.dump(vectorizer, os.path.join(models_dir, "vectorizer.joblib"))
+
+# Simpan thresholds.json
+thresholds_path = os.path.join(models_dir, "thresholds.json")
 thresholds_data = {
     "threshold_toxic": best_thresh_toxic,
     "threshold_bully": best_thresh_bully
 }
 with open(thresholds_path, "w") as f:
     json.dump(thresholds_data, f)
-print(f"Berkas thresholds.json berhasil disimpan di: {thresholds_path}")
 
-# 9. Evaluasi Akhir dengan Threshold Terkalibrasi
-preds_toxic = (probs_toxic >= best_thresh_toxic).astype(int)
-preds_bully = (probs_bully >= best_thresh_bully).astype(int)
+# Simpan riwayat versi model aktif ke current_model_version.json
+current_version_path = os.path.join(models_dir, "current_model_version.json")
+version_metadata = {
+    "active_version": timestamp,
+    "model_file": versioned_model_name,
+    "vectorizer_file": versioned_vect_name,
+    "f1_toxic": float(new_f1_toxic),
+    "f1_bully": float(new_f1_bully),
+    "threshold_toxic": best_thresh_toxic,
+    "threshold_bully": best_thresh_bully,
+    "updated_at": str(datetime.datetime.now())
+}
+with open(current_version_path, "w") as f:
+    json.dump(version_metadata, f, indent=4)
 
 print("\n=== HASIL EVALUASI RETRAINING DENGAN AMBANG BATAS TERKALIBRASI ===")
+from sklearn.metrics import classification_report
 print("1. Target: TOXICITY (is_toxic)")
 print(classification_report(y_test['is_toxic'], preds_toxic))
 print("2. Target: BULLYING (is_bully)")
 print(classification_report(y_test['is_bully'], preds_bully))
-
-# 10. Simpan Model & Vectorizer yang Baru menggunakan path absolut dinamis
-print("Menyimpan model & vectorizer terbaru...")
-joblib.dump(clf, os.path.join(BASE_DIR, "models", "model_lr.joblib"))
-joblib.dump(vectorizer, os.path.join(BASE_DIR, "models", "vectorizer.joblib"))
-print("Proses retraining sukses! Model 'model_lr.joblib' dan 'vectorizer.joblib' telah diperbarui.")
+print(f"Proses retraining sukses! Berkas model terkompilasi dan metadata disimpan di: {current_version_path}")

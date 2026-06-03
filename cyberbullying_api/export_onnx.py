@@ -9,15 +9,20 @@ from onnxruntime.quantization import quantize_dynamic, QuantType
 
 warnings.filterwarnings("ignore")
 
-# Monkey-patch untuk membypass error shape inference di Windows/onnx
-def dummy_infer_shapes_path(model_path, output_path, *args, **kwargs):
-    print(f"[ONNX MonkeyPatch] Mem-bypass shape inference: {model_path} -> {output_path}")
-    shutil.copyfile(model_path, output_path)
+# Wrapper robust untuk menangani error shape inference bawaan ONNX di Windows
+original_infer_shapes_path = onnx.shape_inference.infer_shapes_path
 
-onnx.shape_inference.infer_shapes_path = dummy_infer_shapes_path
+def robust_infer_shapes_path(model_path, output_path, *args, **kwargs):
+    try:
+        original_infer_shapes_path(model_path, output_path, *args, **kwargs)
+    except Exception as e:
+        print(f"[ONNX Warning] Shape inference gagal ({e}). Fallback bypass shape inference: {model_path} -> {output_path}")
+        shutil.copyfile(model_path, output_path)
+
+onnx.shape_inference.infer_shapes_path = robust_infer_shapes_path
 
 def export_to_onnx():
-    model_name = "nahiar/hatespeech-abusive-xlm-roberta-v1"
+    model_name = os.getenv("TRANSFORMER_MODEL_PATH", "nahiar/hatespeech-abusive-xlm-roberta-v1")
     base_dir = os.path.dirname(os.path.abspath(__file__))
     models_dir = os.path.join(base_dir, "models")
     os.makedirs(models_dir, exist_ok=True)

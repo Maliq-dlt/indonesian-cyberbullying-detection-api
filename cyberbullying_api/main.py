@@ -1,13 +1,46 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
 from models import *
 import classifier
+import os
+
+API_KEY_ENV = os.getenv("API_KEY", "")
+
+def verify_api_key(x_api_key: str = Header(None)):
+    if not API_KEY_ENV:
+        if os.getenv("ENV") == "production":
+            raise HTTPException(status_code=500, detail="Konfigurasi Server Error: API_KEY harus diatur di lingkungan produksi.")
+        return
+    if x_api_key != API_KEY_ENV:
+        raise HTTPException(status_code=401, detail="API Key tidak valid atau tidak disediakan.")
+
+async def rate_limit_ollama_and_batch(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    r = await classifier.get_redis()
+    if r:
+        try:
+            key = f"rate_limit:{client_ip}:{request.url.path}"
+            current = await r.get(key)
+            if current and int(current) >= 15:
+                raise HTTPException(status_code=429, detail="Terlalu banyak permintaan. Batas limit terlampaui (15 request/menit).")
+            
+            pipe = r.pipeline()
+            await pipe.incr(key)
+            await pipe.expire(key, 60)
+            await pipe.execute()
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"Warning: Gagal mengevaluasi rate limit di Redis: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     classifier.init_models()
+    if not API_KEY_ENV:
+        print("WARNING: Variabel lingkungan API_KEY tidak diatur! API berjalan tanpa autentikasi (Terbuka untuk Publik).")
     yield
 
 app = FastAPI(
@@ -57,17 +90,17 @@ def models_status():
         "thresholds": classifier.THRESHOLDS
     }
 
-@app.post("/predict/lexicon", response_model=LexiconResponse)
+@app.post("/predict/lexicon", response_model=LexiconResponse, dependencies=[Depends(verify_api_key)])
 def predict_lexicon(req: TextRequest):
     return classifier.predict_lexicon(req.text, bool(req.use_fuzzy))
 
-@app.post("/predict/ml", response_model=MLResponse)
+@app.post("/predict/ml", response_model=MLResponse, dependencies=[Depends(verify_api_key)])
 def predict_ml(req: TextRequest):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     return classifier.predict_ml(req.text)
 
-@app.post("/predict/transformers", response_model=TransformerResponse)
+@app.post("/predict/transformers", response_model=TransformerResponse, dependencies=[Depends(verify_api_key)])
 def predict_transformers(req: TextRequest):
     if classifier.TRANSFORMER_SESSION is None and classifier.TRANSFORMER_MODEL is None:
         raise HTTPException(status_code=503, detail="Model Transformer belum termuat.")
@@ -76,19 +109,19 @@ def predict_transformers(req: TextRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/predict/ensemble", response_model=EnsembleResponse)
+@app.post("/predict/ensemble", response_model=EnsembleResponse, dependencies=[Depends(verify_api_key)])
 def predict_ensemble(req: TextRequest):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     return classifier.predict_ensemble(req.text)
 
-@app.post("/predict/hybrid", response_model=HybridResponse)
+@app.post("/predict/hybrid", response_model=HybridResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
 async def predict_hybrid(req: TextRequest):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     return await classifier.predict_hybrid(req.text)
 
-@app.post("/predict/batch", response_model=BatchResponse)
+@app.post("/predict/batch", response_model=BatchResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
 async def predict_batch(req: BatchTextRequest):
     for text in req.texts:
         if not text or len(text.strip()) == 0:
@@ -112,3 +145,4 @@ async def predict_batch(req: BatchTextRequest):
             reason=pred.reason
         ))
     return BatchResponse(results=results)
+
