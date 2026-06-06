@@ -36,7 +36,11 @@ async def scrape_x_tweets_playwright(query: str, max_tweets: int = 20) -> List[s
     tweets = []
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            proxy_server = os.getenv("PROXY_SERVER")
+            browser = await p.chromium.launch(
+                headless=True,
+                proxy={"server": proxy_server} if proxy_server else None
+            )
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -72,44 +76,146 @@ async def scrape_x_tweets_playwright(query: str, max_tweets: int = 20) -> List[s
         print(f"Error scraping X via Playwright: {e}")
     return tweets
 
+
+async def scrape_x_replies_playwright(url: str, max_replies: int = 20) -> List[str]:
+    """Mengikis balasan (replies) dari tweet X spesifik menggunakan Playwright + Session Cookies."""
+    if not PLAYWRIGHT_AVAILABLE or async_playwright is None:
+        print("Warning: Playwright tidak terpasang. Menjalankan fallback.")
+        return []
+    if not os.path.exists(COOKIES_X_PATH):
+        print(f"Warning: Berkas {COOKIES_X_PATH} tidak ditemukan. Silakan tambahkan cookie untuk scraping riil.")
+        return []
+
+    replies = []
+    try:
+        async with async_playwright() as p:
+            proxy_server = os.getenv("PROXY_SERVER")
+            browser = await p.chromium.launch(
+                headless=True,
+                proxy={"server": proxy_server} if proxy_server else None
+            )
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            
+            with open(COOKIES_X_PATH, "r") as f:
+                cookies = json.load(f)
+                await context.add_cookies(cookies)
+                
+            page = await context.new_page()
+            print(f"Membuka tweet X: {url}")
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            
+            try:
+                await page.wait_for_selector("[data-testid='tweetText']", timeout=7000)
+            except Exception:
+                pass
+                
+            # Scroll beberapa kali untuk memuat balasan
+            for _ in range(4):
+                await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                await asyncio.sleep(1.2)
+                
+            elements = await page.query_selector_all("[data-testid='tweetText']")
+            # Lewati tweet utama (indeks 0), ambil balasannya
+            if len(elements) > 1:
+                for el in elements[1:]:
+                    text = (await el.inner_text()).strip()
+                    if text and text not in replies:
+                        text_clean = " ".join(text.split())
+                        replies.append(text_clean)
+                        if len(replies) >= max_replies:
+                            break
+            await browser.close()
+    except Exception as e:
+        print(f"Error scraping X replies via Playwright: {e}")
+    return replies
+
+
 async def scrape_x_tweets(query: str, max_tweets: int = 20) -> Tuple[List[str], bool]:
     """
     Melakukan scraping tweet dari X secara riil menggunakan Playwright (utama)
     atau Nitter instances (fallback), lalu generator tiruan dinamis jika semuanya gagal.
+    Mendukung deteksi URL tweet spesifik untuk mengikis balasan (replies).
     """
-    print(f"Memulai scraping tweet X untuk query: {query}")
+    is_tweet_url = "/status/" in query and ("x.com" in query or "twitter.com" in query or query.startswith("http"))
     
-    # Coba Opsi Utama: Playwright dengan Session Cookies
-    if PLAYWRIGHT_AVAILABLE and os.path.exists(COOKIES_X_PATH):
-        tweets = await scrape_x_tweets_playwright(query, max_tweets)
-        if tweets:
-            print(f"Sukses mendapatkan {len(tweets)} tweet asli dari X via Playwright!")
-            return tweets, True
+    if is_tweet_url:
+        print(f"Memulai scraping balasan tweet X untuk URL: {query}")
+        # Coba Opsi Utama: Playwright dengan Session Cookies
+        if PLAYWRIGHT_AVAILABLE and os.path.exists(COOKIES_X_PATH):
+            replies = await scrape_x_replies_playwright(query, max_tweets)
+            if replies:
+                print(f"Sukses mendapatkan {len(replies)} balasan asli dari tweet X via Playwright!")
+                return replies, True
+    else:
+        print(f"Memulai scraping tweet X untuk pencarian query: {query}")
+        # Coba Opsi Utama: Playwright dengan Session Cookies
+        if PLAYWRIGHT_AVAILABLE and os.path.exists(COOKIES_X_PATH):
+            tweets = await scrape_x_tweets_playwright(query, max_tweets)
+            if tweets:
+                print(f"Sukses mendapatkan {len(tweets)} tweet asli dari X via Playwright!")
+                return tweets, True
 
     # Coba Opsi Cadangan: Scraping gratis via Nitter instances
     tweets = []
-    encoded_query = urllib.parse.quote(query)
-    for instance in NITTER_INSTANCES:
-        url = f"{instance}/search?f=tweets&q={encoded_query}"
+    if is_tweet_url:
         try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            async with httpx.AsyncClient(timeout=6.0) as client:
-                response = await client.get(url, headers=headers)
-                if response.status_code == 200:
-                    html_content = response.text
-                    matches = re.findall(r'<div class="tweet-content[^>]*>(.*?)</div>', html_content, re.DOTALL)
-                    for m in matches:
-                        clean_tweet = re.sub(r'<[^>]+>', '', m).strip()
-                        clean_tweet = html.unescape(clean_tweet)
-                        if clean_tweet and clean_tweet not in tweets:
-                            tweets.append(clean_tweet)
-                            if len(tweets) >= max_tweets:
-                                break
-                    if tweets:
-                        print(f"Sukses mendapatkan {len(tweets)} tweet asli dari X via {instance} (Nitter)!")
-                        return tweets, True
-        except Exception as e:
-            print(f"Warning: Gagal scraping X via {instance}: {e}")
+            parsed = urllib.parse.urlparse(query)
+            path = parsed.path
+        except Exception:
+            path = ""
+        
+        for instance in NITTER_INSTANCES:
+            inst = instance.rstrip('/')
+            url = f"{inst}{path}"
+            try:
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                proxy_server = os.getenv("PROXY_SERVER")
+                async with httpx.AsyncClient(timeout=2.5, proxy=proxy_server) as client:
+                    response = await client.get(url, headers=headers)
+                    if response.status_code == 200:
+                        html_content = response.text
+                        matches = re.findall(r'<div class="tweet-content[^>]*>(.*?)</div>', html_content, re.DOTALL)
+                        # Lewati tweet utama (indeks 0) jika ada matches
+                        start_idx = 1 if len(matches) > 1 else 0
+                        for m in matches[start_idx:]:
+                            clean_tweet = re.sub(r'<[^>]+>', '', m).strip()
+                            clean_tweet = html.unescape(clean_tweet)
+                            if clean_tweet and clean_tweet not in tweets:
+                                tweets.append(clean_tweet)
+                                if len(tweets) >= max_tweets:
+                                    break
+                        if tweets:
+                            print(f"Sukses mendapatkan {len(tweets)} balasan tweet asli dari X via {instance} (Nitter)!")
+                            return tweets, True
+            except Exception as e:
+                print(f"Warning: Gagal scraping X replies via {instance}: {e}")
+    else:
+        encoded_query = urllib.parse.quote(query)
+        for instance in NITTER_INSTANCES:
+            url = f"{instance}/search?f=tweets&q={encoded_query}"
+            try:
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                proxy_server = os.getenv("PROXY_SERVER")
+                async with httpx.AsyncClient(timeout=2.5, proxy=proxy_server) as client:
+                    response = await client.get(url, headers=headers)
+                    if response.status_code == 200:
+                        html_content = response.text
+                        matches = re.findall(r'<div class="tweet-content[^>]*>(.*?)</div>', html_content, re.DOTALL)
+                        for m in matches:
+                            clean_tweet = re.sub(r'<[^>]+>', '', m).strip()
+                            clean_tweet = html.unescape(clean_tweet)
+                            if clean_tweet and clean_tweet not in tweets:
+                                tweets.append(clean_tweet)
+                                if len(tweets) >= max_tweets:
+                                    break
+                        if tweets:
+                            print(f"Sukses mendapatkan {len(tweets)} tweet asli dari X via {instance} (Nitter)!")
+                            return tweets, True
+            except Exception as e:
+                print(f"Warning: Gagal scraping X via {instance}: {e}")
             
     # Fallback ke generator dinamis jika semuanya gagal
     return generate_dynamic_comments(query, max_tweets), False

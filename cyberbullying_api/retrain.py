@@ -1,4 +1,5 @@
 import os
+import sys
 import random
 import json
 import pandas as pd
@@ -18,10 +19,13 @@ from training import (
     load_combined_dataset, ingest_scraped_csv, ingest_database_memory
 )
 
-print("=== Memulai Skrip Pelatihan Ulang Otomatis (Active Learning + Perturbasi + Kalibrasi) ===")
-
 # Tentukan direktori dasar dinamis untuk pathing absolut
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+log_dir = os.path.join(BASE_DIR, "cache")
+os.makedirs(log_dir, exist_ok=True)
+log_file_path = os.path.join(log_dir, "training.log")
+
+
 
 # 1. Konfigurasi Path dan Kamus Slang
 ALAY_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "new_kamusalay.csv")
@@ -63,8 +67,11 @@ if new_records:
     try:
         if os.path.exists(DATASET_COMBINED_PATH):
             df_combined = pd.read_csv(DATASET_COMBINED_PATH)
+            if "is_toxic" not in df_combined.columns:
+                print("Kolom 'is_toxic' tidak ditemukan pada dataset gabungan lama. Mengisi menggunakan leksikon...")
+                df_combined["is_toxic"] = df_combined["clean_text"].apply(check_toxic_by_lexicon)
         else:
-            df_combined = pd.DataFrame(columns=["Label", "clean_text", "String", "encoded_label"])
+            df_combined = pd.DataFrame(columns=["Label", "clean_text", "String", "encoded_label", "is_toxic"])
         
         existing_strings = set(df_combined["String"].dropna().str.strip().str.lower().unique())
         
@@ -77,11 +84,18 @@ if new_records:
                 is_bully = rec["Label"] == "Bullying"
                 encoded_l = 0.0 if is_bully else 1.0
                 
+                # Gunakan is_toxic dari record jika tersedia, jika tidak gunakan leksikon
+                if "is_toxic" in rec:
+                    is_toxic = bool(rec["is_toxic"])
+                else:
+                    is_toxic = check_toxic_by_lexicon(clean_t)
+                
                 new_row = {
                     "Label": rec["Label"],
                     "clean_text": clean_t,
                     "String": rec["String"],
-                    "encoded_label": encoded_l
+                    "encoded_label": encoded_l,
+                    "is_toxic": is_toxic
                 }
                 appended_list.append(new_row)
                 existing_strings.add(normalized_check)
@@ -99,7 +113,8 @@ if new_records:
                                 "Label": rec["Label"],
                                 "clean_text": var_clean,
                                 "String": var,
-                                "encoded_label": encoded_l
+                                "encoded_label": encoded_l,
+                                "is_toxic": is_toxic
                             })
                             existing_strings.add(var_norm)
                             added_count += 1
@@ -194,6 +209,11 @@ else:
     )
     print("Fallback ke standard train_test_split.")
 
+# Filter duplikat dari df_aug berdasarkan teks yang sudah ada di test_df sebelum menggabungkan untuk mencegah data leakage
+test_texts = set(test_df['text_clean'].dropna().unique())
+df_aug = df_aug[~df_aug['text_clean'].isin(test_texts)]
+print(f"Jumlah data augmentasi setelah difilter untuk mencegah kebocoran: {len(df_aug)} baris.")
+
 # 3. Terapkan Perturbasi Slang/Typo acak HANYA pada train set yang mengandung unsur toxic
 print("Melakukan augmentasi perturbasi teks (typo/leet) secara dinamis pada train set...")
 perturbed_records = []
@@ -210,8 +230,22 @@ for idx, row in train_df.iterrows():
 # 3.5. Ambil data tervalidasi dari database PostgreSQL / SQLite (Active Learning Oversampling)
 validated_records = []
 import asyncio
-from classifier.database import get_pg_pool
+from classifier.database import get_pg_pool, decrypt_text
 import sqlite3
+
+def run_async(coro):
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+        
+    if loop and loop.is_running():
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(lambda: asyncio.run(coro)).result()
+    else:
+        return asyncio.run(coro)
 
 async def fetch_validated_db():
     recs = []
@@ -219,10 +253,11 @@ async def fetch_validated_db():
     if pool:
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch("SELECT text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
+                rows = await conn.fetch("SELECT encrypted_text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
                 for r in rows:
+                    decrypted = decrypt_text(r['encrypted_text'])
                     recs.append({
-                        'text_clean': clean_and_normalize(r['text']),
+                        'text_clean': clean_and_normalize(decrypted),
                         'is_toxic': bool(r['is_toxic']),
                         'is_bully': bool(r['is_bully'])
                     })
@@ -231,9 +266,9 @@ async def fetch_validated_db():
     return recs
 
 try:
-    validated_records = asyncio.run(fetch_validated_db())
-except Exception:
-    pass
+    validated_records = run_async(fetch_validated_db())
+except Exception as e:
+    print("Warning: Gagal fetch validated dari PostgreSQL (event loop error):", e)
 
 if not validated_records:
     try:
@@ -241,11 +276,12 @@ if not validated_records:
         if os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            cursor.execute("SELECT text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
+            cursor.execute("SELECT encrypted_text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
             rows = cursor.fetchall()
             for r in rows:
+                decrypted = decrypt_text(r[0])
                 validated_records.append({
-                    'text_clean': clean_and_normalize(r[0]),
+                    'text_clean': clean_and_normalize(decrypted),
                     'is_toxic': bool(r[1]),
                     'is_bully': bool(r[2])
                 })
@@ -288,9 +324,12 @@ X_train_tfidf = vectorizer.fit_transform(X_train)
 X_test_tfidf = vectorizer.transform(X_test)
 
 # 7. Melatih Ulang Model Baru
-print("Melatih ulang Multi-Label Classifier...")
+print("Melatih ulang Multi-Label Classifier dengan Kalibrasi Probabilitas (Platt Scaling)...")
+from sklearn.calibration import CalibratedClassifierCV
 base_lr = LogisticRegression(max_iter=1500, class_weight='balanced', C=1.5, random_state=42)
-clf = MultiOutputClassifier(base_lr)
+# Gunakan CalibratedClassifierCV untuk melakukan kalibrasi probabilitas via 5-fold cross-validation
+calibrated_lr = CalibratedClassifierCV(estimator=base_lr, method='sigmoid', cv=5)
+clf = MultiOutputClassifier(calibrated_lr)
 clf.fit(X_train_tfidf, y_train)
 
 # 8. Kalibrasi Threshold Dinamis
@@ -403,6 +442,19 @@ version_metadata = {
 with open(current_version_path, "w") as f:
     json.dump(version_metadata, f, indent=4)
 
+try:
+    from classifier.database import save_retraining_history
+    asyncio.run(save_retraining_history(
+        f1_toxic=float(new_f1_toxic),
+        f1_bully=float(new_f1_bully),
+        threshold_toxic=float(best_thresh_toxic),
+        threshold_bully=float(best_thresh_bully),
+        active_version=timestamp
+    ))
+    print("✅ Berhasil menyimpan riwayat retraining ke database.")
+except Exception as db_err:
+    print(f"Warning: Gagal menyimpan riwayat retraining ke database: {db_err}")
+
 print("\n=== HASIL EVALUASI RETRAINING DENGAN AMBANG BATAS TERKALIBRASI ===")
 from sklearn.metrics import classification_report
 print("1. Target: TOXICITY (is_toxic)")
@@ -410,3 +462,25 @@ print(classification_report(y_test['is_toxic'], preds_toxic))
 print("2. Target: BULLYING (is_bully)")
 print(classification_report(y_test['is_bully'], preds_bully))
 print(f"Proses retraining sukses! Berkas model terkompilasi dan metadata disimpan di: {current_version_path}")
+
+# Tutup connection pool PostgreSQL & Redis secara bersih sebelum keluar
+async def cleanup_resources():
+    import classifier.database as db_mod
+    if db_mod.PG_POOL is not None:
+        try:
+            await db_mod.PG_POOL.close()
+            print("PostgreSQL connection pool berhasil ditutup secara bersih.")
+        except Exception as e:
+            print(f"Warning: Gagal menutup PostgreSQL connection pool: {e}")
+            
+    if db_mod.REDIS_CLIENT is not None:
+        try:
+            await db_mod.REDIS_CLIENT.close()
+            print("Redis client connection berhasil ditutup secara bersih.")
+        except Exception as e:
+            print(f"Warning: Gagal menutup Redis client connection: {e}")
+
+try:
+    run_async(cleanup_resources())
+except Exception as e:
+    print("Warning: Gagal menjalankan cleanup_resources:", e)

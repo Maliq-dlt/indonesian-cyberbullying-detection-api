@@ -7,6 +7,18 @@ from typing import List, Dict, Any
 
 # Global Slang Map (diisi melalui fungsi init_slang_map)
 SLANG_MAP = {}
+ABUSIVE_WORDS_SET = set()
+FORMAL_WORDS_SET = set()
+
+# Set kata hubung, kata ganti, dan kata kerja/sifat umum bahasa Indonesia untuk mencegah salah koreksi
+INDONESIAN_COMMON_WORDS = {
+    "sampai", "kamu", "sekali", "untuk", "dengan", "dalam", "akan", "bisa", "dapat", 
+    "oleh", "atau", "pada", "juga", "dari", "telah", "tapi", "tetapi", "bagi", "serta",
+    "yaitu", "yakni", "kami", "kita", "dia", "mereka", "saya", "aku", "anda", "ingin", 
+    "harus", "bukan", "tidak", "belum", "sangat", "lebih", "paling", "hanya", "saja", 
+    "baru", "lama", "banyak", "sedikit", "semua", "setiap", "adalah", "ialah", "merupakan", 
+    "bahwa", "seperti", "bagai", "bagaikan", "maka", "wah", "nilai", "ujian", "ujianmu"
+}
 
 LEET_MAP = {
     "0": "o", "1": "i", "!": "i", "|": "i", "¡": "i", "3": "e", "4": "a",
@@ -19,28 +31,91 @@ MULTISPACE_RE = re.compile(r"\s+")
 REPEATED_CHAR_RE = re.compile(r"(.)\1{2,}")
 REPEATED_CHAR_ANY_RE = re.compile(r"(.)\1+")
 
+def edit_distance_one(s1: str, s2: str) -> bool:
+    """Mengembalikan True jika jarak edit Levenshtein antara s1 dan s2 tepat 1."""
+    len1, len2 = len(s1), len(s2)
+    if abs(len1 - len2) > 1:
+        return False
+        
+    if len1 == len2:
+        # Substitusi tunggal
+        diffs = 0
+        for c1, c2 in zip(s1, s2):
+            if c1 != c2:
+                diffs += 1
+                if diffs > 1:
+                    return False
+        return diffs == 1
+    else:
+        # Insersi / Delesi tunggal
+        if len1 > len2:
+            s1, s2 = s2, s1  # s2 selalu lebih panjang
+        i = 0
+        j = 0
+        diffs = 0
+        while i < len(s1) and j < len(s2):
+            if s1[i] != s2[j]:
+                diffs += 1
+                if diffs > 1:
+                    return False
+                j += 1
+            else:
+                i += 1
+                j += 1
+        return True
+
+def get_close_match_abusive(word: str) -> str | None:
+    """Mencari apakah kata memiliki kedekatan jarak edit 1 dengan entri abusive leksikon."""
+    if not ABUSIVE_WORDS_SET or len(word) < 4:
+        return None
+    # Jika kata merupakan kata formal yang valid/umum, atau ada di slang map, jangan diganti!
+    if word in FORMAL_WORDS_SET or word in SLANG_MAP:
+        return None
+    for ab_w in ABUSIVE_WORDS_SET:
+        if abs(len(word) - len(ab_w)) > 1:
+            continue
+        if edit_distance_one(word, ab_w):
+            return ab_w
+    return None
+
 def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
     """Memuat peta slang dari CSV dan memperbarui dictionary global SLANG_MAP."""
-    global SLANG_MAP
+    global SLANG_MAP, ABUSIVE_WORDS_SET, FORMAL_WORDS_SET
     alay_map = {}
     singkatan_map = {}
     
     try:
         if alay_path and os.path.exists(alay_path):
-            alay_df = pd.read_csv(alay_path, encoding='latin-1', header=None, names=['slang', 'formal'])
+            alay_df = pd.read_csv(alay_path, header=None, names=['slang', 'formal'], encoding='latin-1')
             alay_map = dict(zip(alay_df['slang'], alay_df['formal']))
     except Exception as e:
         print("Warning: Gagal memuat new_kamusalay.csv di normalizer:", e)
 
     try:
         if singkatan_path and os.path.exists(singkatan_path):
-            singkatan_df = pd.read_csv(singkatan_path, encoding='latin-1')
+            singkatan_df = pd.read_csv(singkatan_path)
             singkatan_df = singkatan_df.dropna(subset=['singkatan', 'asli'])
             singkatan_map = dict(zip(singkatan_df['singkatan'], singkatan_df['asli']))
     except Exception as e:
         print("Warning: Gagal memuat kamus_singkatan.csv di normalizer:", e)
 
+    # Muat juga kata abusive untuk fuzzy spell correction
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        abusive_path = os.path.join(base_dir, "..", "dataset", "ds_1", "abusive.csv")
+        if os.path.exists(abusive_path):
+            df_abusive = pd.read_csv(abusive_path)
+            ABUSIVE_WORDS_SET = set(df_abusive['ABUSIVE'].dropna().str.strip().str.lower().unique())
+            print(f"Berhasil memuat {len(ABUSIVE_WORDS_SET)} kata abusive untuk spell correction.")
+    except Exception as e:
+        print("Warning: Gagal memuat abusive.csv di normalizer:", e)
+
     SLANG_MAP = {**singkatan_map, **alay_map}
+    
+    # Populasi set kata formal bahasa Indonesia
+    FORMAL_WORDS_SET = set(alay_map.values()) | set(singkatan_map.values()) | set(alay_map.keys()) | set(singkatan_map.keys())
+    FORMAL_WORDS_SET.update(INDONESIAN_COMMON_WORDS)
+    
     return SLANG_MAP
 
 def replace_leet(text: str) -> str:
@@ -65,10 +140,22 @@ def normalize_text(text: str, reduce_repeats: bool = True) -> Dict[str, str]:
     spaced = NON_ALNUM_RE.sub(" ", leet_replaced)
     spaced = MULTISPACE_RE.sub(" ", spaced).strip()
     
-    # Slang mapping
+    # Slang mapping & spell correction untuk kata kasar
     if SLANG_MAP:
         words = spaced.split()
-        spaced = " ".join(SLANG_MAP.get(w, w) for w in words)
+        normalized_words = []
+        for w in words:
+            formal = SLANG_MAP.get(w)
+            if formal:
+                normalized_words.append(formal)
+            else:
+                # Cek kedekatan typo ke kata kasar formal
+                abusive_match = get_close_match_abusive(w)
+                if abusive_match:
+                    normalized_words.append(abusive_match)
+                else:
+                    normalized_words.append(w)
+        spaced = " ".join(normalized_words)
         
     compact_raw = NON_ALNUM_RE.sub("", leet_replaced)
     if reduce_repeats:

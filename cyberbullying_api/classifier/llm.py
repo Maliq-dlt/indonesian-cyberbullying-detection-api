@@ -3,9 +3,9 @@ import json
 import httpx
 import numpy as np
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, AsyncGenerator
 
-from classifier.database import get_cached_response, save_cached_response, get_pg_pool
+from classifier.database import get_cached_response, save_cached_response, get_pg_pool, decrypt_text
 from normalizer import normalize_text
 
 # Konfigurasi Ollama dinamis dari environment variables
@@ -37,7 +37,7 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
             # Cari 3 terdekat di PostgreSQL
             async with pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT text, is_toxic, is_bully 
+                    SELECT encrypted_text, is_toxic, is_bully 
                     FROM classification_memory 
                     WHERE embedding IS NOT NULL
                     ORDER BY embedding <-> $1::vector LIMIT $2
@@ -46,9 +46,10 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
                 if rows:
                     examples_str = "\n--- Contoh Kontekstual Relevan (Vector Search) ---\n"
                     for i, r in enumerate(rows):
+                        decrypted_text = decrypt_text(r['encrypted_text'])
                         examples_str += (
                             f"Contoh {i+1}:\n"
-                            f"Teks: \"{r['text']}\"\n"
+                            f"Teks: \"{decrypted_text}\"\n"
                             f"Hasil: is_toxic={'true' if r['is_toxic'] else 'false'}, is_bully={'true' if r['is_bully'] else 'false'}\n"
                         )
                     return examples_str
@@ -61,9 +62,9 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
     if pool:
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch("SELECT text, is_bully FROM classification_memory ORDER BY timestamp DESC LIMIT 200")
+                rows = await conn.fetch("SELECT encrypted_text, is_bully FROM classification_memory ORDER BY timestamp DESC LIMIT 200")
                 for r in rows:
-                    memory_texts.append(r["text"])
+                    memory_texts.append(decrypt_text(r["encrypted_text"]))
                     memory_labels.append("Bullying" if r["is_bully"] else "Non-bullying")
         except Exception as e:
             pass
@@ -210,7 +211,7 @@ async def _query_ollama_async_raw(text: str, model_name: str | None = None) -> D
         "success": False
     }
 
-async def query_ollama_stream_async(text: str, model_name: str | None = None):
+async def query_ollama_stream_async(text: str, model_name: str | None = None) -> AsyncGenerator[Dict[str, Any], None]:
     # Cek cache terlebih dahulu
     cached = await get_cached_response(text)
     if cached:
@@ -223,7 +224,7 @@ async def query_ollama_stream_async(text: str, model_name: str | None = None):
         async for chunk in _query_ollama_stream_async_raw(text, model_name):
             yield chunk
 
-async def _query_ollama_stream_async_raw(text: str, model_name: str | None = None):
+async def _query_ollama_stream_async_raw(text: str, model_name: str | None = None) -> AsyncGenerator[Dict[str, Any], None]:
 
     if not OLLAMA_URL:
         yield {
@@ -305,7 +306,7 @@ async def _query_ollama_stream_async_raw(text: str, model_name: str | None = Non
                         
                         # Ollama sends fragments of the JSON string.
                         # We yield the raw fragment so the UI can display it as it arrives.
-                        yield {"chunk": chunk, "done": data.get("done", False), "final_data": None}
+                        yield {"chunk": chunk, "done": False, "final_data": None}
                         
                         if data.get("done", False):
                             break

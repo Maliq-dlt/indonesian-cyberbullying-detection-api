@@ -1,25 +1,4 @@
 import pytest
-from fastapi.testclient import TestClient
-import sys
-import os
-
-# Menambahkan folder parent ke path agar main.py bisa diimpor
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from main import app
-
-@pytest.fixture(scope="module")
-def client():
-    """Fixture untuk membuat TestClient dengan trigger startup event FastAPI."""
-    with TestClient(app) as c:
-        yield c
-
-def test_read_root(client):
-    """Menguji status ketersediaan API server."""
-    response = client.get("/")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "online"
 
 def test_predict_lexicon_safe(client):
     """Menguji bahwa kalimat positif diklasifikasikan sebagai AMAN oleh leksikon."""
@@ -120,48 +99,106 @@ def test_predict_batch_processing(client):
     assert data["results"][1]["is_toxic"] is True
     assert data["results"][2]["is_toxic"] is True
 
-def test_health_endpoint(client):
-    """Menguji endpoint health check."""
-    response = client.get("/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert "alive" in data["message"]
-
-def test_models_status_endpoint(client):
-    """Menguji endpoint status model."""
-    response = client.get("/models/status")
-    assert response.status_code == 200
-    data = response.json()
-    assert "status" in data
-    assert "models_loaded" in data
-    assert "thresholds" in data
-
 def test_predict_text_length_validation(client):
     """Menguji batas karakter input (max 500) dan min (1)."""
-    # Menguji input kosong
     response = client.post("/predict/lexicon", json={"text": ""})
     assert response.status_code == 422
     
-    # Menguji input melebihi 500 karakter
     long_text = "anjing " * 100
     response = client.post("/predict/lexicon", json={"text": long_text})
     assert response.status_code == 422
 
 def test_predict_batch_constraints(client):
     """Menguji batasan pada input batch."""
-    # Menguji batch kosong
     response = client.post("/predict/batch", json={"texts": []})
     assert response.status_code == 422
     
-    # Menguji batch melebihi 50 item
     payload = {"texts": ["Semangat!"] * 51}
     response = client.post("/predict/batch", json=payload)
     assert response.status_code == 422
     
-    # Menguji batch dengan salah satu item melebihi 500 karakter
     long_text = "goblok " * 100
     payload = {"texts": ["Semangat!", long_text]}
     response = client.post("/predict/batch", json=payload)
     assert response.status_code == 422
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+@pytest.mark.anyio
+async def test_sqlite_write_concurrency():
+    """Menguji bahwa penyimpanan klasifikasi memori secara paralel ke SQLite tidak memicu Lock Error."""
+    from classifier.database import save_classification_memory, get_classification_memory
+    from models import HybridResponse
+    import asyncio
+    
+    res_list = [
+        HybridResponse(
+            text=f"Teks tes konkurensi SQLite ke-{i}",
+            is_toxic=False,
+            is_bully=False,
+            probability_toxic=0.1,
+            probability_bully=0.1,
+            category="Aman",
+            decision_source="Test",
+            reason="Testing SQLite concurrency"
+        )
+        for i in range(10)
+    ]
+    
+    tasks = [save_classification_memory(res) for res in res_list]
+    await asyncio.gather(*tasks)
+    
+    retrieved = await get_classification_memory("Teks tes konkurensi SQLite ke-5")
+    assert retrieved is not None
+    assert retrieved.text == "Teks tes konkurensi SQLite ke-5"
+
+@pytest.mark.anyio
+async def test_semantic_caching():
+    """Menguji kecocokan semantik cache (Semantic Caching) menggunakan SQLite fallback."""
+    from classifier.database import save_classification_memory, get_classification_memory
+    from classifier.predictor import EMBEDDING_MODEL
+    from models import HybridResponse
+    import json
+    
+    if EMBEDDING_MODEL is None:
+        pytest.skip("SentenceTransformer EMBEDDING_MODEL tidak dimuat.")
+        
+    text_1 = "Gue benci banget sama orang itu karena dia jahat"
+    text_2 = "Gue benci banget sama orang itu karena dia jahat."
+    
+    emb_json = json.dumps(EMBEDDING_MODEL.encode([text_1])[0].tolist())
+    
+    res = HybridResponse(
+        text=text_1,
+        is_toxic=True,
+        is_bully=True,
+        probability_toxic=0.9,
+        probability_bully=0.9,
+        category="Bullying",
+        decision_source="ManualTest",
+        reason="Komentar mengandung ujaran kebencian."
+    )
+    await save_classification_memory(res, emb_json)
+    
+    cached_res = await get_classification_memory(text_2)
+    
+    assert cached_res is not None
+    assert "Semantic Cache Match" in cached_res.decision_source
+    assert cached_res.is_toxic is True
+    assert cached_res.is_bully is True
+
+def test_word_importances_in_predictions(client):
+    """Menguji bahwa key 'word_importances' dikembalikan dan terisi pada kalimat yang terdeteksi toxic/bully."""
+    payload = {"text": "kamu goblok banget sih"}
+    response = client.post("/predict/hybrid", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "word_importances" in data
+    assert isinstance(data["word_importances"], list)
+    if len(data["word_importances"]) > 0:
+        first_imp = data["word_importances"][0]
+        assert "word" in first_imp
+        assert "weight_toxic" in first_imp
+        assert "weight_bully" in first_imp

@@ -1,47 +1,75 @@
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
-from models import *
-import classifier
 import os
+import classifier
+import routes.state as state
+from routes.predict import router as predict_router
+from routes.admin import router as admin_router
 
-API_KEY_ENV = os.getenv("API_KEY", "")
-
-def verify_api_key(x_api_key: str = Header(None)):
-    if not API_KEY_ENV:
-        if os.getenv("ENV") == "production":
-            raise HTTPException(status_code=500, detail="Konfigurasi Server Error: API_KEY harus diatur di lingkungan produksi.")
-        return
-    if x_api_key != API_KEY_ENV:
-        raise HTTPException(status_code=401, detail="API Key tidak valid atau tidak disediakan.")
-
-async def rate_limit_ollama_and_batch(request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    r = await classifier.get_redis()
-    if r:
+async def listen_model_reload():
+    from classifier import get_redis
+    await asyncio.sleep(2.0)
+    while True:
         try:
-            key = f"rate_limit:{client_ip}:{request.url.path}"
-            current = await r.get(key)
-            if current and int(current) >= 15:
-                raise HTTPException(status_code=429, detail="Terlalu banyak permintaan. Batas limit terlampaui (15 request/menit).")
-            
-            pipe = r.pipeline()
-            await pipe.incr(key)
-            await pipe.expire(key, 60)
-            await pipe.execute()
-        except HTTPException:
-            raise
+            r = await get_redis()
+            if r:
+                pubsub = r.pubsub()
+                await pubsub.subscribe("model_reload")
+                print("[Redis Pub/Sub] Berhasil subskripsi ke channel 'model_reload'.")
+                while True:
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message["data"] == "reload":
+                        print("[Redis Pub/Sub] Menerima sinyal model_reload. Memuat ulang model...")
+                        try:
+                            from classifier.predictor import init_models
+                            await asyncio.to_thread(init_models)
+                            print("[Redis Pub/Sub] Model berhasil dimuat ulang secara dinamis!")
+                        except Exception as reload_err:
+                            print(f"[Redis Pub/Sub] Gagal memuat ulang model: {reload_err}")
+                    await asyncio.sleep(0.5)
+            else:
+                await asyncio.sleep(10.0)
+        except asyncio.CancelledError:
+            break
         except Exception as e:
-            print(f"Warning: Gagal mengevaluasi rate limit di Redis: {e}")
-
+            print(f"[Redis Pub/Sub] Koneksi terputus atau error: {e}. Menghubungkan kembali dalam 10 detik...")
+            await asyncio.sleep(10.0)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    classifier.init_models()
-    if not API_KEY_ENV:
+    # Jalankan inisialisasi model yang berat di thread pool agar tidak memblokir event loop
+    await asyncio.to_thread(classifier.init_models)
+    if not state.API_KEY_ENV:
         print("WARNING: Variabel lingkungan API_KEY tidak diatur! API berjalan tanpa autentikasi (Terbuka untuk Publik).")
+    
+    pubsub_task = asyncio.create_task(listen_model_reload())
     yield
+    pubsub_task.cancel()
+    try:
+        await pubsub_task
+    except asyncio.CancelledError:
+        pass
+    # Pembersihan (Cleanup) koneksi
+    try:
+        if state.LOG_FILE_HANDLE is not None:
+            try:
+                state.LOG_FILE_HANDLE.close()
+            except Exception:
+                pass
+            print("File handle training log berhasil ditutup.")
+            
+        pool = getattr(classifier, "PG_POOL", None)
+        if pool:
+            await pool.close()
+            print("Koneksi PostgreSQL berhasil ditutup.")
+        redis_client = getattr(classifier, "REDIS_CLIENT", None)
+        if redis_client:
+            await redis_client.close()
+            print("Koneksi Redis berhasil ditutup.")
+    except Exception as e:
+        print(f"Peringatan: Gagal melakukan cleanup pada shutdown: {e}")
 
 app = FastAPI(
     title="Cyberbullying & Hate Speech Detection API",
@@ -50,9 +78,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-import os
-
-allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173")
 allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
 
 app.add_middleware(
@@ -62,6 +88,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routes
+app.include_router(predict_router)
+app.include_router(admin_router)
 
 @app.get("/")
 def read_root():
@@ -79,70 +109,14 @@ def health_check():
 
 @app.get("/models/status")
 def models_status():
+    from classifier.predictor import ML_MODEL, PREPARED_LEXICON, TRANSFORMER_SESSION, TRANSFORMER_MODEL, THRESHOLDS
     return {
-        "status": "online" if classifier.ML_MODEL is not None else "offline",
+        "status": "online" if ML_MODEL is not None else "offline",
         "models_loaded": {
-            "lexicon": len(classifier.PREPARED_LEXICON) > 0,
-            "machine_learning": classifier.ML_MODEL is not None,
-            "transformers_onnx": classifier.TRANSFORMER_SESSION is not None,
-            "transformers_pytorch": classifier.TRANSFORMER_MODEL is not None
+            "lexicon": len(PREPARED_LEXICON) > 0,
+            "machine_learning": ML_MODEL is not None,
+            "transformers_onnx": TRANSFORMER_SESSION is not None,
+            "transformers_pytorch": TRANSFORMER_MODEL is not None
         },
-        "thresholds": classifier.THRESHOLDS
+        "thresholds": THRESHOLDS
     }
-
-@app.post("/predict/lexicon", response_model=LexiconResponse, dependencies=[Depends(verify_api_key)])
-def predict_lexicon(req: TextRequest):
-    return classifier.predict_lexicon(req.text, bool(req.use_fuzzy))
-
-@app.post("/predict/ml", response_model=MLResponse, dependencies=[Depends(verify_api_key)])
-def predict_ml(req: TextRequest):
-    if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
-        raise HTTPException(status_code=503, detail="Model ML belum termuat.")
-    return classifier.predict_ml(req.text)
-
-@app.post("/predict/transformers", response_model=TransformerResponse, dependencies=[Depends(verify_api_key)])
-def predict_transformers(req: TextRequest):
-    if classifier.TRANSFORMER_SESSION is None and classifier.TRANSFORMER_MODEL is None:
-        raise HTTPException(status_code=503, detail="Model Transformer belum termuat.")
-    try:
-        return classifier.predict_transformers(req.text)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/predict/ensemble", response_model=EnsembleResponse, dependencies=[Depends(verify_api_key)])
-def predict_ensemble(req: TextRequest):
-    if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
-        raise HTTPException(status_code=503, detail="Model ML belum termuat.")
-    return classifier.predict_ensemble(req.text)
-
-@app.post("/predict/hybrid", response_model=HybridResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
-async def predict_hybrid(req: TextRequest):
-    if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
-        raise HTTPException(status_code=503, detail="Model ML belum termuat.")
-    return await classifier.predict_hybrid(req.text)
-
-@app.post("/predict/batch", response_model=BatchResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
-async def predict_batch(req: BatchTextRequest):
-    for text in req.texts:
-        if not text or len(text.strip()) == 0:
-            raise HTTPException(status_code=422, detail="Setiap teks dalam batch tidak boleh kosong.")
-        if len(text) > 500:
-            raise HTTPException(status_code=422, detail="Panjang setiap teks dalam batch maksimal 500 karakter.")
-            
-    tasks = [classifier.predict_hybrid(text) for text in req.texts]
-    predictions = await asyncio.gather(*tasks)
-    
-    results = []
-    for pred in predictions:
-        results.append(BatchItemResponse(
-            text=pred.text,
-            is_toxic=pred.is_toxic,
-            is_bully=pred.is_bully,
-            probability_toxic=pred.probability_toxic,
-            probability_bully=pred.probability_bully,
-            category=pred.category,
-            decision_source=pred.decision_source,
-            reason=pred.reason
-        ))
-    return BatchResponse(results=results)
-

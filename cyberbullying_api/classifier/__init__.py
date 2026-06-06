@@ -7,7 +7,8 @@ from classifier.database import (
     get_pg_pool, get_redis, init_cache_db,
     get_cached_response, save_cached_response,
     save_classification_memory, get_classification_memory,
-    get_unvalidated_memory, update_validation_status
+    get_unvalidated_memory, update_validation_status,
+    get_categorized_memory
 )
 from classifier.llm import (
     retrieve_relevant_examples, query_ollama_async, query_ollama_stream_async

@@ -16,6 +16,7 @@ thresholds.json
 cyberbullying_api/cache/
 
 *cookie*.json
+tiktok_browser_profile/
 
 .env
 .env*
@@ -23,3 +24,19 @@ cyberbullying_api/cache/
 # Ignore dynamically generated retraining model versions
 cyberbullying_api/models/model_lr_*.joblib
 cyberbullying_api/models/vectorizer_*.joblib
+
+# IDE & local settings
+.vscode/
+.idea/
+.python-doctor/
+*.pyuser
+
+# Development scratch files
+scratch/
+stitch/
+cyberbullying-detector/
+*.png
+*.jpg
+*.jpeg
+*.gif
+

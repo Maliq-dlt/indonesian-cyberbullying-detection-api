@@ -71,7 +71,10 @@ df_combined = pd.read_csv(os.path.join(BASE_DIR, "..", "dataset", "ds_2", "combi
 df_combined = df_combined.dropna(subset=['String', 'Label'])
 df_combined['text_clean'] = df_combined['String'].apply(clean_and_normalize)
 df_combined['is_bully'] = df_combined['Label'].isin(['Bullying', 'negatif', 'negative'])
-df_combined['is_toxic'] = df_combined['text_clean'].apply(check_toxic_by_lexicon)
+if 'is_toxic' in df_combined.columns:
+    df_combined['is_toxic'] = df_combined['is_toxic'].astype(bool)
+else:
+    df_combined['is_toxic'] = df_combined['text_clean'].apply(check_toxic_by_lexicon)
 
 # ----------------------------------------------------
 # 3. Augmentasi Data (Sarkasme & Slang Pujian)

@@ -1,4 +1,16 @@
 import os
+import sys
+
+# Konfigurasikan encoding output konsol ke UTF-8 di Windows agar tidak crash saat mencetak karakter Unicode
+if sys.platform.startswith('win'):
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            getattr(sys.stdout, 'reconfigure')(encoding='utf-8')
+        if hasattr(sys.stderr, 'reconfigure'):
+            getattr(sys.stderr, 'reconfigure')(encoding='utf-8')
+    except Exception:
+        pass
+
 import torch
 import warnings
 import shutil

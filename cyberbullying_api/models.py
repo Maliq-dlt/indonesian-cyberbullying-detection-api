@@ -1,5 +1,55 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
+import urllib.parse
+import ipaddress
+import re
+
+def check_ssrf_url(url: str, allowed_domains: List[str]) -> str:
+    # Harus menggunakan HTTP atau HTTPS
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise ValueError("URL harus dimulai dengan http:// atau https://")
+        
+    try:
+        parsed = urllib.parse.urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("URL tidak memiliki domain yang valid")
+            
+        # Periksa whitelist domain (harus berupa domain itu sendiri atau submainnya)
+        domain_ok = any(
+            hostname.lower() == domain or hostname.lower().endswith('.' + domain)
+            for domain in allowed_domains
+        )
+        if not domain_ok:
+            raise ValueError(f"Domain harus berupa atau subdomain dari: {', '.join(allowed_domains)}")
+            
+        # Cek apakah hostname adalah IP address
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_loopback or ip.is_private or ip.is_link_local:
+                raise ValueError("URL tidak boleh merujuk ke alamat IP lokal/privat")
+        except ValueError:
+            # Jika bukan IP address, pastikan bukan hostname lokal
+            if hostname.lower() in ["localhost", "127.0.0.1", "0.0.0.0"]:
+                raise ValueError("URL tidak boleh merujuk ke alamat lokal")
+                
+            # Filter ekspresi reguler untuk mendeteksi IP privat secara literal
+            private_ip_patterns = [
+                r"^127\.",
+                r"^10\.",
+                r"^192\.168\.",
+                r"^172\.(1[6-9]|2[0-9]|3[0-1])\.",
+                r"^169\.254\."
+            ]
+            for pattern in private_ip_patterns:
+                if re.match(pattern, hostname):
+                    raise ValueError("URL tidak boleh merujuk ke alamat IP lokal/privat")
+    except ValueError as e:
+        raise e
+    except Exception as e:
+        raise ValueError(f"Format URL tidak valid: {str(e)}")
+        
+    return url
 
 class TextRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=500)
@@ -19,6 +69,12 @@ class LexiconResponse(BaseModel):
     risk_label: str
     score: int
     matches: List[LexiconMatch]
+    execution_time: Optional[float] = 0.0
+
+class WordImportance(BaseModel):
+    word: str
+    weight_toxic: float
+    weight_bully: float
 
 class MLResponse(BaseModel):
     text: str
@@ -27,6 +83,8 @@ class MLResponse(BaseModel):
     probability_toxic: float
     probability_bully: float
     category: str
+    word_importances: List[WordImportance] = []
+    execution_time: Optional[float] = 0.0
 
 class TransformerResponse(BaseModel):
     text: str
@@ -35,6 +93,8 @@ class TransformerResponse(BaseModel):
     probability_toxic: float
     probability_bully: float
     category: str
+    word_importances: List[WordImportance] = []
+    execution_time: Optional[float] = 0.0
 
 class EnsembleResponse(BaseModel):
     text: str
@@ -43,6 +103,8 @@ class EnsembleResponse(BaseModel):
     probability_toxic: float
     probability_bully: float
     category: str
+    word_importances: List[WordImportance] = []
+    execution_time: Optional[float] = 0.0
 
 class HybridResponse(BaseModel):
     text: str
@@ -53,10 +115,21 @@ class HybridResponse(BaseModel):
     category: str
     decision_source: str
     reason: str
+    word_importances: List[WordImportance] = []
+    execution_time: Optional[float] = 0.0
 
 class BatchTextRequest(BaseModel):
     texts: List[str] = Field(..., min_length=1, max_length=50)
     model_name: Optional[str] = "llama3.2:3b"
+
+    @field_validator('texts')
+    @classmethod
+    def validate_texts_length(cls, v: List[str]) -> List[str]:
+        if len(v) > 50:
+            raise ValueError("Maksimal jumlah teks dalam batch adalah 50")
+        if len(v) < 1:
+            raise ValueError("Minimal harus ada 1 teks dalam batch")
+        return v
 
 class BatchItemResponse(BaseModel):
     text: str
@@ -67,6 +140,7 @@ class BatchItemResponse(BaseModel):
     category: str
     decision_source: str
     reason: str
+    word_importances: List[WordImportance] = []
 
 class BatchResponse(BaseModel):
     results: List[BatchItemResponse]
@@ -80,4 +154,58 @@ def determine_category(is_toxic: bool, is_bully: bool) -> str:
         return "Non-Toxic but Bully (Sarcasm / Insult)"
     else:
         return "Non-Toxic & Non-Bully (Aman)"
+
+
+class ScrapeTikTokRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=500)
+    max_comments: Optional[int] = Field(20, ge=1, le=100)
+
+    @field_validator('url')
+    @classmethod
+    def validate_tiktok_url(cls, v: str) -> str:
+        return check_ssrf_url(v, ['tiktok.com'])
+
+
+class ScrapeXRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=500)
+    max_tweets: Optional[int] = Field(20, ge=1, le=100)
+
+    @field_validator('url')
+    @classmethod
+    def validate_x_url(cls, v: str) -> str:
+        return check_ssrf_url(v, ['x.com', 'twitter.com'])
+
+
+class ScrapeResponse(BaseModel):
+    success: bool
+    count: int
+    data: List[str]
+
+
+class ReallocateRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    new_is_toxic: bool
+    new_is_bully: bool
+
+
+class ReallocateResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class UpdateCookiesRequest(BaseModel):
+    platform: str
+    cookies: List[dict]
+
+
+class BulkReallocateItem(BaseModel):
+    text: str = Field(..., min_length=1)
+    new_is_toxic: bool
+    new_is_bully: bool
+
+
+class BulkReallocateRequest(BaseModel):
+    items: List[BulkReallocateItem]
+
+
 

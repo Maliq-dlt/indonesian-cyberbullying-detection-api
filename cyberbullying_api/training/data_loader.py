@@ -138,7 +138,10 @@ def load_combined_dataset(
         df = df.dropna(subset=["String", "Label"])
         df["text_clean"] = df["String"].apply(clean_fn)
         df["is_bully"] = df["Label"].isin(["Bullying", "negatif", "negative"])
-        df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
+        if "is_toxic" in df.columns:
+            df["is_toxic"] = df["is_toxic"].astype(bool)
+        else:
+            df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
         return df[["text_clean", "is_toxic", "is_bully"]]
     except Exception as e:
         print(f"Warning: Gagal memuat dataset kombinasi ({path}): {e}")
@@ -234,7 +237,7 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
             try:
                 conn = await asyncpg.connect(pg_url)
                 rows = await conn.fetch(
-                    "SELECT text, is_bully FROM classification_memory "
+                    "SELECT encrypted_text, is_toxic, is_bully FROM classification_memory "
                     "WHERE is_validated = 1 OR decision_source LIKE 'Tier 3%'"
                 )
                 await conn.close()
@@ -246,12 +249,18 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
         try:
             pg_rows = asyncio.run(_fetch_pg())
             if pg_rows is not None:
+                from classifier.database import decrypt_text
                 for row in pg_rows:
-                    raw_text = str(row["text"]).strip()
+                    raw_text = str(decrypt_text(row["encrypted_text"])).strip()
+                    is_toxic = bool(row["is_toxic"])
                     is_bully = bool(row["is_bully"])
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({"String": raw_text, "Label": label_str})
+                        new_records.append({
+                            "String": raw_text,
+                            "Label": label_str,
+                            "is_toxic": is_toxic
+                        })
                 print(f"Berhasil memuat {len(pg_rows)} data dari PostgreSQL.")
                 pg_records_loaded = True
         except Exception as e:
@@ -266,17 +275,23 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
                 conn = sqlite3.connect(db_path, timeout=10.0)
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT text, is_bully FROM classification_memory "
+                    "SELECT encrypted_text, is_toxic, is_bully FROM classification_memory "
                     "WHERE is_validated = 1 OR decision_source LIKE 'Tier 3%'"
                 )
                 rows = cursor.fetchall()
                 conn.close()
+                from classifier.database import decrypt_text
                 for row in rows:
-                    raw_text = str(row[0]).strip()
-                    is_bully = bool(row[1])
+                    raw_text = str(decrypt_text(row[0])).strip()
+                    is_toxic = bool(row[1])
+                    is_bully = bool(row[2])
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({"String": raw_text, "Label": label_str})
+                        new_records.append({
+                            "String": raw_text,
+                            "Label": label_str,
+                            "is_toxic": is_toxic
+                        })
                 print(
                     f"Berhasil memuat {len(rows)} data dari basis data memori SQLite."
                 )

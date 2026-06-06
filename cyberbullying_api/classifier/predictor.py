@@ -8,7 +8,7 @@ import pandas as pd
 import asyncio
 import subprocess
 import sys
-from typing import List, Dict, Any
+from typing import List, Dict, Any, AsyncGenerator
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 try:
@@ -17,11 +17,11 @@ except ImportError:
     ort = None
 
 try:
-    from sentence_transformers import SentenceTransformer
+    from sentence_transformers import SentenceTransformer  # type: ignore
 except ImportError:
     SentenceTransformer = None
 
-from models import *
+from models import LexiconResponse, MLResponse, TransformerResponse, EnsembleResponse, HybridResponse, determine_category
 from normalizer import (
     normalize_text,
     prepare_lexicon,
@@ -32,7 +32,7 @@ from normalizer import (
     BASE_CYBERBULLYING_LEXICON
 )
 from classifier.database import init_cache_db, save_classification_memory, get_classification_memory
-from classifier.llm import query_ollama_async, OLLAMA_URL
+from classifier.llm import query_ollama_async, query_ollama_stream_async, OLLAMA_URL
 import classifier.llm as llm_module
 
 # Tentukan direktori dasar dinamis untuk pathing absolut (parent dari classifier/ yaitu cyberbullying_api/)
@@ -40,12 +40,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Global variables for models and prepared lexicon
 PREPARED_LEXICON = []
-ML_MODEL = None
-ML_VECTORIZER = None
-TRANSFORMER_SESSION = None
-TRANSFORMER_TOKENIZER = None
-TRANSFORMER_MODEL = None
-EMBEDDING_MODEL = None
+ML_MODEL: Any = None
+ML_VECTORIZER: Any = None
+TRANSFORMER_SESSION: Any = None
+TRANSFORMER_TOKENIZER: Any = None
+TRANSFORMER_MODEL: Any = None
+EMBEDDING_MODEL: Any = None
 
 THRESHOLDS = {
     "threshold_toxic": 0.5,
@@ -62,6 +62,24 @@ def load_thresholds():
             print(f"Ambang batas perutean dinamis dimuat: Toxic={THRESHOLDS['threshold_toxic']:.2f}, Bully={THRESHOLDS['threshold_bully']:.2f}")
         except Exception as e:
             print("Warning: Gagal memuat thresholds.json, menggunakan default 0.5:", e)
+
+def get_calibrated_weights() -> dict:
+    try:
+        from classifier.settings_store import get_settings_sync
+        settings = get_settings_sync()
+        return settings.get("ensemble_weights", {
+            "ml_toxic": 0.5,
+            "tr_toxic": 0.5,
+            "ml_bully": 0.65,
+            "tr_bully": 0.35
+        })
+    except Exception:
+        return {
+            "ml_toxic": 0.5,
+            "tr_toxic": 0.5,
+            "ml_bully": 0.65,
+            "tr_bully": 0.35
+        }
 
 def init_models():
     global PREPARED_LEXICON, ML_MODEL, ML_VECTORIZER, TRANSFORMER_SESSION, TRANSFORMER_TOKENIZER, TRANSFORMER_MODEL, EMBEDDING_MODEL
@@ -161,12 +179,24 @@ def init_models():
         print(f"{onnx_filename} tidak ditemukan. Menjalankan ekspor otomatis...")
         try:
             export_script = os.path.join(BASE_DIR, "export_onnx.py")
-            subprocess.run([sys.executable, export_script], check=True, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
-            # export_onnx.py hardcode ke model_quantized.onnx, kita pindahkan ke path spesifik model
+            # Hapus berkas legacy_onnx lama jika ada untuk menghindari mismatch model lama jika ekspor saat ini gagal
             legacy_onnx = os.path.join(BASE_DIR, "models", "model_quantized.onnx")
+            if os.path.exists(legacy_onnx):
+                try:
+                    os.remove(legacy_onnx)
+                    print("Membersihkan model_quantized.onnx usang sebelum ekspor baru.")
+                except Exception as del_err:
+                    print(f"Warning: Gagal membersihkan model_quantized.onnx lama: {del_err}")
+
+            subprocess.run([sys.executable, export_script], check=True, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+            
+            # export_onnx.py menulis ke model_quantized.onnx, pindahkan ke nama file spesifik model
             if os.path.exists(legacy_onnx):
                 import shutil
                 shutil.move(legacy_onnx, onnx_path)
+                print(f"Sukses mengekspor model ONNX spesifik ke: {onnx_path}")
+            else:
+                raise FileNotFoundError("Berkas ekspor model_quantized.onnx tidak ditemukan setelah proses ekspor selesai.")
         except Exception as e:
             print("Gagal ekspor ONNX otomatis, fallback ke PyTorch:", e)
 
@@ -199,6 +229,64 @@ def init_models():
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+def explain_prediction(text: str) -> List[Any]:
+    from models import WordImportance
+    if ML_MODEL is None or ML_VECTORIZER is None:
+        return []
+        
+    try:
+        norm = normalize_text(text)["spaced"]
+        
+        # Ekstrak estimator individual dari MultiOutputClassifier
+        toxic_estimator = ML_MODEL.estimators_[0]
+        bully_estimator = ML_MODEL.estimators_[1]
+        
+        # Ekstrak koefisien masing-masing kelas secara aman
+        def get_coefs(est):
+            if hasattr(est, "coef_"):
+                return est.coef_[0]
+            if hasattr(est, "calibrated_classifiers_") and len(est.calibrated_classifiers_) > 0:
+                coefs_list = []
+                for cal in est.calibrated_classifiers_:
+                    sub_est = getattr(cal, "estimator", getattr(cal, "base_estimator", None))
+                    if sub_est is not None and hasattr(sub_est, "coef_"):
+                        coefs_list.append(sub_est.coef_[0])
+                if coefs_list:
+                    return np.mean(coefs_list, axis=0)
+            return None
+
+        toxic_coefs = get_coefs(toxic_estimator)
+        bully_coefs = get_coefs(bully_estimator)
+        
+        feature_names = ML_VECTORIZER.get_feature_names_out()
+        tfidf_matrix = ML_VECTORIZER.transform([norm])
+        nonzero_indices = tfidf_matrix.nonzero()[1]
+        
+        impacts = []
+        for idx in nonzero_indices:
+            word = feature_names[idx]
+            tfidf_val = tfidf_matrix[0, idx]
+            
+            w_toxic = float(toxic_coefs[idx] * tfidf_val) if toxic_coefs is not None and idx < len(toxic_coefs) else 0.0
+            w_bully = float(bully_coefs[idx] * tfidf_val) if bully_coefs is not None and idx < len(bully_coefs) else 0.0
+            
+            if abs(w_toxic) > 1e-4 or abs(w_bully) > 1e-4:
+                impacts.append({
+                    "word": word,
+                    "weight_toxic": w_toxic,
+                    "weight_bully": w_bully
+                })
+                
+        # Urutkan berdasarkan impak absolut tertinggi
+        impacts.sort(key=lambda x: max(abs(x["weight_toxic"]), abs(x["weight_bully"])), reverse=True)
+        return [
+            WordImportance(word=imp["word"], weight_toxic=imp["weight_toxic"], weight_bully=imp["weight_bully"])
+            for imp in impacts
+        ]
+    except Exception as e:
+        print(f"Warning: Gagal menghitung XAI explain_prediction: {e}")
+        return []
+
 def predict_transformer_raw(text: str) -> Dict[str, float]:
     if TRANSFORMER_TOKENIZER is None:
         return {"toxic_prob": 0.0, "bully_prob": 0.0}
@@ -220,6 +308,16 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
         except Exception as e:
             print("Warning: Gagal memproses menggunakan session ONNX, fallback ke PyTorch:", e)
 
+    global TRANSFORMER_MODEL
+    if TRANSFORMER_MODEL is None:
+        try:
+            model_name = os.getenv("TRANSFORMER_MODEL_PATH", "nahiar/hatespeech-abusive-xlm-roberta-v1")
+            print(f"Memuat model PyTorch secara dinamis untuk fallback: {model_name}...")
+            TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name)
+            print("Model PyTorch berhasil dimuat secara dinamis!")
+        except Exception as load_err:
+            print("Error: Gagal memuat model PyTorch secara dinamis:", load_err)
+
     if TRANSFORMER_MODEL is not None:
         inputs = TRANSFORMER_TOKENIZER(text, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
@@ -233,6 +331,8 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
     return {"toxic_prob": 0.0, "bully_prob": 0.0}
 
 def predict_lexicon(text: str, use_fuzzy: bool = True) -> LexiconResponse:
+    import time
+    start_time = time.perf_counter()
     norm = normalize_text(text)
     spaced_text = norm["spaced"]
     compact_text = norm["compact"]
@@ -280,6 +380,7 @@ def predict_lexicon(text: str, use_fuzzy: bool = True) -> LexiconResponse:
     else:
         risk_label = "rendah"
 
+    elapsed = (time.perf_counter() - start_time) * 1000.0
     return LexiconResponse(
         text=text,
         normalized_spaced=spaced_text,
@@ -287,12 +388,15 @@ def predict_lexicon(text: str, use_fuzzy: bool = True) -> LexiconResponse:
         is_cyberbullying=bool(matches),
         risk_label=risk_label,
         score=score,
-        matches=matches
+        matches=matches,
+        execution_time=round(elapsed, 2)
     )
 
 def predict_ml(text: str) -> MLResponse:
+    import time
+    start_time = time.perf_counter()
     if ML_MODEL is None or ML_VECTORIZER is None:
-        return MLResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Model ML belum termuat.")
+        return MLResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Model ML belum termuat.", word_importances=[], execution_time=0.0)
     
     norm = normalize_text(text)["spaced"]
     tfidf_text = ML_VECTORIZER.transform([norm])
@@ -304,16 +408,21 @@ def predict_ml(text: str) -> MLResponse:
     is_toxic = prob_toxic >= THRESHOLDS.get("threshold_toxic", 0.5)
     is_bully = prob_bully >= THRESHOLDS.get("threshold_bully", 0.5)
     
+    elapsed = (time.perf_counter() - start_time) * 1000.0
     return MLResponse(
         text=text,
         is_toxic=is_toxic,
         is_bully=is_bully,
         probability_toxic=prob_toxic,
         probability_bully=prob_bully,
-        category=determine_category(is_toxic, is_bully)
+        category=determine_category(is_toxic, is_bully),
+        word_importances=explain_prediction(text),
+        execution_time=round(elapsed, 2)
     )
 
 def predict_transformers(text: str) -> TransformerResponse:
+    import time
+    start_time = time.perf_counter()
     res = predict_transformer_raw(text)
     prob_toxic = res["toxic_prob"]
     prob_bully = res["bully_prob"]
@@ -321,16 +430,21 @@ def predict_transformers(text: str) -> TransformerResponse:
     is_toxic = prob_toxic >= THRESHOLDS.get("threshold_toxic", 0.5)
     is_bully = prob_bully >= THRESHOLDS.get("threshold_bully", 0.5)
     
+    elapsed = (time.perf_counter() - start_time) * 1000.0
     return TransformerResponse(
         text=text,
         is_toxic=is_toxic,
         is_bully=is_bully,
         probability_toxic=prob_toxic,
         probability_bully=prob_bully,
-        category=determine_category(is_toxic, is_bully)
+        category=determine_category(is_toxic, is_bully),
+        word_importances=explain_prediction(text),
+        execution_time=round(elapsed, 2)
     )
 
 def predict_ensemble(text: str) -> EnsembleResponse:
+    import time
+    start_time = time.perf_counter()
     ml_res = predict_ml(text)
     ml_toxic = ml_res.probability_toxic
     ml_bully = ml_res.probability_bully
@@ -339,8 +453,14 @@ def predict_ensemble(text: str) -> EnsembleResponse:
     tr_toxic = res_tr["toxic_prob"]
     tr_bully = res_tr["bully_prob"]
             
-    final_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
-    final_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
+    w = get_calibrated_weights()
+    w_ml_toxic = w.get("ml_toxic", 0.5)
+    w_tr_toxic = w.get("tr_toxic", 0.5)
+    w_ml_bully = w.get("ml_bully", 0.65)
+    w_tr_bully = w.get("tr_bully", 0.35)
+
+    final_toxic = w_ml_toxic * ml_toxic + w_tr_toxic * tr_toxic if tr_toxic > 0.0 else ml_toxic
+    final_bully = w_ml_bully * ml_bully + w_tr_bully * tr_bully if tr_bully > 0.0 else ml_bully
     
     lex_res = predict_lexicon(text, use_fuzzy=False)
     if lex_res.is_cyberbullying:
@@ -349,18 +469,31 @@ def predict_ensemble(text: str) -> EnsembleResponse:
     is_toxic = final_toxic >= THRESHOLDS.get("threshold_toxic", 0.5)
     is_bully = final_bully >= THRESHOLDS.get("threshold_bully", 0.5)
     
+    elapsed = (time.perf_counter() - start_time) * 1000.0
     return EnsembleResponse(
         text=text,
         is_toxic=is_toxic,
         is_bully=is_bully,
         probability_toxic=final_toxic,
         probability_bully=final_bully,
-        category=determine_category(is_toxic, is_bully)
+        category=determine_category(is_toxic, is_bully),
+        word_importances=explain_prediction(text),
+        execution_time=round(elapsed, 2)
     )
+
+def run_ml_inference_sync(text: str) -> tuple[float, float]:
+    if ML_VECTORIZER is None or ML_MODEL is None:
+        return 0.0, 0.0
+    norm = normalize_text(text)["spaced"]
+    tfidf_text = ML_VECTORIZER.transform([norm])
+    pred_probs_ml = ML_MODEL.predict_proba(tfidf_text)
+    ml_toxic = float(pred_probs_ml[0][0][1])
+    ml_bully = float(pred_probs_ml[1][0][1])
+    return ml_toxic, ml_bully
 
 async def _predict_hybrid_internal(text: str) -> HybridResponse:
     if ML_MODEL is None or ML_VECTORIZER is None:
-        return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.")
+        return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.", word_importances=[])
 
     # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat dan Ollama terkonfigurasi)
     is_sarcasm_candidate = detect_sentiment_contrast(text)
@@ -378,15 +511,12 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 probability_bully=1.0 if is_bully else 0.0,
                 category=determine_category(is_toxic, is_bully),
                 decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
-                reason=f"[Sarcasm Bypass] {ollama_res['reason']}"
+                reason=f"[Sarcasm Bypass] {ollama_res['reason']}",
+                word_importances=explain_prediction(text)
             )
 
     # 1. Jalankan ML (Tier 1)
-    norm = normalize_text(text)["spaced"]
-    tfidf_text = ML_VECTORIZER.transform([norm])
-    pred_probs_ml = ML_MODEL.predict_proba(tfidf_text)
-    ml_toxic = float(pred_probs_ml[0][0][1])
-    ml_bully = float(pred_probs_ml[1][0][1])
+    ml_toxic, ml_bully = await asyncio.to_thread(run_ml_inference_sync, text)
 
     t_t = THRESHOLDS.get("threshold_toxic", 0.5)
     t_b = THRESHOLDS.get("threshold_bully", 0.5)
@@ -403,7 +533,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             probability_bully=ml_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 1 (ML Klasik)",
-            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik."
+            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik.",
+            word_importances=explain_prediction(text)
         )
 
     # 2. Ragu-ragu -> Jalankan Transformer (Tier 2 ONNX / Fallback PyTorch)
@@ -411,8 +542,14 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     tr_toxic = res_tr["toxic_prob"]
     tr_bully = res_tr["bully_prob"]
 
-    ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
-    ens_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
+    w = get_calibrated_weights()
+    w_ml_toxic = w.get("ml_toxic", 0.5)
+    w_tr_toxic = w.get("tr_toxic", 0.5)
+    w_ml_bully = w.get("ml_bully", 0.65)
+    w_tr_bully = w.get("tr_bully", 0.35)
+
+    ens_toxic = w_ml_toxic * ml_toxic + w_tr_toxic * tr_toxic if tr_toxic > 0.0 else ml_toxic
+    ens_bully = w_ml_bully * ml_bully + w_tr_bully * tr_bully if tr_bully > 0.0 else ml_bully
 
     if (abs(ens_toxic - t_t) >= 0.25) and (abs(ens_bully - t_b) >= 0.25):
         is_toxic = ens_toxic >= t_t
@@ -425,7 +562,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             probability_bully=ens_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 2 (Ensemble ML & Transformer)",
-            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer."
+            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer.",
+            word_importances=explain_prediction(text)
         )
 
     # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3 jika terkonfigurasi)
@@ -443,7 +581,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 probability_bully=1.0 if is_bully else 0.0,
                 category=determine_category(is_toxic, is_bully),
                 decision_source="Tier 3 (Ollama Qwen LLM)",
-                reason=ollama_res["reason"]
+                reason=ollama_res["reason"],
+                word_importances=explain_prediction(text)
             )
 
     # Fallback
@@ -457,7 +596,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         probability_bully=ens_bully,
         category=determine_category(is_toxic, is_bully),
         decision_source="Fallback (Ensemble Terbatas)",
-        reason="Ollama lokal tidak merespons, menggunakan keputusan cadangan dari model lokal."
+        reason="Ollama lokal tidak merespons, menggunakan keputusan cadangan dari model lokal.",
+        word_importances=explain_prediction(text)
     )
 
 async def predict_hybrid(text: str) -> HybridResponse:
@@ -465,6 +605,7 @@ async def predict_hybrid(text: str) -> HybridResponse:
     cached_memory = await get_classification_memory(text)
     if cached_memory:
         print(f"[MEMORY HIT] Mengambil keputusan klasifikasi historis (Redis/PostgreSQL) untuk: '{text}'")
+        cached_memory.word_importances = explain_prediction(text)
         return cached_memory
 
     # Jalankan inferensi hybrid
@@ -483,16 +624,17 @@ async def predict_hybrid(text: str) -> HybridResponse:
 
 # predict_hybrid_stream definition below handles streaming logic
 
-async def predict_hybrid_stream(text: str):
+async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], None]:
     # 1. Cek memori klasifikasi historis terlebih dahulu
     cached_memory = await get_classification_memory(text)
     if cached_memory:
         print(f"[MEMORY HIT] Mengambil keputusan klasifikasi historis (Redis/PostgreSQL) untuk: '{text}'")
+        cached_memory.word_importances = explain_prediction(text)
         yield {"chunk": cached_memory.reason, "done": True, "final_data": cached_memory}
         return
 
     if ML_MODEL is None or ML_VECTORIZER is None:
-        res = HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.")
+        res = HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.", word_importances=[])
         yield {"chunk": res.reason, "done": True, "final_data": res}
         return
     
@@ -514,7 +656,8 @@ async def predict_hybrid_stream(text: str):
                         probability_bully=1.0 if is_bully else 0.0,
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
-                        reason=f"[Sarcasm Bypass] {ollama_res['reason']}"
+                        reason=f"[Sarcasm Bypass] {ollama_res['reason']}",
+                        word_importances=explain_prediction(text)
                     )
                     embedding_json = None
                     if EMBEDDING_MODEL is not None:
@@ -534,7 +677,8 @@ async def predict_hybrid_stream(text: str):
                         probability_bully=0.0,
                         category="Aman",
                         decision_source="Fallback",
-                        reason=ollama_res["reason"]
+                        reason=ollama_res["reason"],
+                        word_importances=explain_prediction(text)
                     )
                     embedding_json = None
                     if EMBEDDING_MODEL is not None:
@@ -550,11 +694,7 @@ async def predict_hybrid_stream(text: str):
         return
 
     # 1. Jalankan ML (Tier 1)
-    norm = normalize_text(text)["spaced"]
-    tfidf_text = ML_VECTORIZER.transform([norm])
-    pred_probs_ml = ML_MODEL.predict_proba(tfidf_text)
-    ml_toxic = float(pred_probs_ml[0][0][1])
-    ml_bully = float(pred_probs_ml[1][0][1])
+    ml_toxic, ml_bully = await asyncio.to_thread(run_ml_inference_sync, text)
     
     t_t = THRESHOLDS.get("threshold_toxic", 0.5)
     t_b = THRESHOLDS.get("threshold_bully", 0.5)
@@ -571,7 +711,8 @@ async def predict_hybrid_stream(text: str):
             probability_bully=ml_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 1 (ML Klasik)",
-            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik."
+            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik.",
+            word_importances=explain_prediction(text)
         )
         embedding_json = None
         if EMBEDDING_MODEL is not None:
@@ -589,8 +730,14 @@ async def predict_hybrid_stream(text: str):
     tr_toxic = res_tr["toxic_prob"]
     tr_bully = res_tr["bully_prob"]
     
-    ens_toxic = 0.5 * ml_toxic + 0.5 * tr_toxic if tr_toxic > 0.0 else ml_toxic
-    ens_bully = 0.65 * ml_bully + 0.35 * tr_bully if tr_bully > 0.0 else ml_bully
+    w = get_calibrated_weights()
+    w_ml_toxic = w.get("ml_toxic", 0.5)
+    w_tr_toxic = w.get("tr_toxic", 0.5)
+    w_ml_bully = w.get("ml_bully", 0.65)
+    w_tr_bully = w.get("tr_bully", 0.35)
+
+    ens_toxic = w_ml_toxic * ml_toxic + w_tr_toxic * tr_toxic if tr_toxic > 0.0 else ml_toxic
+    ens_bully = w_ml_bully * ml_bully + w_tr_bully * tr_bully if tr_bully > 0.0 else ml_bully
     
     if (abs(ens_toxic - t_t) >= 0.25) and (abs(ens_bully - t_b) >= 0.25):
         is_toxic = ens_toxic >= t_t
@@ -603,7 +750,8 @@ async def predict_hybrid_stream(text: str):
             probability_bully=ens_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 2 (Ensemble ML & Transformer)",
-            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer."
+            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer.",
+            word_importances=explain_prediction(text)
         )
         embedding_json = None
         if EMBEDDING_MODEL is not None:
@@ -633,7 +781,8 @@ async def predict_hybrid_stream(text: str):
                         probability_bully=1.0 if is_bully else 0.0,
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Tier 3 (Ollama Qwen LLM)",
-                        reason=ollama_res["reason"]
+                        reason=ollama_res["reason"],
+                        word_importances=explain_prediction(text)
                     )
                     embedding_json = None
                     if EMBEDDING_MODEL is not None:
@@ -655,7 +804,8 @@ async def predict_hybrid_stream(text: str):
                         probability_bully=ens_bully,
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Fallback (Ensemble Terbatas)",
-                        reason="Ollama lokal gagal merespons, menggunakan keputusan cadangan dari model lokal."
+                        reason="Ollama lokal gagal merespons, menggunakan keputusan cadangan dari model lokal.",
+                        word_importances=explain_prediction(text)
                     )
                     embedding_json = None
                     if EMBEDDING_MODEL is not None:
@@ -681,7 +831,8 @@ async def predict_hybrid_stream(text: str):
         probability_bully=ens_bully,
         category=determine_category(is_toxic, is_bully),
         decision_source="Fallback (Ensemble Terbatas)",
-        reason="Ollama lokal tidak dikonfigurasi, menggunakan keputusan cadangan dari model lokal."
+        reason="Ollama lokal tidak dikonfigurasi, menggunakan keputusan cadangan dari model lokal.",
+        word_importances=explain_prediction(text)
     )
     embedding_json = None
     if EMBEDDING_MODEL is not None:
@@ -692,3 +843,4 @@ async def predict_hybrid_stream(text: str):
             pass
     await save_classification_memory(res, embedding_json)
     yield {"chunk": res.reason, "done": True, "final_data": res}
+
