@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Download, Trash2, RefreshCw, Globe } from 'lucide-react';
 import { toast } from 'sonner';
+import { SkeletonTableRow, SkeletonStatsWidget, SkeletonFreqWidget } from './SkeletonLoader';
 
 interface PredictionResult {
   text: string;
@@ -278,7 +279,7 @@ export default function SocialScraper({ apiUrl, apiKey, handleExportCSV }: Socia
           <button
             onClick={handleScrapeAndAnalyze}
             disabled={scrapingLoading || !detectedPlatform}
-            className="flex-grow md:flex-grow-0 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-all cursor-pointer border-none flex items-center justify-center gap-2 whitespace-nowrap"
+            className="flex-grow md:flex-grow-0 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 active-press disabled:opacity-50 transition-all cursor-pointer border-none flex items-center justify-center gap-2 whitespace-nowrap"
           >
             {scrapingLoading ? (
               <><RefreshCw className="w-4 h-4 animate-spin" /> Scraping...</>
@@ -318,6 +319,43 @@ export default function SocialScraper({ apiUrl, apiKey, handleExportCSV }: Socia
           <p className="text-xs text-gray-400 max-w-sm leading-relaxed">
             Tempel tautan video TikTok atau tweet X/Twitter di atas, lalu klik <strong>"Tarik & Analisis"</strong> untuk mengikis dan mengklasifikasikan komentar secara otomatis.
           </p>
+        </div>
+      )}
+
+      {/* Loading Skeletons */}
+      {scrapingLoading && (
+        <div className="flex flex-col gap-4 animate-fade-in">
+          <h3 className="text-sm font-bold text-gray-850 dark:text-gray-200 flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
+            Sedang Menarik &amp; Menganalisis Komentar...
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <SkeletonStatsWidget />
+              <SkeletonStatsWidget />
+            </div>
+            <SkeletonFreqWidget />
+          </div>
+          <div className="premium-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-xs text-gray-500">
+                <thead className="bg-gray-50 dark:bg-gray-850 text-xxs font-bold text-gray-400 uppercase border-b border-gray-100 dark:border-gray-800">
+                  <tr>
+                    <th className="px-6 py-3">Komentar / Teks</th>
+                    <th className="px-6 py-3">Klasifikasi</th>
+                    <th className="px-6 py-3">Toxic %</th>
+                    <th className="px-6 py-3">Bully %</th>
+                    <th className="px-6 py-3 text-right">Aksi HITL</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <SkeletonTableRow key={n} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

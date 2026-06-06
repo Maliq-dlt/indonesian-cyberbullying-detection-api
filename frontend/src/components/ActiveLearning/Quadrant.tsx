@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { XAIHighlightText } from '../XAIHighlightText';
 import type { WordImportance } from '../XAIHighlightText';
+import { SkeletonComment } from '../SkeletonLoader';
 
 export interface QuadrantItem {
   text: string;
@@ -234,7 +235,11 @@ export default function Quadrant({
         data-quadrant={currentQuadCode}
       >
         {isLoading ? (
-          <p className="text-xxs text-gray-400 italic text-center py-4">Memuat data...</p>
+          <div className="flex flex-col gap-2">
+            {[1, 2, 3].map((n) => (
+              <SkeletonComment key={n} />
+            ))}
+          </div>
         ) : items.length === 0 ? (
           <p className="text-xxs text-gray-400 italic text-center py-4">Kuadran kosong / Tarik ke sini</p>
         ) : (
