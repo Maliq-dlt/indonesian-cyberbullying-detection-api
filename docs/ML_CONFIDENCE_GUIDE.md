@@ -1,114 +1,92 @@
-# ML Confidence Guide
+# 🧠 Panduan Kalibrasi Confidence & Threshold (Stage 3) — BullyGuard ID
 
-## Problem fixed in Stage 3
+Panduan ini menjelaskan perubahan logika perhitungan nilai probabilitas (*confidence scoring*), integrasi threshold, serta cara melakukan penyesuaian parameter klasifikasi pada sistem BullyGuard ID.
 
-The previous predictor logic mixed three different concepts:
+---
 
-1. **Model probability** — numeric output from Logistic Regression or Transformer.
-2. **Decision** — whether probability crosses the toxic/bully threshold.
-3. **Routing confidence** — whether the system is confident enough to stop at Tier 1/Tier 2 or escalate to LLM.
+## ⚠️ 1. Masalah yang Diselesaikan pada Stage 3
 
-These must be separated. Otherwise, the API may look precise while actually producing misleading confidence.
+Sebelum Stage 3 diterapkan, logika klasifikasi mencampuradukkan tiga konsep yang berbeda secara keliru:
+1. **Probabilitas Model**: Nilai numerik mentah dari Logistic Regression atau Transformer.
+2. **Keputusan Klasifikasi (Decision)**: Status biner (`true`/`false`) jika probabilitas melewati ambang batas (*threshold*).
+3. **Routing Confidence (Ambang Ragu-Ragu)**: Menentukan apakah tingkat keyakinan AI cukup kuat untuk berhenti di Tier 1/2, atau wajib naik (*escalate*) ke Tier 3 (LLM).
 
-## Key changes
+Hal ini membuat sistem memberikan skor yang tidak realistis (seperti nilai biner `1.0` atau `0.0` dari LLM, atau pemaksaan nilai flat `0.90` jika mendeteksi kecocokan kata kasar pada Lexicon).
 
-### 1. LLM decision is no longer treated as true probability
+---
 
-Old behavior:
+## 🛠️ 2. Perubahan Logika Utama
 
-```python
-probability_toxic = 1.0 if is_toxic else 0.0
-```
+### 🤖 A. Keputusan LLM Tidak Lagi Ditulis sebagai Probabilitas Biner (1.0 / 0.0)
+- **Sebelumnya**: `probability_toxic = 1.0` jika LLM memprediksi toxic, dan `0.0` jika aman.
+- **Sekarang**: Probabilitas dipetakan secara realistis ke dalam rentang sekitar threshold:
+  ```python
+  probability_toxic = llm_decision_to_probability(is_toxic, threshold_toxic)
+  ```
+- **Alasan**: LLM menghasilkan keputusan klasifikasi linguistik, bukan probabilitas statistik yang terkalibrasi. Memaksa nilai `1.0` akan merusak akumulasi statistik riwayat.
 
-New behavior:
+### 📖 B. Lexicon Matching Tidak Lagi Memaksa Skor Menjadi 0.90 secara Buta
+- **Sebelumnya**: Jika kata kasar cocok dengan lexicon, probabilitas langsung dipaksa `0.90`.
+- **Sekarang**: Lexicon digunakan sebagai penambah bobot (*boost*) probabilitas model statistik secara adaptif:
+  ```python
+  final_toxic = apply_lexicon_evidence(final_toxic, lex_res)
+  ```
+- **Alasan**: Umpatan kasar bisa muncul dalam kutipan laporan korban, candaan, atau pembelajaran. Lexicon menaikkan risiko (*risk factor*), bukan mendikte hasil akhir secara buta.
 
-```python
-probability_toxic = llm_decision_to_probability(is_toxic, threshold_toxic)
-```
+### ⚖️ C. Normalisasi Bobot Model Ensemble
+- Memastikan jumlah total bobot model ensemble bernilai tepat `1.0` sebelum menghitung probabilitas tertimbang (*weighted average*). Hal ini mencegah skor probabilitas melampaui rentang `[0, 1]`.
 
-Reason: an LLM can make a classification decision, but that does not mean it produced a calibrated probability.
+---
 
-### 2. Lexicon evidence no longer forces score to 0.90
+## 🔑 3. Konfigurasi Variabel Lingkungan Baru (.env)
 
-Old behavior:
-
-```python
-final_toxic = max(final_toxic, 0.90)
-```
-
-New behavior:
-
-```python
-final_toxic = apply_lexicon_evidence(final_toxic, lex_res)
-```
-
-Reason: abusive words can appear in quotes, jokes, educational explanations, self-reporting, or non-targeted context. Lexicon evidence should boost risk, not dominate the model blindly.
-
-### 3. Ensemble weights are normalized
-
-Old behavior may accidentally overweight probabilities if weight totals are not exactly 1.0.
-
-New behavior normalizes weights before calculating weighted probability.
-
-### 4. Confidence margin is configurable
-
-Set in `.env`:
+Tambahkan variabel ini pada berkas `.env` Anda untuk mengatur margin toleransi keraguan AI:
 
 ```env
-CONFIDENCE_MARGIN=0.25
-```
+# Jarak batas keraguan di sekitar threshold. 
+# Jika threshold=0.5 dan margin=0.2, maka area ragu-ragu adalah 0.3 - 0.7.
+# Nilai yang lebih besar akan menaikkan lebih banyak kasus ke Tier 2 & 3.
+CONFIDENCE_MARGIN=0.20
 
-A larger margin escalates more cases to stronger tiers. A smaller margin makes the API faster but riskier.
-
-## Recommended `.env` additions
-
-```env
-CONFIDENCE_MARGIN=0.25
-MIN_TRANSFORMER_SIGNAL=0.001
-LLM_POSITIVE_PROBABILITY=0.80
-LLM_NEGATIVE_PROBABILITY=0.20
+# Parameter penambah bobot dari kecocokan kamus lexicon
 LEXICON_BOOST_LOW=0.05
 LEXICON_BOOST_MEDIUM=0.12
 LEXICON_BOOST_HIGH=0.20
 LEXICON_PROBABILITY_CAP=0.85
 ```
 
-## How to tune thresholds
+---
 
-Run:
+## 🎛️ 4. Cara Melakukan Tuning Threshold
+
+Untuk melatih dan mencari angka threshold klasifikasi terbaik berdasarkan data validasi riil Anda, jalankan skrip evaluator:
 
 ```bash
+# Menjalankan evaluasi threshold otomatis
 python -m cyberbullying_api.classifier.evaluate_thresholds --csv dataset/eval.csv
 ```
 
-Then copy the generated values from:
+Penyaring evaluator akan membuat rekomendasi nilai threshold optimal. Salin isi berkas output rekomendasi:
+`reports/threshold_eval/recommended_thresholds.json`
 
-```text
-reports/threshold_eval/recommended_thresholds.json
-```
+Dan gantikan nilai parameter pada berkas konfigurasi aktif:
+`cyberbullying_api/models/thresholds.json`
 
-into:
-
-```text
-cyberbullying_api/models/thresholds.json
-```
-
-Example:
-
+**Contoh isi berkas `thresholds.json`:**
 ```json
 {
-  "threshold_toxic": 0.45,
-  "threshold_bully": 0.55
+  "threshold_toxic": 0.48,
+  "threshold_bully": 0.52
 }
 ```
 
-## What not to claim yet
+---
 
-Do not claim:
+## 🏁 5. Rekomendasi Narasi (Menghindari Overclaim)
 
-- "model confidence is calibrated"
-- "production-grade moderation accuracy"
-- "enterprise-level detection"
-- "bias-free cyberbullying detection"
+> [!WARNING]
+> Sebelum Anda memiliki kurva kalibrasi probabilitas (*Reliability Diagrams*) dan hasil pengujian bias, hindari klaim berikut:
+> - *"Skor keyakinan AI telah terkalibrasi sempurna."*
+> - *"Model dijamin bebas dari bias kelas sosial / slang daerah."*
+> - *"Akurasi deteksi tingkat industri tanpa False Positive."*
 
-Unless you have calibration plots, benchmark datasets, and error analysis.

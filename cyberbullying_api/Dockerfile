@@ -9,19 +9,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv for extremely fast and resource-efficient package installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Create virtual environment
-RUN python -m venv /opt/venv
+RUN /bin/uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy and install requirements
+# Copy and install requirements using uv and cache mounts to speed up consecutive builds
 COPY cyberbullying_api/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch --extra-index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir -r /app/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    /bin/uv pip install --index-url https://download.pytorch.org/whl/cpu torch && \
+    /bin/uv pip install -r /app/requirements.txt
+
 
 # Stage 2: Final runtime environment
 FROM python:3.11-slim AS runner
 
+# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HUB_DISABLE_SYMLINKS_WARNING=1 \
@@ -30,16 +35,20 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Copy virtual environment from builder stage
-COPY --from=builder /opt/venv /opt/venv
-
-# Install runtime packages for Playwright Chromium
+# Cache Playwright Chromium and system dependencies in an early layer.
+# This avoids reinstalling browsers and system libraries whenever python package dependencies change.
+COPY cyberbullying_api/requirements.txt /tmp/requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
+    && pip install --no-cache-dir $(grep -E '^playwright[>=]*' /tmp/requirements.txt || echo "playwright") \
     && playwright install --with-deps chromium \
+    && pip uninstall -y playwright \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/requirements.txt
+
+# Copy virtual environment from builder stage
+COPY --from=builder /opt/venv /opt/venv
 
 # Copy dataset kamus yang diperlukan untuk preprocessing
 COPY ["dataset", "/app/dataset/"]

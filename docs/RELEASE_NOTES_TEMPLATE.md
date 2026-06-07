@@ -1,55 +1,45 @@
-# Release Notes Template
+# 📋 Release Notes Template — BullyGuard ID
 
-## Version
+Dokumen ini adalah template pencatatan rilis untuk mendokumentasikan pembaruan fitur, perbaikan keamanan, dan perubahan arsitektur pada setiap versi rilis sistem BullyGuard ID.
 
-`v0.2.0-hardening-preview`
+---
 
-## Summary
+## 🏷️ Versi Rilis: `v0.2.0-hardening-release`
 
-Rilis ini memperbaiki dokumentasi, security backend, confidence handling ML, frontend detector refactor, dan workflow integration testing.
+### 📝 Ringkasan Rilis
+Rilis ini berfokus pada **Security Hardening (Peningkatan Keamanan)**, **ML Confidence Calibration (Kalibrasi Keyakinan Model)**, **Frontend Modularization (Pemecahan Komponen UI)**, serta penyediaan skrip **Integration Testing** otomatis. Seluruh dokumentasi juga diperbarui agar memposisikan proyek secara realistis sebagai **Advanced MVP** yang kredibel.
 
-## Added
+---
 
-- Model evaluation template.
-- Production checklist.
-- Security hardening guide.
-- ML confidence helper.
-- Threshold evaluation script.
-- Frontend detector modular structure.
-- Final integration and testing checklist.
+## 🚀 Fitur Baru & Perubahan
 
-## Changed
+### ➕ 1. Ditambahkan (Added)
+- **Modul Kalibrasi**: File `confidence.py` untuk penanganan probabilitas ML yang lebih halus dan adaptif.
+- **Skrip Threshold Evaluator**: File `evaluate_thresholds.py` untuk mencari batas threshold optimal secara otomatis menggunakan dataset CSV.
+- **Skrip Pengujian Otomatis**: Skrip bash dan powershell (`smoke_test_api.ps1`/`smoke_test_api.sh` dan `verify_patch_files.sh`) untuk smoke testing endpoint API.
+- **Dokumentasi Panduan Baru**: Laporan evaluasi model (`MODEL_EVALUATION.md`), security hardening (`SECURITY_HARDENING.md`), dan analisis kesalahan (`ERROR_ANALYSIS_GUIDE.md`).
 
-- Project positioning dibuat lebih realistis sebagai advanced MVP/research-oriented prototype.
-- API key handling diperketat untuk staging/production.
-- Rate limit behavior diperjelas.
-- CORS configuration diperketat.
-- Detector UI dipecah menjadi komponen kecil.
+### 🔄 2. Diubah (Changed)
+- **Positioning Proyek**: Kredibilitas proyek diubah menjadi *Advanced MVP/Prototype* agar selaras dengan kemampuan teknis saat ini.
+- **Restrukturisasi Frontend**: Komponen raksasa `Detector.tsx` dipecah menjadi komponen-komponen kecil dalam folder `Detector/` (InputPanel, ResultCard, XaiDrawer, dsb.) guna kemudahan pemeliharaan kode.
+- **Optimasi Docker Compose**: Mengimplementasikan *image re-use* untuk Celery worker guna menghemat RAM dan memotong durasi build server.
 
-## Security
+### 🔒 3. Peningkatan Keamanan (Security Hardening)
+- **Constant-Time Verification**: API Key menggunakan fungsi komparasi konstan untuk mencegah *timing attacks*.
+- **Fail-Closed Redis**: Rate limiter di production akan memblokir request jika database cache Redis mati demi keamanan dari spamming.
+- **Webhook SSRF Protection**: Validasi ketat alamat IP tujuan webhook untuk mencegah serangan pemindaian port internal (SSRF).
 
-- Production/staging wajib API key.
-- Credential production diarahkan ke environment variable.
-- Webhook validation diperketat.
-- Rate limit tidak fail-open di production.
+---
 
-## ML
+## ⚠️ Batasan Sistem Saat Ini (Known Limitations)
+- Akurasi model biner masih memerlukan pembuktian menggunakan dataset validasi riil dari pengguna.
+- Belum tersedia load testing terarah untuk memantau performa latensi concurrent requests tingkat tinggi.
+- Skema autentikasi admin panel saat ini masih menggunakan konfigurasi API Key tunggal.
 
-- LLM decision tidak lagi dianggap probabilitas absolut.
-- Lexicon boost dibuat lebih konservatif.
-- Threshold evaluation workflow ditambahkan.
+---
 
-## Known limitations
-
-- Model accuracy masih harus dibuktikan dengan validation/test set yang jelas.
-- Benchmark latency belum tersedia.
-- Full production deployment belum divalidasi di cloud environment.
-- Human-in-the-loop workflow masih perlu diuji dengan data nyata.
-
-## Upgrade notes
-
-1. Update `.env` dari `.env.example`.
-2. Jalankan backend tests.
-3. Jalankan frontend build.
-4. Jalankan Docker smoke test.
-5. Review manual patch untuk `predictor.py`.
+## 🛠️ Catatan Migrasi / Peningkatan (Upgrade Notes)
+1. Salin ulang berkas `.env.example` ke `.env` Anda dan isi parameter rahasia yang baru.
+2. Jalankan perintah `pytest` dari root direktori untuk memverifikasi fungsionalitas backend.
+3. Jalankan `npm run build` pada folder `frontend` untuk memvalidasi build produksi.
+4. Nyalakan sistem menggunakan `docker compose up -d --build` dan jalankan skrip `smoke_test_api.ps1`.

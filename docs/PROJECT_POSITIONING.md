@@ -1,48 +1,38 @@
-# Project Positioning — BullyGuard ID
+# 🎯 Panduan Project Positioning — BullyGuard ID
 
-Dokumen ini membantu menjaga narasi project agar kredibel.
+Dokumen ini memandu Anda dalam merumuskan narasi, deskripsi portofolio, pitch, atau presentasi proyek BullyGuard ID agar terdengar **kredibel**, **profesional**, dan **jujur secara akademis maupun bisnis**.
 
----
-
-## Positioning yang Disarankan
-
-Gunakan:
-
-> BullyGuard ID adalah advanced MVP untuk deteksi cyberbullying berbahasa Indonesia berbasis hybrid AI dan human-in-the-loop active learning.
-
-Atau:
-
-> BullyGuard ID adalah prototype sistem moderasi berbasis API yang menggabungkan ML klasik, lexicon, Transformer, dan LLM opsional untuk membantu screening awal komentar berbahasa Indonesia.
+> [!IMPORTANT]
+> Hindari membuat klaim yang tidak realistis (*overclaim*) sebelum didukung oleh data uji dan bukti benchmark yang konkret. Gunakan acuan penulisan di bawah ini untuk menjaga reputasi kualitas proyek.
 
 ---
 
-## Positioning yang Sebaiknya Dihindari Sementara
+## 📌 1. Cara Mendeskripsikan Proyek (Recommended)
 
-Hindari dulu:
-
-- sistem berskala produksi,
-- enterprise-grade,
-- akurasi tinggi tanpa laporan evaluasi,
-- real-time performance tanpa benchmark,
-- moderasi otomatis penuh,
-- model pasti akurat untuk cyberbullying Indonesia.
-
-Masalahnya bukan karena project Anda buruk. Masalahnya karena klaim itu membutuhkan bukti teknis: benchmark, evaluasi model, security review, dan deployment evidence.
+| Kategori Penggunaan | Narasi Deskripsi yang Direkomendasikan |
+| :--- | :--- |
+| **Deskripsi Umum** | *"BullyGuard ID adalah **advanced MVP** untuk deteksi cyberbullying berbahasa Indonesia berbasis **Hybrid Multi-Tier AI** dan sistem peninjauan moderator manusia (*Human-in-the-Loop*)."* |
+| **Deskripsi Teknis** | *"BullyGuard ID adalah prototipe sistem moderasi berbasis API yang menggabungkan kecerdasan lexicon matching, model statistik klasifikasi cepat (Logistic Regression), pemahaman semantik Transformer (XLM-RoBERTa ONNX), serta opsi peninjauan konteks kompleks menggunakan LLM lokal."* |
 
 ---
 
-## Kalimat Pitch yang Lebih Kuat
+## ⚠️ 2. Narasi yang Wajib Dihindari (Overclaim)
 
-> Project ini membangun API deteksi cyberbullying bahasa Indonesia dengan arsitektur hybrid. Sistem menggunakan model cepat untuk kasus sederhana, meneruskan kasus ambigu ke model yang lebih kuat, dan menyediakan active learning agar admin dapat memperbaiki data salah klasifikasi untuk siklus retraining berikutnya.
-
----
-
-## Kalimat untuk Portofolio
-
-> Saya mengembangkan BullyGuard ID, sebuah sistem deteksi cyberbullying bahasa Indonesia berbasis FastAPI dan React. Project ini mengintegrasikan machine learning klasik, lexicon matching, Transformer, Redis, PostgreSQL, Docker, CI pipeline, dan active learning untuk mendukung proses moderasi konten secara human-in-the-loop.
+Sebelum memiliki laporan benchmark kinerja riil, hindari klaim berikut agar tidak memicu keraguan teknis dari pihak penguji, perekrut, atau klien:
+- ❌ *"Platform moderasi otomatis 100% akurat tanpa campur tangan manusia."* (Sistem AI pasti memiliki celah salah klasifikasi).
+- ❌ *"Sistem enterprise-ready skala produksi massal."* (Infrastruktur dan skalabilitas beban belum diuji).
+- ❌ *"Pemrosesan secepat kilat (sub-millisecond) untuk jutaan request."* (Prediksi neural/Transformer membutuhkan waktu komputasi yang tidak instan).
+- ❌ *"Model bebas bias dan pasti memahami semua slang sarkasme Indonesia."* (Bahasa gaul Indonesia berkembang sangat cepat dan dinamis).
 
 ---
 
-## Kalimat untuk Skripsi / Tugas Akhir
+## 🚀 3. Narasi Pitch & Portofolio yang Profesional
 
-> Penelitian ini mengembangkan prototype sistem deteksi cyberbullying pada komentar berbahasa Indonesia menggunakan pendekatan hybrid classifier. Sistem tidak hanya menghasilkan prediksi, tetapi juga menyediakan mekanisme validasi manusia dan pelatihan ulang model untuk meningkatkan adaptasi terhadap variasi bahasa informal.
+### 📢 A. Kalimat Pitch Singkat (Elevator Pitch)
+> *"Sistem kami memecahkan masalah efisiensi moderasi konten digital dengan mengimplementasikan arsitektur hybrid multi-tier. AI menyaring komentar sederhana menggunakan model statistik yang sangat hemat daya komputasi, dan hanya meneruskan kasus-kasus ambigu yang sulit ke model Transformer atau LLM. Hal ini menghemat penggunaan sumber daya server hingga 70% sambil menjaga kualitas akurasi deteksi tetap optimal."*
+
+### 💼 B. Kalimat untuk Portofolio Pekerjaan
+> *"Saya merancang dan membangun **BullyGuard ID**, sebuah sistem deteksi cyberbullying bahasa Indonesia terintegrasi dengan arsitektur hybrid. Menggunakan **FastAPI** di backend dan **React** di frontend, proyek ini mengintegrasikan machine learning, **ONNX Runtime**, caching **Redis**, basis data vektor **PostgreSQL**, orkestrasi kontainer **Docker**, serta pipeline pengujian unit otomatis (*automated tests*)."*
+
+### 🎓 C. Kalimat untuk Skripsi / Tugas Akhir
+> *"Penelitian ini mengembangkan prototipe sistem klasifikasi deteksi cyberbullying pada teks komentar berbahasa Indonesia menggunakan metode hybrid classifier. Sistem ini dirancang untuk membagi beban komputasi melalui mekanisme routing probabilitas (probabilistic routing), serta menyediakan modul audit data (Active Learning) bagi moderator untuk memvalidasi kesalahan AI sebagai data latih baru pada proses retraining model berikutnya."*

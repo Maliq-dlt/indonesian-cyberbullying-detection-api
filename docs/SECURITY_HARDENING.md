@@ -1,128 +1,98 @@
-# Security Hardening Notes — Stage 2
+# 🔒 Security Hardening Report — BullyGuard ID
 
-This document explains the security changes introduced in Stage 2.
+Dokumen ini menjelaskan langkah-langkah peningkatan keamanan (*security hardening*) yang diterapkan pada sistem BullyGuard ID untuk melindungi API dan infrastruktur dari potensi serangan siber.
 
-## 1. API key behavior
+---
 
-Protected endpoints now require `X-API-Key` when `API_KEY` is configured.
+## 🔑 1. Autentikasi API Key bertipe Constant-Time
 
-In local development, missing `API_KEY` is still allowed only when:
+Endpoint yang sensitif kini dilindungi secara ketat menggunakan otentikasi header `X-API-Key`.
+- **Perbandingan Waktu Tetap (Constant-Time)**: Menggunakan pustaka `secrets.compare_digest` untuk membandingkan kunci autentikasi. Hal ini mencegah serangan *timing attack* yang dapat menebak API key dengan mengukur variasi waktu respon server.
+- **Kebijakan Environment**:
+  - **Lokal (Dev)**: Mengizinkan bypass jika `ALLOW_MISSING_API_KEY_IN_DEV=true`.
+  - **Production**: API akan **menolak berjalan** atau menolak seluruh request jika `API_KEY` tidak diset.
 
-```env
-ENV=development
-ALLOW_MISSING_API_KEY_IN_DEV=true
-```
+> [!IMPORTANT]
+> **Rekomendasi Konfigurasi Production:**
+> ```env
+> ENV=production
+> API_KEY=rahasia_api_key_yang_sangat_panjang_dan_acak_12345
+> ALLOW_MISSING_API_KEY_IN_DEV=false
+> ```
 
-In production/staging, the API refuses to start or refuses protected requests if `API_KEY` is missing.
+---
 
-Recommended production value:
+## 🛡️ 2. Proteksi Rate Limiting Berbasis Redis
 
-```env
-ENV=production
-API_KEY=<long-random-secret>
-ALLOW_MISSING_API_KEY_IN_DEV=false
-```
+Untuk mencegah serangan brute-force, scraping massal, atau kelebihan beban (*denial of service*), rate limiter dipasang pada endpoint prediksi:
+- **Konfigurasi Default**:
+  ```env
+  RATE_LIMIT_REQUESTS_PER_MINUTE=15
+  RATE_LIMIT_WINDOW_SECONDS=60
+  ```
+- **Kebijakan Fail-Open / Fail-Closed**:
+  - Di development, `RATE_LIMIT_FAIL_OPEN=true` mengizinkan request tetap jalan meskipun Redis mati (untuk kemudahan setup tanpa docker).
+  - Di production, `RATE_LIMIT_FAIL_OPEN=false` wajib diterapkan. Jika Redis tidak dapat dihubungi, API akan menolak request secara aman (*fail-closed*) demi mencegah bypass rate-limit.
 
-## 2. Rate limiting
+---
 
-Expensive endpoints such as hybrid prediction, batch prediction, and scraping use Redis-based rate limiting.
+## 🌐 3. Kebijakan CORS yang Ketat
 
-Default:
+- **Tanpa Wildcard di Production**: Penggunaan asal domain wildcard `*` dilarang keras di production.
+- **Konfigurasi Origin**: Domain frontend resmi harus didefinisikan secara eksplisit di `.env`:
+  ```env
+  ALLOWED_ORIGINS=https://dashboard.bullyguard.id,https://api.bullyguard.id
+  ```
 
-```env
-RATE_LIMIT_REQUESTS_PER_MINUTE=15
-RATE_LIMIT_WINDOW_SECONDS=60
-```
+---
 
-Development may fail open if Redis is unavailable:
+## 🐳 4. Keamanan Docker Credentials (Environment Variables)
 
-```env
-RATE_LIMIT_FAIL_OPEN=true
-```
+- Semua password bawaan (*hardcoded*) pada berkas `docker-compose.yml` telah dipindahkan menggunakan *interpolation syntax*:
+  ```yaml
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cyber_password}
+  ```
+- Kredensial default ini hanya berlaku untuk lokal. Di production, Docker akan otomatis mengambil variabel lingkungan yang disuplai oleh sistem hosting Anda yang aman.
 
-Production should fail closed:
+---
 
-```env
-RATE_LIMIT_FAIL_OPEN=false
-```
+## 🚫 5. Proteksi Server-Side Request Forgery (SSRF) pada Webhook
 
-This prevents the API from silently accepting unlimited requests when Redis is down.
+Sistem webhook yang digunakan untuk mengirim notifikasi hasil deteksi rentan terhadap serangan SSRF jika penyerang mengirim IP internal server.
+- **Penyaringan IP (IP Filtering)**: Sistem secara otomatis memeriksa dan memblokir request webhook yang mengarah ke:
+  - Loopback IP (`127.0.0.1`, `::1`)
+  - Private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)
+  - Link-Local / Multicast / Unspecified IPs
+- **Allowlist Host**: Anda dapat membatasi domain webhook eksternal yang sah melalui `.env`:
+  ```env
+  WEBHOOK_ALLOWED_HOSTS=hooks.slack.com,discord.com
+  ```
 
-## 3. CORS
+---
 
-Production must use explicit origins:
+## 🛡️ 6. Keamanan Header Reverse Proxy
 
-```env
-ALLOWED_ORIGINS=https://your-frontend-domain.com
-```
+API Key rate limiter memerlukan IP asli klien untuk melacak limit.
+- **Trust Proxy Headers**: Hanya aktifkan `TRUST_PROXY_HEADERS=true` jika backend berada di belakang reverse proxy terpercaya (seperti Nginx atau Cloudflare).
+- Jika bernilai `false`, header `X-Forwarded-For` dan `X-Real-IP` akan diabaikan untuk mencegah pemalsuan IP (*IP spoofing*).
 
-Do not use `*` in production.
+---
 
-## 4. Docker secrets
+## 🗂️ 7. Pemetaan Keamanan Endpoint
 
-The updated `docker-compose.yml` uses environment variables instead of fixed credentials.
+| Endpoint API | Akses Publik | Keterangan / Proteksi |
+| :--- | :---: | :--- |
+| **`/`** | ✅ Ya | Landing page statis |
+| **`/health`** | ✅ Ya | Status pengecekan kontainer (*healthcheck*) |
+| **`/docs`** | ⚠️ Dev Only | Swagger UI (Wajib dimatikan di production) |
+| **`/predict/*`** | ❌ Dilindungi | Endpoint klasifikasi hybrid |
+| **`/models/*`** | ❌ Dilindungi | Pengaturan dan retrain model |
 
-Old pattern:
+---
 
-```yaml
-POSTGRES_PASSWORD: cyber_password
-```
+## 📝 8. Agenda Perbaikan Keamanan Selanjutnya
+- [ ] Menerapkan autentikasi berbasis token session/JWT jika aplikasi berkembang mendukung multi-user.
+- [ ] Menambahkan audit logging untuk mendokumentasikan setiap aksi admin (retraining model, audit data).
+- [ ] Membatasi ukuran body payload request di tingkat reverse proxy (Nginx `client_max_body_size`) untuk mencegah serangan denial-of-service via upload teks raksasa.
+- [ ] Menambahkan pemindaian celah keamanan dependensi (*dependency vulnerability scanning*) otomatis di CI/CD.
 
-Improved pattern:
-
-```yaml
-POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cyber_password}
-```
-
-The fallback is acceptable for local development only. Production must override it through `.env` or your deployment platform secrets.
-
-## 5. Webhook SSRF protection
-
-Webhook URLs are checked to block:
-
-- localhost / loopback IPs
-- private network IPs
-- multicast / link-local / unspecified IPs
-- reserved IPs
-- non-HTTPS URLs in non-development environments
-
-Optional allowlist:
-
-```env
-WEBHOOK_ALLOWED_HOSTS=hooks.slack.com,discord.com
-```
-
-## 6. Reverse proxy IP trust
-
-`X-Forwarded-For` and `X-Real-IP` are trusted only when:
-
-```env
-TRUST_PROXY_HEADERS=true
-```
-
-Keep it false unless the API is behind a trusted reverse proxy.
-
-## 7. Public endpoints
-
-Safe to keep public:
-
-- `/`
-- `/health`
-- `/docs` during development only, depending on your deployment preference
-
-Protected:
-
-- `/predict/*`
-- `/api/*`
-- `/models/status`
-
-## 8. Remaining security work
-
-Stage 2 improves baseline security, but it is not a full security audit. Remaining work:
-
-- Replace single API key with proper user/session auth if multiple users are expected.
-- Add audit logging for admin actions.
-- Add request body size limits at reverse proxy level.
-- Add abuse monitoring.
-- Add secret scanning in CI.
-- Add dependency vulnerability scanning.

@@ -1,76 +1,76 @@
-# Error Analysis Guide
+# 🔍 Panduan Analisis Kesalahan (Error Analysis Guide) — BullyGuard ID
 
-A cyberbullying model should not be judged by F1-score alone. Moderation has asymmetric risk:
+Model deteksi cyberbullying tidak boleh dinilai dari nilai rata-rata F1-score semata. Dalam sistem moderasi konten nyata, kesalahan memiliki risiko asimetris yang memerlukan penanganan yang berbeda:
+- **False Positive (Salah Blokir)**: Kalimat aman ditandai sebagai toxic/bullying. Menyebabkan pengguna frustrasi karena disensor secara tidak adil.
+- **False Negative (Kebocoran Konten)**: Kalimat kasar/bullying lolos dan tidak terdeteksi. Mengurangi rasa aman dalam platform digital.
 
-- False positive: harmless speech is incorrectly flagged.
-- False negative: harmful speech is missed.
+---
 
-Both matter.
+## 📊 1. Struktur Pengumpulan Data Kesalahan
 
-## Minimum manual review table
+Untuk melakukan analisis secara sistematis, buat berkas spreadsheet atau CSV berisi data salah klasifikasi dengan struktur kolom berikut:
 
-Create a CSV or spreadsheet with these columns:
-
-```text
+```csv
 id,text,true_toxic,true_bully,pred_toxic,pred_bully,prob_toxic,prob_bully,error_type,notes
 ```
 
-## Error categories
+---
 
-Use these categories:
+## 🏷️ 2. Kategorisasi Jenis Kesalahan
 
-| Category | Meaning |
-|---|---|
-| direct_insult | Direct insult toward a person/group |
-| profanity_no_target | Harsh word without clear target |
-| sarcasm | Meaning depends on irony/context |
-| quote_or_report | User quotes abuse or reports being abused |
-| slang_or_alay | Creative spelling, slang, abbreviation |
-| identity_attack | Attack on protected/social identity |
-| threat | Threat/intimidation |
-| ambiguous | Human reviewers may disagree |
-| non_bullying_negative | Negative sentiment but not bullying |
+Kelompokkan kasus-kasus yang gagal diidentifikasi oleh AI ke dalam kategori linguistik berikut:
 
-## False positive checklist
+| Kategori | Definisi Linguistik | Contoh Kasus |
+| :--- | :--- | :--- |
+| **`direct_insult`** | Penghinaan langsung ke subjek/objek | *"Kamu bodoh sekali."* |
+| **`profanity_no_target`** | Kata kotor yang dilemparkan tanpa target | *"Sialan, macet banget!"* |
+| **`sarcasm`** | Arti sesungguhnya berlawanan dari kata yang ditulis | *"Wah, pintar sekali kamu sampai tidak lulus."* |
+| **`quote_or_report`** | Pengguna mengutip hinaan orang lain / melaporkan kasus | *"Dia kemarin memanggil saya 'anjing'."* |
+| **`slang_or_alay`** | Kata plesetan, singkatan gaul, atau variasi alay | *"L0 b3g0 b9t s1h"* |
+| **`identity_attack`** | Serangan kebencian terhadap SARA/identitas sosial | Serangan rasial/agama tanpa kata umpatan kasar |
+| **`threat`** | Intimidasi fisik, doxxing, atau ancaman kekerasan | *"Tunggu lu di rumah, gw habisin lu."* |
+| **`non_bullying_negative`** | Kalimat sentimen negatif netral (bukan bullying) | *"Saya sangat kecewa dengan layanan Anda."* |
 
-Inspect flagged safe texts and ask:
+---
 
-1. Is the harsh word targeted at someone?
-2. Is the text quoting someone else?
-3. Is it educational/news/reporting context?
-4. Is it self-directed expression?
-5. Is it banter between close friends?
+## 📋 3. Daftar Evaluasi Kesalahan (Checklist)
 
-## False negative checklist
+### 🔴 Pengujian False Positive (Aman dideteksi Kasar)
+Saat menganalisis kasus di mana model menandai teks bersih sebagai berbahaya, ajukan pertanyaan-pertanyaan berikut:
+1. **Apakah kata kasar tersebut diarahkan ke orang tertentu?** (Makian tanpa target tidak selalu bullying).
+2. **Apakah pengguna sedang mengutip perkataan orang lain?** (Membahas bullying bukan tindakan melakukan bullying).
+3. **Apakah teks tersebut memiliki konteks edukasi atau berita?** (Artikel ilmiah tentang umpatan).
+4. **Apakah ini ekspresi kesal pada diri sendiri?** (*"Aduh saya bodoh banget"*).
+5. **Apakah kalimat tersebut merupakan candaan santai antar-teman akrab?** (*"Woi kampret ke mana aja lu"*).
 
-Inspect missed harmful texts and ask:
+### 🔵 Pengujian False Negative (Kasar dideteksi Aman)
+Saat menganalisis kasus di mana model meloloskan teks berbahaya sebagai aman, ajukan pertanyaan-pertanyaan berikut:
+1. **Apakah ada modifikasi karakter huruf/angka?** (Modifikasi leet-speak untuk mengelabui filter).
+2. **Apakah kalimat tersebut bernada sarkasme tertutup?** (Ujaran merendahkan yang dibungkus kata sopan).
+3. **Apakah menggunakan percampuran bahasa gaul daerah atau bahasa Inggris?** (*"You are so stupid tapi pura-pura smart"*).
+4. **Apakah pelecehan bersifat implisit/halus?** (*"Semoga kamu cepat dipanggil Yang Maha Kuasa ya"*).
 
-1. Is the insult written with obfuscation?
-2. Is the message sarcastic?
-3. Does it use local slang or Indonesian-English mix?
-4. Is bullying implied rather than explicit?
-5. Is identity-based hate present without common abusive words?
+---
 
-## Recommended report structure
+## 📝 4. Rekomendasi Integrasi Laporan
 
-Add this section into `MODEL_EVALUATION.md` after you run threshold evaluation:
+Setiap kali Anda selesai melakukan *tuning threshold* atau *retraining model*, tambahkan tabel ringkasan analisis kesalahan pada berkas [`MODEL_EVALUATION.md`](../MODEL_EVALUATION.md):
 
-```md
-## Error Analysis
+```markdown
+### Kasus False Positive Terpilih
+| Teks Uji | Label Aktual | Prediksi AI | Penyebab | Solusi Perbaikan |
+| :--- | :---: | :---: | :--- | :--- |
+| *"Pelayanannya payah, saya kapok."* | Aman | Toxic | Sentimen negatif kuat | Tambahkan contoh review produk negatif yang aman |
 
-### False Positives
-
-| Text | Expected | Predicted | Likely cause | Fix |
-|---|---|---|---|---|
-| ... | safe | toxic | quoted abusive word | add quote/reporting examples |
-
-### False Negatives
-
-| Text | Expected | Predicted | Likely cause | Fix |
-|---|---|---|---|---|
-| ... | bully | safe | slang/obfuscation | add slang examples |
+### Kasus False Negative Terpilih
+| Teks Uji | Label Aktual | Prediksi AI | Penyebab | Solusi Perbaikan |
+| :--- | :---: | :---: | :--- | :--- |
+| *"Muka pas-pasan ga usah sok gaya."* | Bully | Aman | Body shaming implisit | Tambahkan variasi ejekan fisik ke training set |
 ```
 
-## Stronger evaluation rule
+---
 
-Evaluate at least 100 manually reviewed samples after every retraining. If possible, use 300–500 samples.
+## 🛡️ 5. Standar Operasional Pengujian Ulang
+> [!TIP]
+> Lakukan analisis kesalahan secara manual minimal pada **100 data uji** (sangat direkomendasikan **300–500 data uji**) setiap siklus retraining selesai. Dokumentasikan pergeseran jenis kesalahan model untuk memastikan perbaikan data latih baru benar-benar tepat sasaran.
+

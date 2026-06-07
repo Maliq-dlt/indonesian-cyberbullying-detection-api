@@ -1,58 +1,61 @@
-# Final Integration Guide
+# 🤝 Panduan Integrasi Akhir (Final Integration Guide) — BullyGuard ID
 
-Panduan ini dipakai setelah patch Stage 1 sampai Stage 4 disiapkan.
+Panduan ini digunakan setelah seluruh patch Stage 1 hingga Stage 4 disiapkan untuk diverifikasi dan digabungkan (*merge*) secara aman ke cabang utama (*main*).
 
-## Prinsip integrasi
+---
 
-1. Jangan langsung overwrite seluruh repository.
-2. Apply patch per tahap.
-3. Test setelah setiap tahap.
-4. Commit kecil dan jelas.
-5. Jangan klaim production-ready sebelum acceptance criteria terpenuhi.
+## 📐 1. Prinsip Dasar Integrasi
 
-## Persiapan lokal
+1. **Bertahap**: Jangan menggabungkan seluruh perubahan sekaligus. Terapkan dan uji per tahap.
+2. **Pengujian Berkelanjutan**: Jalankan uji coba fungsionalitas dan keamanan setelah setiap tahap selesai digabungkan.
+3. **Pencatatan Versi**: Gunakan tag rilis Git untuk mencatat setiap tahapan rilis penting.
+4. **Pencegahan Overclaim**: Pastikan dokumentasi diposisikan secara realistis sebagai **Advanced MVP**.
+
+---
+
+## 💻 2. Persiapan Repositori Lokal
+
+Pastikan working tree repositori lokal Anda bersih sebelum memulai integrasi:
 
 ```bash
-git clone https://github.com/<username>/<repo>.git
-cd <repo>
+# Memeriksa status repositori
 git status
-```
 
-Pastikan working tree bersih:
-
-```bash
+# Memastikan tidak ada file sisa yang tidak terkomit
 git status --short
 ```
 
-Jika ada perubahan lokal penting:
+> [!TIP]
+> Jika Anda memiliki perubahan lokal yang belum sempat disimpan, buat komit cadangan terlebih dahulu:
+> ```bash
+> git add .
+> git commit -m "backup: save local changes before integration"
+> ```
 
-```bash
-git add .
-git commit -m "backup: save local changes before integration"
-```
+---
 
-## Environment
+## 🔑 3. Konfigurasi Lingkungan (Environment)
 
-Buat `.env` dari `.env.example`.
+Salin konfigurasi default dari berkas `.env.example` ke `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Minimal pastikan variabel ini ada:
-
+Pastikan variabel-variabel sensitif ini diatur dengan benar (jangan gunakan nilai default untuk deployment rilis):
 ```env
 ENV=development
-API_KEY=change_this_to_a_long_random_secret
+API_KEY=rahasia_api_key_yang_sangat_panjang_dan_aman_123
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
 
-Untuk production, jangan pakai nilai default.
+---
 
-## Backend test
+## 🐍 4. Pengujian Backend API
 
-Dari root repo:
+Jalankan pengujian backend menggunakan pytest untuk memverifikasi logika klasifikasi, routing, dan confidence:
 
+**Bagi Pengguna Linux / macOS:**
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -60,8 +63,7 @@ pip install -r cyberbullying_api/requirements.txt
 pytest -q
 ```
 
-Windows PowerShell:
-
+**Bagi Pengguna Windows (PowerShell):**
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -69,81 +71,76 @@ pip install -r cyberbullying_api\requirements.txt
 pytest -q
 ```
 
-## Frontend test
+---
+
+## 🎨 5. Pengujian Frontend Web
+
+Pastikan kompilasi aset produksi frontend berjalan tanpa error TypeScript:
 
 ```bash
 cd frontend
 npm install
 npm run lint
 npm run build
-npm run dev
 ```
 
-## Docker test
+---
 
-Development:
+## 🐳 6. Pengujian Docker Compose (Simulasi Production)
 
+### ⚙️ Mode Development (Local Dev Server)
+Jalankan docker compose standar dev untuk verifikasi reloading:
 ```bash
 docker compose up -d --build
-docker compose ps
 curl http://localhost:8000/health
 ```
 
-Production-like:
-
+### 🔒 Mode Production-Like (Hardened State)
+Jalankan docker compose gabungan dengan file override produksi:
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 curl http://localhost:8000/health
 ```
 
-Protected endpoint:
-
+### 🔑 Pengujian Akses Terproteksi
+Pastikan endpoint status menolak jika API Key kosong dan menerima jika menyertakan key yang valid:
 ```bash
-curl -H "X-API-Key: change_this_to_a_long_random_secret" http://localhost:8000/models/status
+# Menolak request (401 Unauthorized)
+curl -I http://localhost:8000/models/status
+
+# Diterima (200 OK)
+curl -H "X-API-Key: rahasia_api_key_yang_sangat_panjang_dan_aman_123" http://localhost:8000/models/status
 ```
 
-## Smoke test prediction
+---
 
-Gunakan script:
+## 🚀 7. Pengujian Smoke Test Otomatis
 
-Linux/macOS/Git Bash:
+Gunakan skrip pengujian bawaan untuk mengirim request prediksi uji coba ke server API:
 
+**Bagi Pengguna Linux / macOS / Git Bash:**
 ```bash
 bash scripts/smoke_test_api.sh
 ```
 
-PowerShell:
-
+**Bagi Pengguna Windows (PowerShell):**
 ```powershell
-.\scripts\smoke_test_api.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke_test_api.ps1
 ```
 
-## Manual UI test
+---
 
-Cek fitur berikut:
+## 🏁 8. Rilis dan Git Tagging
 
-- Input teks pendek.
-- Input teks panjang mendekati limit.
-- Hybrid AI mode.
-- Lexicon/fuzzy mode.
-- Machine learning mode.
-- Transformer mode.
-- Ensemble mode.
-- Audit multi-model mode.
-- Backend offline fallback.
-- XAI drawer.
-- Error message saat API key salah.
-
-## Setelah semua aman
+Setelah seluruh pengujian di atas sukses, gabungkan cabang integrasi ke branch utama (`main`), lalu buat tag rilis internal:
 
 ```bash
-git status
-git log --oneline -5
+# Pindah ke branch utama dan gabungkan cabang perbaikan
+git checkout main
+git merge improvement/apply-stage-1-to-5
+
+# Membuat tag rilis
+git tag v0.2.0-hardening-release
+git push origin v0.2.0-hardening-release
 ```
 
-Buat tag release internal:
-
-```bash
-git tag v0.2.0-hardening-preview
-git push origin v0.2.0-hardening-preview
-```

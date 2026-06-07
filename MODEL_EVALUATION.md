@@ -1,269 +1,214 @@
-# Model Evaluation Report — BullyGuard ID
+# 📈 Model Evaluation Report — BullyGuard ID
 
-Dokumen ini digunakan untuk membuktikan kualitas model secara transparan. Jangan hanya menampilkan angka F1 tunggal. Untuk sistem deteksi cyberbullying, yang penting adalah performa per kelas, jenis kesalahan, dan batasan model.
+Dokumen ini berfungsi sebagai laporan resmi pengujian dan pembuktian kualitas model secara transparan. Untuk sistem deteksi cyberbullying berbahasa Indonesia, performa detail per kelas, tipe kesalahan (*error analysis*), serta batasan operasional model jauh lebih penting daripada sekadar angka F1-score rata-rata.
 
-> Status: template awal. Isi angka dan hasil aktual setelah evaluasi dilakukan ulang pada dataset yang jelas.
-
----
-
-## 1. Ringkasan Model
-
-| Item | Keterangan |
-|---|---|
-| Nama sistem | BullyGuard ID |
-| Bahasa utama | Indonesia |
-| Tugas | Deteksi toxic / cyberbullying / hate speech |
-| Model Tier 1 | TF-IDF + Logistic Regression + Lexicon |
-| Model Tier 2 | Transformer / XLM-RoBERTa / ONNX, jika tersedia |
-| Model Tier 3 | LLM lokal + RAG few-shot, opsional |
-| Tanggal evaluasi | TODO |
-| Evaluator | TODO |
-| Versi commit | TODO |
+> [!NOTE]
+> **Status Dokumen**: `Template Evaluasi / Draf Awal`  
+> Isi metrik, jumlah dataset, dan hasil tabel di bawah ini harus diperbarui setelah Anda menjalankan skrip pengujian model pada dataset validasi utama Anda.
 
 ---
 
-## 2. Dataset
+## 🔍 1. Ringkasan Model
 
-| Item | Nilai |
-|---|---:|
-| Total data | TODO |
-| Data train | TODO |
-| Data validation | TODO |
-| Data test | TODO |
-| Jumlah label toxic | TODO |
-| Jumlah label non-toxic | TODO |
-| Jumlah label bully | TODO |
-| Jumlah label non-bully | TODO |
-| Sumber dataset | TODO |
-| Tanggal pengambilan dataset | TODO |
+Tabel di bawah ini merangkum spesifikasi umum dari sistem klasifikasi hybrid yang diuji:
 
-### Catatan sumber data
-
-Jelaskan sumber dataset secara jujur:
-
-- Apakah berasal dari dataset publik?
-- Apakah hasil scraping?
-- Apakah sudah dianonimkan?
-- Apakah ada data pribadi?
-- Apakah ada proses deduplikasi?
-- Apakah ada data yang berpotensi sensitif?
+| Parameter / Item | Keterangan Teknis |
+| :--- | :--- |
+| **Nama Sistem** | BullyGuard ID |
+| **Bahasa Utama** | Bahasa Indonesia (termasuk gaul, slang, alay) |
+| **Tugas Utama** | Multi-label klasifikasi (Toxic, Cyberbullying, Aman) |
+| **Model Tier 1** | TF-IDF + Logistic Regression + Lexicon Matcher |
+| **Model Tier 2** | Deep Learning XLM-RoBERTa (Format ONNX Runtime) |
+| **Model Tier 3** | Large Language Model (LLM) Lokal (Qwen/Ollama) |
+| **Tanggal Evaluasi** | *Belum Ditentukan (TODO)* |
+| **Petugas Evaluator** | *Belum Ditentukan (TODO)* |
+| **Versi Commit Git** | *Belum Ditentukan (TODO)* |
 
 ---
 
-## 3. Definisi Label
+## 📊 2. Dataset Pengujian
 
-### Toxic
+Statistik dataset yang digunakan untuk melatih dan mengevaluasi performa model:
 
-Tuliskan definisi operasional toxic.
+| Jenis Data / Label | Jumlah Sampel | Persentase | Sumber / Catatan |
+| :--- | :---: | :---: | :--- |
+| **Total Data** | *TODO* | 100% | Gabungan dataset publik & scraping |
+| **Data Train (Latih)** | *TODO* | *TODO*% | Digunakan untuk pelatihan model statistik/ML |
+| **Data Validation** | *TODO* | *TODO*% | Digunakan untuk tuning threshold |
+| **Data Test (Uji)** | *TODO* | *TODO*% | Evaluasi akhir performa *out-of-sample* |
+| **Label Toxic** | *TODO* | *TODO*% | Kalimat mengandung kata kasar/abusive |
+| **Label Cyberbullying** | *TODO* | *TODO*% | Kalimat pelecehan verbal personal/grup |
+| **Label Aman (Clean)** | *TODO* | *TODO*% | Kalimat percakapan netral/positif |
 
-Contoh:
-
-> Komentar toxic adalah komentar yang mengandung penghinaan, kata kasar agresif, ancaman, pelecehan, atau ekspresi merendahkan yang berpotensi mengganggu keamanan percakapan.
-
-### Cyberbullying
-
-Tuliskan definisi operasional cyberbullying.
-
-Contoh:
-
-> Cyberbullying adalah komentar yang menyerang, mempermalukan, mengintimidasi, mengancam, atau melecehkan target tertentu secara personal atau kelompok.
-
-### Non-toxic
-
-Tuliskan definisi komentar aman.
-
-### Ambiguous / butuh validasi
-
-Tuliskan kriteria kasus ambigu, misalnya:
-
-- sarkasme,
-- candaan antar teman,
-- kutipan kata kasar,
-- komentar edukatif yang membahas kata kasar,
-- komentar tanpa konteks percakapan.
+### 📝 Catatan Integritas Sumber Data
+- **Scraping & Publik**: Apakah data bersumber dari media sosial publik (Twitter/X, Instagram, TikTok)?
+- **Anonimisasi**: Semua data uji wajib disamarkan (menghapus nama akun asli, nomor HP, email) sebelum didokumentasikan.
+- **Deduplikasi**: Pastikan data duplikat hasil repost/retweet telah dibersihkan agar tidak mendistorsi hasil akurasi.
 
 ---
 
-## 4. Metode Eksperimen
+## 🏷️ 3. Definisi Operasional Label
 
-| Komponen | Keterangan |
-|---|---|
-| Split method | TODO: random stratified / time-based / manual split |
-| Preprocessing | TODO |
-| Vectorizer | TODO |
-| Model baseline | TODO |
-| Model final | TODO |
-| Threshold | TODO |
-| Calibration method | TODO |
-| Random seed | TODO |
+Untuk menyamakan persepsi pelabelan manusia (*human annotators*) dengan model AI:
 
-### Catatan penting
+### 🔴 A. Toxic
+Komentar yang mengekspresikan kekasaran, kata-kata kotor/abusive (*profanity*), makian umum, atau sarkasme tajam yang berpotensi menurunkan kualitas kesopanan komunikasi, meskipun tidak diarahkan untuk mengintimidasi individu tertentu.
+> **Contoh**: *"Aduh bego banget sih nih server lemot terus!"*
 
-Jika data berasal dari scraping berurutan, pertimbangkan split berbasis waktu. Random split bisa membuat hasil terlihat terlalu bagus jika komentar yang mirip muncul di train dan test.
+### ❌ B. Cyberbullying
+Tindakan pelecehan verbal terarah yang menyerang, mengintimidasi, merendahkan, melakukan *body shaming*, atau mengancam secara berulang/personal terhadap individu atau kelompok tertentu.
+> **Contoh**: *"Muka lu jelek banget, gak layak hidup lu mending hilang aja!"*
 
----
+### 🟢 C. Aman (Non-Toxic & Non-Bullying)
+Kalimat opini, kritik yang membangun, komentar informatif, atau ekspresi santun yang tidak mengandung unsur kekerasan verbal.
+> **Contoh**: *"Mohon maaf, sistem ini sepertinya masih memiliki bug di bagian login."*
 
-## 5. Hasil Evaluasi Utama
-
-### Toxic classification
-
-| Metric | Nilai |
-|---|---:|
-| Accuracy | TODO |
-| Precision toxic | TODO |
-| Recall toxic | TODO |
-| F1 toxic | TODO |
-| Precision non-toxic | TODO |
-| Recall non-toxic | TODO |
-| F1 non-toxic | TODO |
-| Macro F1 | TODO |
-| Weighted F1 | TODO |
-
-### Bully classification
-
-| Metric | Nilai |
-|---|---:|
-| Accuracy | TODO |
-| Precision bully | TODO |
-| Recall bully | TODO |
-| F1 bully | TODO |
-| Precision non-bully | TODO |
-| Recall non-bully | TODO |
-| F1 non-bully | TODO |
-| Macro F1 | TODO |
-| Weighted F1 | TODO |
+### ⚠️ D. Kasus Ambigu (Butuh Tinjauan Moderator)
+Kalimat-kalimat abu-abu seperti sarkasme halus, kutipan (*quoting*) kata kasar untuk tujuan edukasi, atau istilah kasar yang digunakan sebagai keakraban antar teman (*casual banter/swearing*).
 
 ---
 
-## 6. Confusion Matrix
+## 🧪 4. Metode Eksperimen & Validasi
 
-### Toxic classification
+| Komponen Eksperimen | Metode yang Digunakan |
+| :--- | :--- |
+| **Metode Split** | `Stratified K-Fold` / `Time-based Split` (Disarankan jika data berurutan) |
+| **Tahapan Preprocessing** | Case folding, cleansing (non-alphanumeric), formalisasi slang/alay |
+| **Model Baseline** | Naive Bayes / TF-IDF + Logistic Regression |
+| **Parameter Threshold** | Diatur dinamis melalui file `thresholds.json` |
+| **Metode Kalibrasi** | Platt Scaling / CalibratedClassifierCV |
 
-| Actual \ Predicted | Non-toxic | Toxic |
-|---|---:|---:|
-| Non-toxic | TODO | TODO |
-| Toxic | TODO | TODO |
-
-### Bully classification
-
-| Actual \ Predicted | Non-bully | Bully |
-|---|---:|---:|
-| Non-bully | TODO | TODO |
-| Bully | TODO | TODO |
+> [!TIP]
+> **Penting untuk Pengujian**:  
+> Selalu pisahkan dataset uji secara ketat. Jika model Anda sering dilatih ulang dengan *Active Learning*, simpan sebuah test set statis yang **tidak pernah** dilihat oleh model untuk memantau terjadinya degradasi performa (*model drift*).
 
 ---
 
-## 7. Threshold Analysis
+## 📈 5. Hasil Evaluasi Utama
 
-Jelaskan bagaimana threshold dipilih.
+### 1. Klasifikasi Toxic (Biner/Multi-class)
 
-| Threshold | Precision | Recall | F1 | Catatan |
-|---:|---:|---:|---:|---|
-| 0.30 | TODO | TODO | TODO | TODO |
-| 0.40 | TODO | TODO | TODO | TODO |
-| 0.50 | TODO | TODO | TODO | TODO |
-| 0.60 | TODO | TODO | TODO | TODO |
-| 0.70 | TODO | TODO | TODO | TODO |
+| Metrik Evaluasi | Kelas: Aman | Kelas: Toxic | Macro Avg | Weighted Avg |
+| :--- | :---: | :---: | :---: | :---: |
+| **Precision** | *TODO* | *TODO* | *TODO* | *TODO* |
+| **Recall** | *TODO* | *TODO* | *TODO* | *TODO* |
+| **F1-Score** | *TODO* | *TODO* | *TODO* | *TODO* |
+| **Akurasi Keseluruhan** | | | **TODO** | |
 
-Catatan:
+### 2. Klasifikasi Cyberbullying
 
-- Jika recall terlalu rendah, banyak komentar berbahaya lolos.
-- Jika precision terlalu rendah, banyak komentar aman ditandai berbahaya.
-- Untuk moderasi, threshold bisa berbeda antara screening awal dan tindakan final.
-
----
-
-## 8. Error Analysis
-
-Jangan tampilkan data pribadi. Anonimkan nama, username, nomor, dan informasi sensitif.
-
-### False Positive
-
-Komentar aman yang salah dianggap toxic/bully.
-
-| No | Contoh anonim | Prediksi | Label benar | Dugaan penyebab |
-|---:|---|---|---|---|
-| 1 | TODO | TODO | TODO | TODO |
-| 2 | TODO | TODO | TODO | TODO |
-| 3 | TODO | TODO | TODO | TODO |
-
-### False Negative
-
-Komentar toxic/bully yang lolos sebagai aman.
-
-| No | Contoh anonim | Prediksi | Label benar | Dugaan penyebab |
-|---:|---|---|---|---|
-| 1 | TODO | TODO | TODO | TODO |
-| 2 | TODO | TODO | TODO | TODO |
-| 3 | TODO | TODO | TODO | TODO |
+| Metrik Evaluasi | Kelas: Aman | Kelas: Bully | Macro Avg | Weighted Avg |
+| :--- | :---: | :---: | :---: | :---: |
+| **Precision** | *TODO* | *TODO* | *TODO* | *TODO* |
+| **Recall** | *TODO* | *TODO* | *TODO* | *TODO* |
+| **F1-Score** | *TODO* | *TODO* | *TODO* | *TODO* |
+| **Akurasi Keseluruhan** | | | **TODO** | |
 
 ---
 
-## 9. Analisis Kasus Khusus Bahasa Indonesia
+## 🔀 6. Confusion Matrix
 
-Isi hasil pengamatan untuk kategori berikut:
+Membantu melihat kelas mana yang sering tertukar oleh model.
 
-| Kategori | Performa | Catatan |
-|---|---|---|
-| Slang / alay | TODO | TODO |
-| Bahasa daerah | TODO | TODO |
-| Sarkasme | TODO | TODO |
-| Kata kasar dalam candaan | TODO | TODO |
-| Kutipan kata kasar | TODO | TODO |
-| Kritik keras tapi valid | TODO | TODO |
-| Ancaman implisit | TODO | TODO |
-| Body shaming | TODO | TODO |
-| Hate speech identitas | TODO | TODO |
+### Matrix: Deteksi Toxic
+| Aktual \ Prediksi | Aman (Non-Toxic) | Terdeteksi Toxic |
+| :--- | :---: | :---: |
+| **Aman (Non-Toxic)** | *TODO (True Negative)* | *TODO (False Positive)* |
+| **Toxic** | *TODO (False Negative)* | *TODO (True Positive)* |
 
----
-
-## 10. Evaluasi Hybrid Routing
-
-| Tier | Jumlah sampel | Akurasi | Avg latency | Catatan |
-|---|---:|---:|---:|---|
-| Tier 1: ML + Lexicon | TODO | TODO | TODO | TODO |
-| Tier 2: Transformer | TODO | TODO | TODO | TODO |
-| Tier 3: LLM | TODO | TODO | TODO | TODO |
-
-Pertanyaan yang harus dijawab:
-
-- Berapa persen komentar selesai di Tier 1?
-- Berapa persen naik ke Transformer?
-- Berapa persen naik ke LLM?
-- Apakah Tier 2/3 benar-benar memperbaiki hasil atau hanya menambah latency?
-- Apakah confidence antar-tier sudah dikalibrasi?
+### Matrix: Deteksi Cyberbullying
+| Aktual \ Prediksi | Aman (Non-Bully) | Terdeteksi Bully |
+| :--- | :---: | :---: |
+| **Aman (Non-Bully)** | *TODO (True Negative)* | *TODO (False Positive)* |
+| **Bully** | *TODO (False Negative)* | *TODO (True Positive)* |
 
 ---
 
-## 11. Latency dan Resource
+## 🎛️ 7. Analisis Threshold & Kalibrasi
 
-| Skenario | Avg latency | P95 latency | Memory | Catatan |
-|---|---:|---:|---:|---|
-| Single prediction Tier 1 | TODO | TODO | TODO | TODO |
-| Single prediction Transformer | TODO | TODO | TODO | TODO |
-| Single prediction LLM | TODO | TODO | TODO | TODO |
-| Batch prediction 10 teks | TODO | TODO | TODO | TODO |
-| Batch prediction 100 teks | TODO | TODO | TODO | TODO |
+Penentuan *threshold* (ambang batas) probabilitas untuk menentukan label biner sangat krusial dalam sistem moderasi.
 
----
+| Nilai Threshold | Precision (Toxic) | Recall (Toxic) | F1-Score | Dampak Operasional / Tindakan |
+| :---: | :---: | :---: | :---: | :--- |
+| **0.30** | *TODO* | *TODO* | *TODO* | Sangat sensitif, banyak *false alarm*, menyaring ketat. |
+| **0.50** | *TODO* | *TODO* | *TODO* | Standar default, seimbang. |
+| **0.70** | *TODO* | *TODO* | *TODO* | Konservatif, meloloskan komentar jika AI kurang yakin. |
 
-## 12. Kesimpulan Evaluasi
-
-Tuliskan kesimpulan dengan jujur.
-
-Contoh format:
-
-> Berdasarkan evaluasi pada test set berjumlah TODO data, model menunjukkan performa yang cukup baik untuk screening awal, tetapi belum layak digunakan sebagai satu-satunya dasar moderasi otomatis. Kesalahan paling sering terjadi pada TODO. Untuk deployment production, diperlukan TODO.
+> [!WARNING]
+> Menurunkan threshold meningkatkan **Recall** (sedikit konten lolos) namun menurunkan **Precision** (banyak komentar bersih terblokir). Pilihlah threshold yang sesuai dengan kebijakan moderasi platform Anda.
 
 ---
 
-## 13. Rekomendasi Lanjutan
+## 🔀 8. Analisis Kesalahan (Error Analysis)
 
-- [ ] Tambahkan dataset lebih seimbang.
-- [ ] Buat test set yang tidak ikut active learning.
-- [ ] Kalibrasi probabilitas model.
-- [ ] Pisahkan threshold untuk toxic dan bully.
-- [ ] Tambahkan evaluasi bahasa daerah/slang.
-- [ ] Tambahkan manual review untuk confidence rendah.
-- [ ] Tambahkan fairness dan bias review.
-- [ ] Tambahkan benchmark latency.
+Studi kasus mendalam terhadap sampel data uji yang gagal diklasifikasikan dengan benar oleh model:
+
+### 🔴 False Positive (Salah Blokir)
+*Komentar bersih/aman yang dideteksi sebagai toxic/bullying.*
+
+| No | Teks Sampel (Disamarkan) | Prediksi AI | Label Asli | Analisis Penyebab Kesalahan |
+| :---: | :--- | :---: | :---: | :--- |
+| 1 | *"Buku ini mengajarkan kita untuk tidak bego menghadapi penipu."* | Toxic | Aman | AI mendeteksi kata "bego" tanpa memahami konteks edukasi kalimat. |
+| 2 | *TODO* | *TODO* | *TODO* | *TODO* |
+
+### 🔵 False Negative (Kebocoran Konten)
+*Komentar berbahaya/cyberbullying yang lolos sebagai aman.*
+
+| No | Teks Sampel (Disamarkan) | Prediksi AI | Label Asli | Analisis Penyebab Kesalahan |
+| :---: | :--- | :---: | :---: | :--- |
+| 1 | *"Semoga karirmu hancur ya, dasar orang ga berguna."* | Aman | Bully | Sarkasme halus tanpa kata umpatan eksplisit gagal dideteksi ML klasik. |
+| 2 | *TODO* | *TODO* | *TODO* | *TODO* |
+
+---
+
+## 🇮🇩 9. Analisis Kasus Spesifik Bahasa Indonesia
+
+| Karakteristik Linguistik | Performa Model | Catatan / Strategi Perbaikan |
+| :--- | :---: | :--- |
+| **Bahasa Gaul / Slang / Singkatan** | Cukup Baik | Perlu terus memperbarui kamus slang `dataset/colloquial-indonesian-lexicon.csv` |
+| **Bahasa Daerah (Jawa, Sunda, dll.)** | Kurang | Model saat ini didominasi bahasa Indonesia formal & gaul Jakarta |
+| **Sarkasme & Ironi** | Lemah | Memerlukan Tier 3 (LLM) untuk memahami konteks implisit secara utuh |
+| **Plesetan Kata Kasar (Obfuscation)**| Sedang | Dibantu modul *fuzzy matching* pada lexicon |
+
+---
+
+## 🔀 10. Evaluasi Efisiensi Hybrid Routing
+
+Menghitung performa dan penghematan biaya/waktu berkat mekanisme Multi-Tier Routing:
+
+| Lapisan Klasifikasi (Tier) | Volume Request | Rata-rata Latensi | Akurasi Mandiri |
+| :--- | :---: | :---: | :---: |
+| **Tier 1: ML Statistik & Lexicon** | *TODO* % | ~2-5 ms | *TODO*% |
+| **Tier 2: Transformer ONNX (CPU)** | *TODO* % | ~50-120 ms | *TODO*% |
+| **Tier 3: LLM Lokal (Ollama)** | *TODO* % | ~800-2500 ms | *TODO*% |
+
+*Pertanyaan Kunci:*
+- Berapa persen trafik request yang berhasil diselesaikan langsung pada **Tier 1** tanpa naik ke **Tier 2**? (Target: >70%)
+- Berapa banyak latensi rata-rata yang berhasil dihemat melalui skema ini?
+
+---
+
+## ⚡ 11. Latensi & Konsumsi Sumber Daya
+
+| Skenario Pengujian | Rata-rata Latensi (ms) | Latensi P95 (ms) | RAM / Memory |
+| :--- | :---: | :---: | :---: |
+| **Prediksi Tunggal (Tier 1)** | *TODO* | *TODO* | *TODO* |
+| **Prediksi Tunggal (Tier 2)** | *TODO* | *TODO* | *TODO* |
+| **Prediksi Tunggal (Tier 3)** | *TODO* | *TODO* | *TODO* |
+| **Batch 10 Kalimat Sekaligus** | *TODO* | *TODO* | *TODO* |
+
+---
+
+## 🏁 12. Kesimpulan Evaluasi
+
+> [!IMPORTANT]
+> **Kesimpulan Akhir**: *[Isi dengan narasi ringkas]*  
+> Berdasarkan hasil uji coba pada dataset sebanyak **TODO** sampel, BullyGuard ID versi MVP ini menunjukkan performa akurasi **TODO%** untuk deteksi toxic umum. Namun, untuk kasus pelecehan terarah dan sarkasme, sistem masih memerlukan pengawasan manusia (*Human-in-the-Loop*).
+
+---
+
+## 🛠️ 13. Rekomendasi Pengembangan Model
+- [ ] Meningkatkan variasi dataset latih dengan memasukkan kata-kata makian daerah.
+- [ ] Melakukan kalibrasi probabilitas Logistic Regression menggunakan *Platt Scaling* agar skor confidence lebih akurat.
+- [ ] Mengaktifkan *Active Learning retraining pipeline* secara berkala setelah audit komentar terkumpul >500 entri.
+- [ ] Memisahkan ambang batas (*threshold*) klasifikasi untuk label `toxic` dan `bully` demi fleksibilitas aturan moderasi.

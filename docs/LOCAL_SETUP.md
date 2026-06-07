@@ -1,10 +1,15 @@
-# Local Setup Guide — BullyGuard ID
+# 💻 Panduan Setup Lokal — BullyGuard ID
 
-Dokumen ini berisi panduan setup lokal yang lebih rapi daripada README utama.
+Dokumen ini memandu Anda melakukan instalasi dan konfigurasi sistem BullyGuard ID di mesin lokal untuk keperluan pengembangan (*development*).
+
+> [!NOTE]
+> Proyek ini menggunakan arsitektur hybrid yang membutuhkan basis data **PostgreSQL** dan cache store **Redis**. Disarankan untuk menjalankan database dan cache menggunakan Docker agar mempermudah konfigurasi.
 
 ---
 
-## 1. Clone Repository
+## 📥 1. Kloning Repositori
+
+Buka terminal Anda dan jalankan perintah kloning berikut:
 
 ```bash
 git clone https://github.com/Maliq-dlt/indonesian-cyberbullying-detection-api.git
@@ -13,22 +18,21 @@ cd indonesian-cyberbullying-detection-api
 
 ---
 
-## 2. Environment
+## 🔑 2. Konfigurasi Variabel Lingkungan (Environment)
 
-Salin file environment contoh:
+Salin berkas template environment yang telah disediakan menjadi berkas aktif `.env`:
 
+**Bagi Pengguna Linux / macOS / Git Bash:**
 ```bash
 cp .env.example .env
 ```
 
-Windows PowerShell:
-
+**Bagi Pengguna Windows PowerShell:**
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Minimal konfigurasi:
-
+Buka file `.env` baru Anda dan sesuaikan konfigurasi minimal di bawah ini:
 ```env
 ENV=development
 API_KEY=change_me_to_a_long_random_secret
@@ -38,71 +42,68 @@ REDIS_URL=redis://:cyber_redis_pass@localhost:6379/0
 
 ---
 
-## 3. Jalankan PostgreSQL dan Redis
+## 🐳 3. Jalankan Database & Cache (Docker)
+
+Nyalakan PostgreSQL (dengan ekstensi `pgvector`) dan Redis di latar belakang menggunakan Docker Compose:
 
 ```bash
+# Menyalakan container database dan cache secara daemon
 docker compose up -d db redis
 ```
 
-Cek container:
-
+Verifikasi untuk memastikan kedua container telah aktif dan berjalan lancar:
 ```bash
 docker compose ps
 ```
 
 ---
 
-## 4. Setup Backend
+## ⚙️ 4. Setup Backend API
+
+Buka direktori `cyberbullying_api` dan buat *virtual environment* Python khusus:
 
 ```bash
 cd cyberbullying_api
 python -m venv .venv
 ```
 
-Aktivasi virtualenv:
+### 🔌 Aktivasi Virtual Environment
+Pilih perintah yang sesuai dengan terminal yang Anda gunakan:
 
-Windows PowerShell:
+- **Windows PowerShell:**
+  ```powershell
+  .\.venv\Scripts\Activate.ps1
+  ```
+- **Windows Command Prompt (CMD):**
+  ```cmd
+  .venv\Scripts\activate
+  ```
+- **macOS / Linux:**
+  ```bash
+  source .venv/bin/activate
+  ```
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Windows CMD:
-
-```cmd
-.venv\Scripts\activate
-```
-
-macOS/Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-Install dependency:
+### 📦 Pemasangan Dependensi Python
+Lakukan upgrade package manager `pip` terlebih dahulu, kemudian pasang dependensi pustaka yang dibutuhkan:
 
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Jalankan server:
+### 🚀 Menjalankan Server API
+Jalankan server pengembangan FastAPI menggunakan Uvicorn:
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
-
-Buka:
-
-```text
-http://localhost:8000/docs
-```
+Server kini aktif di `http://localhost:8000`. Anda dapat mengakses dokumentasi API interaktif (Swagger UI) di [http://localhost:8000/docs](http://localhost:8000/docs).
 
 ---
 
-## 5. Setup Frontend
+## 🖥️ 5. Setup Frontend Web Dashboard
 
-Dari root project:
+Buka terminal baru di root direktori proyek, lalu masuk ke folder `frontend`:
 
 ```bash
 cd frontend
@@ -110,24 +111,20 @@ npm install
 npm run dev
 ```
 
-Buka:
-
-```text
-http://localhost:5173
-```
+Dashboard frontend Anda kini dapat diakses melalui peramban (*browser*) di [http://localhost:5173](http://localhost:5173).
 
 ---
 
-## 6. Testing
+## 🧪 6. Pengujian & Penjaminan Mutu (Testing)
 
-Backend:
-
+### 🐍 Backend Unit Testing
+Pastikan *virtual environment* Anda telah aktif di terminal root proyek, kemudian jalankan:
 ```bash
 pytest cyberbullying_api/tests
 ```
 
-Frontend:
-
+### 🎨 Frontend Linting & Build
+Uji build produksi dan kelayakan kode frontend:
 ```bash
 cd frontend
 npm run lint
@@ -136,34 +133,23 @@ npm run build
 
 ---
 
-## 7. Masalah Umum
+## ❓ 7. Pemecahan Masalah (Troubleshooting)
 
-### Backend tidak bisa connect ke PostgreSQL
+### ❌ Backend Tidak Bisa Connect ke PostgreSQL
+- Pastikan container PostgreSQL aktif. Jalankan `docker compose ps`.
+- Periksa log container jika ada error inisialisasi:
+  ```bash
+  docker compose logs db
+  ```
 
-Cek apakah container database aktif:
+### ❌ Kesalahan Autentikasi Redis
+- Pastikan parameter kata sandi (`REDIS_PASSWORD`) pada file `.env` selaras dengan konfigurasi di berkas `docker-compose.yml`.
 
-```bash
-docker compose ps
-```
+### ❌ Endpoint Menolak Request (401 Unauthorized)
+- Pastikan Anda menyertakan header autentikasi pada setiap HTTP request ke endpoint terlindungi:
+  ```text
+  X-API-Key: change_me_to_a_long_random_secret
+  ```
 
-Cek log:
-
-```bash
-docker compose logs db
-```
-
-### Redis error
-
-Cek password Redis di `.env` dan `docker-compose.yml`.
-
-### Endpoint menolak request
-
-Pastikan header API key dikirim:
-
-```text
-X-API-Key: change_me_to_a_long_random_secret
-```
-
-### Frontend tidak bisa akses API
-
-Cek `ALLOWED_ORIGINS` dan pastikan origin frontend terdaftar.
+### ❌ Masalah CORS (Cross-Origin Resource Sharing)
+- Jika frontend gagal menghubungi API backend, cek variabel `ALLOWED_ORIGINS` di berkas `.env` dan pastikan domain frontend (`http://localhost:5173` atau `http://localhost:3000`) telah terdaftar secara benar.

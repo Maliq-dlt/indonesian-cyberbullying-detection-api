@@ -1,84 +1,68 @@
-# Production Readiness Checklist — BullyGuard ID
+# 🚀 Production Readiness Checklist — BullyGuard ID
 
-Project ini belum boleh diklaim production-ready penuh sebelum daftar berikut dipenuhi.
+Dokumen ini berisi daftar persyaratan wajib (*checklist*) yang harus dipenuhi sebelum sistem BullyGuard ID dideploy ke lingkungan produksi (*production*).
 
----
-
-## 1. Keamanan
-
-- [ ] API key wajib di production.
-- [ ] Tidak ada credential default di Docker Compose production.
-- [ ] `.env` tidak masuk Git.
-- [ ] CORS dibatasi ke domain resmi.
-- [ ] HTTPS aktif melalui reverse proxy.
-- [ ] Endpoint admin dilindungi autentikasi yang lebih kuat.
-- [ ] Webhook menggunakan allowlist domain atau signature verification.
-- [ ] Rate limit tetap aman ketika Redis bermasalah.
-- [ ] Log tidak menyimpan data sensitif mentah tanpa kebutuhan jelas.
+> [!WARNING]
+> Sistem ini **belum boleh** diklaim sebagai *Enterprise-Ready* atau *Production-Grade* sebelum seluruh poin checklist di bawah ini diverifikasi secara penuh oleh tim infrastruktur dan AI Anda.
 
 ---
 
-## 2. Model dan Data
-
-- [ ] Dataset terdokumentasi.
-- [ ] Distribusi label jelas.
-- [ ] Train/validation/test split jelas.
-- [ ] Confusion matrix tersedia.
-- [ ] Precision, recall, dan F1 per label tersedia.
-- [ ] Error analysis tersedia.
-- [ ] Threshold dipilih berdasarkan validation set.
-- [ ] Test set tidak tercampur dengan data active learning.
-- [ ] Ada prosedur rollback model.
+## 🔒 1. Keamanan & Hardening API
+- [ ] **API Key**: Wajib mengaktifkan autentikasi API Key di production (`ALLOW_MISSING_API_KEY_IN_DEV=false`).
+- [ ] **Kredensial Unik**: Mengganti kata sandi bawaan untuk PostgreSQL dan Redis di berkas `docker-compose.prod.yml`.
+- [ ] **Git Protection**: Memastikan berkas `.env` yang berisi token dan kunci asli sudah masuk ke `.gitignore` dan tidak di-commit.
+- [ ] **CORS Policy**: Membatasi `ALLOWED_ORIGINS` hanya ke domain frontend resmi yang dipercaya (bukan wildcard `*`).
+- [ ] **TLS/HTTPS**: Mengonfigurasi Nginx, Caddy, atau Cloudflare sebagai *reverse proxy* di atas Docker container untuk enkripsi TLS/HTTPS.
+- [ ] **Proteksi SSRF Webhook**: Membatasi `WEBHOOK_ALLOWED_HOSTS` untuk mencegah serangan Server-Side Request Forgery.
+- [ ] **Rate Limiting Fail-Closed**: Memastikan `RATE_LIMIT_FAIL_OPEN` bernilai `false` di production untuk memblokir request jika Redis mati.
+- [ ] **Pencegahan Data Leak**: Mematikan debug mode dan memastikan stack trace error backend tidak dikembalikan ke pengguna luar.
 
 ---
 
-## 3. Infrastruktur
-
-- [ ] Database memakai backup otomatis.
-- [ ] Redis memakai password kuat atau network internal.
-- [ ] Health check tersedia untuk API, DB, Redis, dan worker.
-- [ ] Structured logging aktif.
-- [ ] Monitoring CPU, memory, latency, dan error rate aktif.
-- [ ] Docker image dikunci versinya.
-- [ ] Dependency dikunci dengan versi yang lebih deterministik.
+## 📊 2. Kualitas Model & Integritas Data
+- [ ] **Laporan Evaluasi**: Melengkapi metrik performa model di berkas [`MODEL_EVALUATION.md`](../MODEL_EVALUATION.md) menggunakan dataset riil.
+- [ ] **Distribusi Label Seimbang**: Memastikan data latih memiliki representasi seimbang antara kelas toxic, cyberbullying, dan aman.
+- [ ] **Threshold Tuning**: Memilih ambang batas klasifikasi (*decision thresholds*) berdasarkan hasil validasi empiris untuk meminimalisasi *False Positive*.
+- [ ] **Isolasi Data Uji**: Memastikan data uji (*test set*) bersifat statis dan tidak tercampur dalam alur retraining active learning.
+- [ ] **Prosedur Rollback**: Memiliki mekanisme cadangan untuk melakukan rollback ke model versi sebelumnya jika model baru berkinerja buruk.
 
 ---
 
-## 4. Frontend
-
-- [ ] URL API tidak hard-coded.
-- [ ] Error message aman dan tidak membocorkan detail backend.
-- [ ] Halaman admin tidak bisa diakses tanpa otorisasi.
-- [ ] Build production sukses.
-- [ ] UI menangani API timeout dan error.
-
----
-
-## 5. Moderasi dan Etika
-
-- [ ] Ada disclaimer bahwa prediksi bukan keputusan final.
-- [ ] Ada manual review untuk kasus confidence rendah.
-- [ ] Ada prosedur banding atau koreksi label.
-- [ ] Data pribadi dianonimkan.
-- [ ] Contoh komentar sensitif tidak ditampilkan sembarangan di demo publik.
+## 🛠️ 3. Infrastruktur & Observabilitas
+- [ ] **Pencadangan Data**: Mengaktifkan skrip backup otomatis berkala untuk database PostgreSQL.
+- [ ] **Keamanan Redis**: Redis hanya dapat diakses melalui jaringan internal Docker dan diproteksi kata sandi yang kuat.
+- [ ] **Health Checks**: Menambahkan instruksi healthcheck Docker untuk memantau kesehatan database, redis, backend, dan celery worker.
+- [ ] **Structured Logging**: Mengaktifkan JSON structured logging agar log sistem mudah diindeks oleh sistem monitoring (misalnya ELK stack, Grafana Loki).
+- [ ] **Metrics & Monitoring**: Mengaktifkan monitoring penggunaan CPU, Memory, Latency API (P50, P95, P99), serta tingkat error.
+- [ ] **Version Lock**: Mengunci versi Docker base image (`python:3.11-slim` dan `node:20-alpine`) serta versi dependencies di `requirements.txt`.
 
 ---
 
-## 6. Klaim yang Baru Aman Dipakai Setelah Terbukti
+## 🖥️ 4. Kehandalan Frontend
+- [ ] **Dinamic Endpoint**: URL backend API tidak boleh *hard-coded*, melainkan dibaca melalui *Vite Environment Variable* (`VITE_API_BASE_URL`).
+- [ ] **Error Handling**: Antarmuka web ramah pengguna saat API backend mengalami timeout atau offline.
+- [ ] **Otorisasi Dashboard**: Halaman audit dan retrain terlindungi autentikasi admin yang aman.
+- [ ] **Optimasi Bundle**: Frontend dibuild menggunakan mode produksi (`npm run build`) untuk meminimalkan ukuran berkas JavaScript.
 
-Jangan gunakan klaim berikut sebelum ada benchmark:
+---
 
-- production-grade,
-- enterprise-ready,
-- sub-millisecond,
-- high accuracy tanpa angka evaluasi lengkap,
-- fully automated moderation,
-- real-time at scale.
+## 👥 5. Etika & Alur Moderasi (Governance)
+- [ ] **Disclaimer Penggunaan**: Menampilkan keterangan jelas di UI bahwa klasifikasi model adalah saran awal, bukan keputusan final.
+- [ ] **Human-in-the-Loop**: Komentar yang berada pada *confidence margin* (ragu-ragu) wajib diteruskan ke antrean moderasi manusia.
+- [ ] **Prosedur Banding**: Menyediakan fitur bagi pengguna untuk meminta peninjauan ulang jika komentar mereka salah ditandai oleh AI.
+- [ ] **Anonimisasi**: Menghapus atau menyamarkan nama akun, nomor kontak, dan data sensitif sebelum dianalisis dalam log training model.
 
-Klaim yang lebih aman:
+---
 
-- advanced MVP,
-- research-oriented prototype,
-- hybrid AI-assisted moderation system,
-- human-in-the-loop moderation support,
-- Indonesian-language cyberbullying detection API.
+## ⚠️ 6. Aturan Klaim & Proyeksi Kapabilitas
+
+> [!IMPORTANT]
+> Jangan pernah mempromosikan kapabilitas sistem di luar batas bukti empiris yang ada. Gunakan terminologi klasifikasi yang realistis.
+
+| ❌ Hindari Klaim Ini (Overclaim) | | 👍 Gunakan Klaim Ini (Akurat & Kredibel) |
+| :--- | :---: | :--- |
+| *Enterprise-ready / Production-grade* | ➡️ | Advanced MVP / Research-oriented Prototype |
+| *Fully automated zero-human moderation* | ➡️ | Hybrid AI-assisted Human-in-the-loop Moderation |
+| *Sub-millisecond real-time at scale* | ➡️ | Multi-Tier hybrid latency optimization (Tier 1-3) |
+| *100% accurate toxic detection* | ➡️ | Calibrated statistical and neural classification |
+

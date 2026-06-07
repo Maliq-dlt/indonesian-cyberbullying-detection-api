@@ -1,105 +1,88 @@
-# Frontend Refactor Guide — Detector Module
+# 🎨 Frontend Refactor Guide — Detector Module
 
-## Problem
+Dokumen ini menjelaskan restrukturisasi arsitektur kode antarmuka (*refactoring*) pada modul utama **Detector.tsx** menjadi komponen modular yang lebih terkelola (*maintainable*).
 
-The detector frontend component was too large and handled too many responsibilities at once.
+---
 
-A component like that becomes difficult to maintain because:
+## ⚠️ 1. Masalah pada Kode Awal
+Sebelum Stage 4 diterapkan, komponen `Detector.tsx` merupakan berkas raksasa tunggal (>800 baris kode) yang memiliki terlalu banyak tanggung jawab:
+- Pencampuran logika pemanggilan API dengan komponen rendering UI.
+- Logika state loading, error, dan transisi perbandingan model tersebar acak di JSX.
+- Logika XAI drawer dan grafik bobot SHAP tertanam langsung di induk komponen.
+- Kode bertipe data `any` pada TypeScript yang rentan memicu *runtime bug*.
 
-- API request logic is coupled with UI rendering.
-- State transitions are scattered inside JSX-heavy code.
-- Multi-model comparison logic is mixed with single-model prediction logic.
-- XAI visualization is embedded in the same component.
-- TypeScript types are harder to reuse.
-- Future UI changes become risky.
+---
 
-## Refactor strategy
+## 📐 2. Strategi Refaktorisasi
 
-This refactor uses a conservative decomposition strategy.
+Tujuan refaktorisasi ini adalah memisahkan kode berdasarkan fungsinya (Separation of Concerns) tanpa mengubah visual asli atau perilaku aplikasi.
 
-The goal is not to redesign the product. The goal is to preserve behavior while making the code easier to reason about.
-
-## New module structure
+### 📂 Struktur Modul Baru (`frontend/src/components/Detector/`)
 
 ```text
-frontend/src/components/Detector/
-├── Detector.tsx              # High-level layout composition
-├── InputPanel.tsx            # Text input, model selector, fuzzy toggle, submit button
-├── ResultCard.tsx            # Single-model result UI
-├── ComparisonResultCard.tsx  # Audit Multi-Model result table
-├── XaiDrawer.tsx             # XAI side drawer and contribution chart
-├── EmptyState.tsx            # Empty state before analysis
-├── ProbabilityBar.tsx        # Reusable probability meter
-├── useDetector.ts            # State and action orchestration
-├── api.ts                    # API calls, normalization, fallback simulation
-├── constants.ts              # Model options and shared constants
-├── types.ts                  # Shared TypeScript interfaces
-├── utils.ts                  # Formatting and helper functions
-└── index.ts                  # Public exports
+Detector/
+├── Detector.tsx              # Komposisi layout utama (Layout Orchestration)
+├── InputPanel.tsx            # Form input teks, selector tipe model, tombol submit
+├── ResultCard.tsx            # Tampilan hasil analisis model tunggal
+├── ComparisonResultCard.tsx  # Tabel hasil audit perbandingan multi-model
+├── XaiDrawer.tsx             # Panel laci samping grafik visualisasi SHAP (Word Importance)
+├── EmptyState.tsx            # Tampilan kosong sebelum teks dianalisis
+├── ProbabilityBar.tsx        # Bar persentase probabilitas toxic & bully
+├── useDetector.ts            # Custom hook pengelola state dan action
+├── api.ts                    # Fungsi API, normalisasi skema response, fallback lokal
+├── constants.ts              # Daftar pilihan model dan konstanta UI
+├── types.ts                  # Interface TypeScript (shared types)
+├── utils.ts                  # Fungsi helper pemformatan teks & persentase
+└── index.ts                  # Entrypoint export publik
 ```
 
-## Design decisions
+---
 
-### Keep old import compatibility
+## 🔑 3. Keputusan Desain Utama
 
-The file below still exists:
-
-```text
-frontend/src/components/Detector.tsx
-```
-
-It only re-exports the new module:
-
-```ts
+### 🔌 Kompatibilitas Impor Lama
+Untuk mencegah error pada berkas lain yang mengimpor detector, file wrapper `frontend/src/components/Detector.tsx` tetap dipertahankan dan hanya mengekspor ulang modul baru:
+```typescript
 export { default } from './Detector/Detector';
 ```
-
-That means code like this should continue working:
-
-```ts
+Sehingga pemanggilan impor di `App.tsx` tetap bekerja tanpa perubahan:
+```typescript
 import Detector from './components/Detector';
 ```
 
-### Keep API behavior similar
+### 🔀 Pemetaan Endpoint API
+Mekanisme routing pemanggilan endpoint backend didefinisikan secara rapi:
 
-The refactor preserves the endpoint mapping:
+| Pilihan Mode Model | Endpoint API |
+| :--- | :--- |
+| **Hybrid AI** | `/predict/hybrid` |
+| **Lexicon Only** | `/predict/lexicon` |
+| **Machine Learning** | `/predict/ml` |
+| **Transformer ONNX** | `/predict/transformers` |
+| **Ensemble Model** | `/predict/ensemble` |
+| **Audit Multi-Model** | Paralel call ke semua endpoint di atas |
 
-| UI Mode | Endpoint |
-|---|---|
-| Hybrid AI | `/predict/hybrid` |
-| Lexicon | `/predict/lexicon` |
-| Machine Learning | `/predict/ml` |
-| Transformer | `/predict/transformers` |
-| Ensemble | `/predict/ensemble` |
-| Audit Multi-Model | all major endpoints |
+### 🛠️ Mode Simulasi Sandbox (Offline Fallback)
+Jika server API backend offline atau tidak terjangkau, sistem akan otomatis melakukan *fallback* lokal (simulasi) khusus di mode model tunggal agar antarmuka web demonstrasi tetap dapat ditunjukkan.
 
-### Keep offline fallback
+---
 
-The offline fallback simulation remains available when a single-model request fails. This is useful for local demo mode, but should not be presented as a real model result.
+## 🧪 4. Daftar Verifikasi QA Manual (Checklist)
 
-## Manual QA checklist
+Setelah melakukan refaktorisasi, jalankan pengujian manual berikut pada browser:
+- [ ] Teks input kosong tidak boleh memicu submit.
+- [ ] Teks dengan panjang >500 karakter wajib menampilkan peringatan batas limit.
+- [ ] Mode *Hybrid AI* memanggil endpoint `/predict/hybrid`.
+- [ ] Mode *Lexicon* memanggil endpoint `/predict/lexicon`.
+- [ ] Tombol opsi *Fuzzy Matching* hanya muncul pada pilihan model Lexicon dan Audit Multi-Model.
+- [ ] Mode *Audit Multi-Model* memanggil seluruh endpoint model secara paralel dan menyajikannya dalam tabel perbandingan.
+- [ ] Menguji backend dalam keadaan mati, pastikan form fallback lokal menyala di mode model tunggal.
+- [ ] Panel XAI Drawer terbuka dengan benar saat baris kata penting diklik dan ditutup saat tombol silang atau backdrop diklik.
+- [ ] Perintah `npm run build` berhasil tanpa memicu error kompilasi TypeScript.
 
-After applying the patch, test these flows:
+---
 
-- [ ] Empty input should not submit.
-- [ ] More than 500 characters should not submit.
-- [ ] Hybrid mode should call `/predict/hybrid`.
-- [ ] Lexicon mode should call `/predict/lexicon`.
-- [ ] Fuzzy toggle should only appear for Lexicon and Audit Multi-Model.
-- [ ] Audit Multi-Model should call all comparison endpoints.
-- [ ] Offline backend should trigger sandbox fallback in single-model mode.
-- [ ] Result card should show toxic/bully probability.
-- [ ] XAI drawer should open when word importance data exists.
-- [ ] XAI drawer should close on backdrop or close button.
-- [ ] `npm run build` should pass.
-
-## Next recommended frontend improvements
-
-This stage only refactors the detector module. Later improvements should include:
-
-1. Introduce a shared API client.
-2. Move API URL/key handling into a config provider.
-3. Add frontend tests with React Testing Library.
-4. Add loading skeletons instead of only spinner text.
-5. Add clearer user warning that offline fallback is not real prediction.
-6. Add typed backend response schemas shared with the API docs.
+## 📈 5. Rekomendasi Peningkatan Frontend Selanjutnya
+- [ ] Membuat shared API client (menggunakan Axios atau instance Fetch) untuk pengelolaan header API Key terpusat.
+- [ ] Menambahkan pengujian komponen otomatis menggunakan *Vitest* dan *React Testing Library*.
+- [ ] Mengganti indikator loading teks sederhana menggunakan skeleton loading modern agar UI terasa lebih premium.
