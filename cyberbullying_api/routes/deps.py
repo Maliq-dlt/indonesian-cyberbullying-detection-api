@@ -1,71 +1,205 @@
-from fastapi import Header, HTTPException, Request
-import os
+"""Shared FastAPI dependencies for authentication, rate limiting, and webhook safety.
+
+Stage 2 security cleanup goals:
+- Do not accidentally expose protected endpoints without API_KEY in non-development environments.
+- Compare API keys using constant-time comparison.
+- Make rate limiting configurable and fail closed in production by default.
+- Keep local development usable without forcing Redis/API key setup.
+- Keep webhook SSRF protection explicit and readable.
+"""
+
+from __future__ import annotations
+
 import hashlib
 import hmac
-import socket
 import ipaddress
+import os
+import socket
+from typing import Optional
 from urllib.parse import urlparse
+
+from fastapi import Header, HTTPException, Request, status
+
 import classifier
-from routes.state import API_KEY_ENV
 
-def verify_api_key(x_api_key: str = Header(None)):
-    if not API_KEY_ENV:
-        if os.getenv("ENV", "production").lower() != "development":
-            raise HTTPException(status_code=500, detail="Konfigurasi Server Error: API_KEY harus diatur kecuali di lingkungan 'development'.")
-        return
-    
-    # Proteksi Timing Attack menggunakan hashing SHA-256 dan perbandingan constant-time
-    expected_hash = hashlib.sha256(API_KEY_ENV.encode("utf-8")).digest()
-    provided_hash = hashlib.sha256(x_api_key.encode("utf-8")).digest() if x_api_key else b""
-    
+
+NON_PRODUCTION_ENVS = {"local", "dev", "development", "test", "testing"}
+
+
+def get_env() -> str:
+    return os.getenv("ENV", "production").strip().lower()
+
+
+def is_development_env() -> bool:
+    return get_env() in NON_PRODUCTION_ENVS
+
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def verify_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> None:
+    """Validate the X-API-Key header for protected endpoints.
+
+    Local development may allow an empty API_KEY only when
+    ALLOW_MISSING_API_KEY_IN_DEV=true. Production/staging must always have
+    API_KEY configured and every protected request must provide it.
+    """
+
+    expected_key = os.getenv("API_KEY", "").strip()
+
+    if not expected_key:
+        if is_development_env() and _bool_env("ALLOW_MISSING_API_KEY_IN_DEV", True):
+            return
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server misconfiguration: API_KEY must be set for protected endpoints.",
+        )
+
+    if not x_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key is required. Send it using the X-API-Key header.",
+        )
+
+    expected_hash = hashlib.sha256(expected_key.encode("utf-8")).digest()
+    provided_hash = hashlib.sha256(x_api_key.encode("utf-8")).digest()
+
     if not hmac.compare_digest(provided_hash, expected_hash):
-        raise HTTPException(status_code=401, detail="API Key tidak valid atau tidak disediakan.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key.",
+        )
 
-async def rate_limit_ollama_and_batch(request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    r = await classifier.get_redis()
-    if r:
-        try:
-            path_normalized = request.url.path.rstrip('/').lower()
-            key = f"rate_limit:{client_ip}:{path_normalized}"
-            
-            # Gunakan pipeline untuk mendapatkan nilai setelah inkrementasi dan TTL secara atomik
-            pipe = r.pipeline()
-            pipe.incr(key)
-            pipe.ttl(key)
-            val, ttl = await pipe.execute()
-            
-            # Jika baru dibuat (nilai = 1) atau tidak memiliki TTL, atur kedaluwarsa ke 60 detik
-            if val == 1 or ttl < 0:
-                await r.expire(key, 60)
-                
-            if val > 15:
-                raise HTTPException(status_code=429, detail="Terlalu banyak permintaan. Batas limit terlampaui (15 request/menit).")
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"Warning: Gagal mengevaluasi rate limit di Redis: {e}")
+
+def _get_client_ip(request: Request) -> str:
+    """Return client IP.
+
+    X-Forwarded-For is trusted only when TRUST_PROXY_HEADERS=true. Without this
+    guard, clients can spoof their IP and bypass per-IP rate limiting.
+    """
+
+    if _bool_env("TRUST_PROXY_HEADERS", False):
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            return forwarded_for.split(",", 1)[0].strip()
+
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+
+    return request.client.host if request.client else "unknown"
+
+
+async def rate_limit_ollama_and_batch(request: Request) -> None:
+    """Rate limit expensive endpoints.
+
+    Defaults:
+    - 15 requests per 60 seconds per client IP and path.
+    - In development, Redis failure fails open so local work is not blocked.
+    - In production/staging, Redis failure fails closed unless RATE_LIMIT_FAIL_OPEN=true.
+    """
+
+    limit = _int_env("RATE_LIMIT_REQUESTS_PER_MINUTE", 15)
+    window_seconds = _int_env("RATE_LIMIT_WINDOW_SECONDS", 60)
+    fail_open = _bool_env("RATE_LIMIT_FAIL_OPEN", is_development_env())
+
+    redis_client = await classifier.get_redis()
+    if not redis_client:
+        if fail_open:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Rate limiter is unavailable. Try again later.",
+        )
+
+    try:
+        client_ip = _get_client_ip(request)
+        path_normalized = request.url.path.rstrip("/").lower() or "/"
+        key_source = f"{client_ip}:{path_normalized}"
+        key_hash = hashlib.sha256(key_source.encode("utf-8")).hexdigest()[:32]
+        key = f"rate_limit:{key_hash}"
+
+        pipe = redis_client.pipeline()
+        pipe.incr(key)
+        pipe.ttl(key)
+        current_count, current_ttl = await pipe.execute()
+
+        if current_count == 1 or current_ttl < 0:
+            await redis_client.expire(key, window_seconds)
+
+        if int(current_count) > limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many requests. Limit is {limit} requests per {window_seconds} seconds.",
+            )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Warning: failed to evaluate Redis rate limit: {exc}")
+        if fail_open:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Rate limiter failed. Try again later.",
+        )
+
 
 def is_safe_webhook_url(url: str) -> bool:
-    """Memvalidasi URL webhook untuk mencegah kerentanan SSRF (Server-Side Request Forgery).
-    Memblokir IP lokal, loopback, multicast, link-local, dan subnet privat.
+    """Validate webhook URL to reduce SSRF risk.
+
+    Blocks local, loopback, multicast, link-local, unspecified, and private IPs.
+    This is a defensive baseline. For real production integrations, prefer an
+    explicit domain allowlist using WEBHOOK_ALLOWED_HOSTS.
     """
+
     try:
         parsed = urlparse(url)
-        if parsed.scheme not in ["http", "https"]:
+        if parsed.scheme not in {"https", "http"}:
             return False
-        
+
+        # Safer default for production: HTTPS only unless explicitly allowed.
+        if not is_development_env() and parsed.scheme != "https":
+            return False
+
         hostname = parsed.hostname
         if not hostname:
             return False
-            
-        # Selesaikan hostname ke IP addresses
+
+        allowed_hosts_raw = os.getenv("WEBHOOK_ALLOWED_HOSTS", "").strip()
+        if allowed_hosts_raw:
+            allowed_hosts = {host.strip().lower() for host in allowed_hosts_raw.split(",") if host.strip()}
+            if hostname.lower() not in allowed_hosts:
+                return False
+
         addr_info = socket.getaddrinfo(hostname, None)
         for addr in addr_info:
-            ip_str = addr[4][0]
-            ip = ipaddress.ip_address(ip_str)
-            if ip.is_loopback or ip.is_private or ip.is_multicast or ip.is_link_local or ip.is_unspecified:
+            ip = ipaddress.ip_address(addr[4][0])
+            if (
+                ip.is_loopback
+                or ip.is_private
+                or ip.is_multicast
+                or ip.is_link_local
+                or ip.is_unspecified
+                or ip.is_reserved
+            ):
                 return False
+
         return True
     except Exception:
         return False

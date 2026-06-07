@@ -1,0 +1,28 @@
+# Production-oriented override.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# This assumes .env contains strong secrets and explicit production origins.
+
+services:
+  api:
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-1}
+    environment:
+      ENV: production
+      ALLOW_MISSING_API_KEY_IN_DEV: "false"
+      RATE_LIMIT_FAIL_OPEN: "false"
+    volumes:
+      - ./cyberbullying_api/models:/app/cyberbullying_api/models:ro
+      - cache_data:/app/cyberbullying_api/cache
+
+  worker:
+    environment:
+      ENV: production
+    volumes:
+      - ./cyberbullying_api/models:/app/cyberbullying_api/models
+      - cache_data:/app/cyberbullying_api/cache
+
+  web:
+    # For true production, serve the built frontend through Nginx/Caddy or your platform's static hosting.
+    # The base docker-compose.yml keeps Vite dev server for local development.
+    profiles: ["dev-ui"]

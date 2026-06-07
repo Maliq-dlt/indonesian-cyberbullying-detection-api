@@ -2,15 +2,15 @@ services:
   db:
     image: pgvector/pgvector:pg15
     container_name: cyberbullying_pg
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: cyber_user
-      POSTGRES_PASSWORD: cyber_password
-      POSTGRES_DB: cyberbullying_db
+      POSTGRES_USER: ${POSTGRES_USER:-cyber_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cyber_password}
+      POSTGRES_DB: ${POSTGRES_DB:-cyberbullying_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cyber_user -d cyberbullying_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -18,12 +18,15 @@ services:
   redis:
     image: redis:7-alpine
     container_name: cyberbullying_redis
-    restart: always
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-cyber_redis_pass}
     volumes:
       - redisdata:/data
-    command: redis-server --save 60 1 --loglevel warning --requirepass cyber_redis_pass
+    command: >
+      sh -c 'redis-server --save 60 1 --loglevel warning --requirepass "$${REDIS_PASSWORD}"'
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "cyber_redis_pass", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,17 +36,24 @@ services:
       context: .
       dockerfile: cyberbullying_api/Dockerfile
     container_name: cyberbullying_api
-    restart: always
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     environment:
-      - PG_URL=postgresql://cyber_user:cyber_password@db:5432/cyberbullying_db
-      - REDIS_URL=redis://:cyber_redis_pass@redis:6379/0
-      - OLLAMA_URL=http://host.docker.internal:11434
-      - HF_TOKEN=${HF_TOKEN}
-      - ENV=development
-      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173
+      ENV: ${ENV:-development}
+      API_KEY: ${API_KEY:-}
+      ALLOW_MISSING_API_KEY_IN_DEV: ${ALLOW_MISSING_API_KEY_IN_DEV:-true}
+      PG_URL: postgresql://${POSTGRES_USER:-cyber_user}:${POSTGRES_PASSWORD:-cyber_password}@db:5432/${POSTGRES_DB:-cyberbullying_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-cyber_redis_pass}@redis:6379/0
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      HF_TOKEN: ${HF_TOKEN:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-15}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      RATE_LIMIT_FAIL_OPEN: ${RATE_LIMIT_FAIL_OPEN:-true}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+      WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-}
     depends_on:
       db:
         condition: service_healthy
@@ -51,11 +61,8 @@ services:
         condition: service_healthy
     volumes:
       - ./cyberbullying_api:/app/cyberbullying_api
-      # Mount cache so models don't need redownloading if they exist
       - ./cyberbullying_api/models:/app/cyberbullying_api/models
-      # Mount cookies dan browser profile untuk live scraping
       - ./cyberbullying_api/cookies_x.json:/app/cyberbullying_api/cookies_x.json
-      # Mount browser profile untuk sesi login TikTok (persistent context)
       - ./cyberbullying_api/tiktok_browser_profile:/app/cyberbullying_api/tiktok_browser_profile
       - cache_data:/app/cyberbullying_api/cache
 
@@ -64,14 +71,15 @@ services:
       context: .
       dockerfile: cyberbullying_api/Dockerfile
     container_name: cyberbullying_worker
-    restart: always
+    restart: unless-stopped
     command: celery -A tasks worker --loglevel=info --concurrency=1
     environment:
-      - PG_URL=postgresql://cyber_user:cyber_password@db:5432/cyberbullying_db
-      - REDIS_URL=redis://:cyber_redis_pass@redis:6379/0
-      - OLLAMA_URL=http://host.docker.internal:11434
-      - HF_TOKEN=${HF_TOKEN}
-      - ENV=production
+      ENV: ${ENV:-development}
+      API_KEY: ${API_KEY:-}
+      PG_URL: postgresql://${POSTGRES_USER:-cyber_user}:${POSTGRES_PASSWORD:-cyber_password}@db:5432/${POSTGRES_DB:-cyberbullying_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-cyber_redis_pass}@redis:6379/0
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      HF_TOKEN: ${HF_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
@@ -90,10 +98,12 @@ services:
       dockerfile: Dockerfile
       target: builder
     container_name: cyberbullying_web
-    restart: always
+    restart: unless-stopped
     command: npx vite --host 0.0.0.0 --port 3000
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -104,4 +114,3 @@ volumes:
   pgdata:
   redisdata:
   cache_data:
-
