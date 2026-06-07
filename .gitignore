@@ -20,6 +20,7 @@ tiktok_browser_profile/
 
 .env
 .env*
+!.env.example
 
 # Ignore dynamically generated retraining model versions
 cyberbullying_api/models/model_lr_*.joblib

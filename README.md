@@ -1,157 +1,352 @@
-# BullyGuard ID: Indonesian Cyberbullying & Hate Speech Detection System
+# BullyGuard ID
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react)](https://reactjs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat&logo=postgresql)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-CC2027?style=flat&logo=redis)](https://redis.io/)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker)](https://www.docker.com/)
+**BullyGuard ID** adalah sistem deteksi cyberbullying dan ujaran kebencian berbahasa Indonesia berbasis API. Project ini menggabungkan pendekatan **machine learning klasik**, **lexicon matching**, **Transformer**, dan opsi **LLM-assisted classification** untuk membantu proses moderasi konten.
 
-**BullyGuard ID** adalah sistem deteksi cyberbullying dan ujaran kebencian (*hate speech*) berbahasa Indonesia berskala produksi. Sistem ini menerapkan pendekatan **Hybrid Classifier** (3-tier architecture) yang menggabungkan kecepatan aturan leksikon, kepastian model statistik Machine Learning, kekuatan semantik Deep Learning Transformers (XLM-RoBERTa), serta kecerdasan reasoning Few-Shot Large Language Models (LLM) secara dinamis.
-
-Proyek ini dilengkapi dengan modul **Active Learning (Human-in-the-Loop)** yang memungkinkan administrator melatih ulang model secara instan (hot-reloading) langsung dari UI dashboard ketika ada slang lokal/gaul baru yang salah diklasifikasikan oleh AI.
+> Status project: **advanced MVP / research-oriented prototype**. Sistem ini cocok untuk eksperimen, demo teknis, riset, dan pengembangan lanjutan. Untuk penggunaan production, masih diperlukan evaluasi model, hardening keamanan, monitoring, dan load testing yang lebih lengkap.
 
 ---
 
-## 🏛️ Arsitektur Sistem (3-Tier Hybrid)
+## Tujuan Project
 
-Sistem menggunakan alur perutean cerdas (*intelligent routing*) untuk memproses komentar:
+Project ini dibuat untuk membantu mengklasifikasikan komentar berbahasa Indonesia ke dalam kategori yang berkaitan dengan:
+
+- ujaran toxic,
+- cyberbullying,
+- komentar non-toxic,
+- komentar ambigu yang perlu validasi manusia.
+
+Sistem ini tidak dimaksudkan untuk menggantikan keputusan moderator manusia. Output model sebaiknya digunakan sebagai **alat bantu prioritisasi dan screening awal**, terutama karena konteks bahasa Indonesia, slang, sarkasme, dan variasi daerah dapat memengaruhi hasil klasifikasi.
+
+---
+
+## Fitur Utama
+
+- **REST API berbasis FastAPI** untuk prediksi teks tunggal dan batch.
+- **Hybrid classifier** yang menggabungkan model statistik, lexicon, Transformer, dan opsi LLM.
+- **Active learning / human-in-the-loop** untuk memperbaiki data yang salah klasifikasi.
+- **Dashboard frontend** berbasis React, Vite, dan Tailwind CSS.
+- **PostgreSQL + Redis** untuk penyimpanan, cache, queue, dan integrasi training ulang.
+- **Docker Compose** untuk menjalankan layanan pendukung secara lokal.
+- **Automated test** dengan pytest dan CI pipeline.
+
+---
+
+## Gambaran Arsitektur
 
 ```mermaid
 graph TD
-    A[Komentar Baru] --> B{Tier 1: ML Statistik & Lexicon}
-    B -- "Sangat Yakin (Confidence >= 0.75)" --> C[Hasil Instan ML]
-    B -- "Ragu-ragu (Confidence 0.5 - 0.75)" --> D{Tier 2: Ensemble XLM-RoBERTa}
-    D -- "Yakin (Confidence >= 0.75)" --> E[Hasil Ensemble]
-    D -- "Ragu-ragu" --> F{Tier 3: Ollama Qwen LLM}
-    F -- "Sukses" --> G[Hasil LLM + RAG Few-Shot]
-    F -- "Gagal/Offline" --> H[Fallback Ensemble]
+    A[Komentar Masuk] --> B[Tier 1: ML Statistik + Lexicon]
+    B --> C{Confidence cukup?}
+    C -- Ya --> D[Hasil Prediksi Cepat]
+    C -- Tidak --> E[Tier 2: Transformer]
+    E --> F{Masih ambigu?}
+    F -- Tidak --> G[Hasil Ensemble]
+    F -- Ya --> H[Tier 3: LLM / RAG Few-Shot Opsional]
+    H --> I[Hasil Akhir atau Fallback]
+    D --> J[Disimpan ke Riwayat]
+    G --> J
+    I --> J
+    J --> K[Validasi Admin / Active Learning]
+    K --> L[Retraining Model]
 ```
 
-1. **Tier 1 (Lexicon & ML Klasik)**: Menganalisis teks menggunakan TF-IDF + Logistic Regression dan pencocokan leksikon alay/kasar. Jika model statistik sangat yakin ($P \le 0.25$ atau $P \ge 0.75$), keputusan langsung diambil dalam $<5\text{ms}$.
-2. **Tier 2 (Deep Learning Transformers)**: Kasus marginal/ragu diteruskan ke model XLM-RoBERTa terkuantisasi INT8 (`onnxruntime` CPU).
-3. **Tier 3 (Few-Shot LLM + RAG)**: Kasus kompleks (sarkasme/slang halus) diteruskan ke Ollama Qwen LLM dengan suntikan konteks dinamis (*Retrieval-Augmented Generation*) dari database komentar tervalidasi.
+Catatan penting: confidence dari model statistik, Transformer, dan LLM tidak selalu berada pada skala yang sama. Untuk penggunaan serius, threshold dan confidence perlu dikalibrasi menggunakan validation set yang terdokumentasi.
 
 ---
 
-## 📁 Struktur Repositori
-
-Struktur folder dirancang secara modular dan mengikuti praktik terbaik pengembangan perangkat lunak modern:
+## Struktur Repositori
 
 ```text
-📁 Cyber/
-├── 📁 cyberbullying_api/           # BACKEND (FastAPI)
-│   ├── 📁 cache/                   # Penyimpanan SQLite Cache & Log Pelatihan
-│   ├── 📁 classifier/              # Logika Utama Klasifikasi & DB
-│   │   ├── 📄 db_cache.py          # Semantic Cache Response
-│   │   ├── 📄 db_config.py         # Konfigurasi DB (PostgreSQL, Redis, SQLite)
-│   │   ├── 📄 db_memory.py         # Persistent Memory & Active Learning
-│   │   ├── 📄 database.py          # Re-exporter Backward Compatibility
-│   │   └── 📄 predictor.py         # Engine Prediksi Hybrid
-│   ├── 📁 models/                  # File Model (Joblib, ONNX, JSON Thresholds)
-│   ├── 📁 routes/                  # API Endpoints (FastAPI APIRouter)
-│   │   ├── 📄 deps.py              # Dependencies (Auth API Key, Rate Limits)
-│   │   ├── 📄 admin.py             # Scraping, Active Learning, Retrain Routes
-│   │   └── 📄 predict.py           # Prediksi Klasifikasi & Batch Routes
-│   ├── 📁 scraper/                 # Scraper Komentar (TikTok & X/Twitter)
-│   ├── 📄 main.py                  # Entrypoint & Lifespan FastAPI
-│   ├── 📄 retrain.py               # Script Pelatihan Ulang Otomatis
-│   └── 📁 tests/                   # Automated Test Suite (Pytest)
-│       ├── 📄 test_admin.py        # Pengujian Logika Admin & Database
-│       └── 📄 test_predictions.py  # Pengujian Logika Klasifikasi & Model
-│
-├── 📁 frontend/                    # FRONTEND (React + Vite + Tailwind CSS)
-│   ├── 📁 src/
-│   │   ├── 📁 components/          # Komponen UI
-│   │   │   ├── 📁 ActiveLearning/  # Sub-Komponen Halaman Active Learning
-│   │   │   │   ├── 📄 FilterBar.tsx
-│   │   │   │   ├── 📄 Quadrant.tsx
-│   │   │   │   └── 📄 RetrainTerminal.tsx
-│   │   │   └── 📄 ActiveLearning.tsx # Main controller halaman
-│   │   └── 📄 App.tsx              # Root Layout & Dashboard
-│
-├── 📄 docker-compose.yml           # Orkestrasi PostgreSQL, Redis, Pgvector
-└── 📄 README.md                    # Dokumentasi Utama
+.
+├── .github/                         # CI pipeline
+├── cyberbullying_api/               # Backend FastAPI
+│   ├── cache/                       # Cache dan log training
+│   ├── classifier/                  # Core classifier, database, memory, predictor
+│   ├── models/                      # File model, threshold, dan artefak ML
+│   ├── routes/                      # API routes
+│   ├── scraper/                     # Scraper komentar
+│   ├── tests/                       # Pytest suite
+│   ├── main.py                      # Entrypoint FastAPI
+│   ├── retrain.py                   # Script retraining
+│   └── requirements.txt             # Dependency backend
+├── dataset/                         # Dataset dan data pendukung
+├── frontend/                        # Frontend React + Vite
+├── docker-compose.yml               # Layanan lokal: API, worker, DB, Redis, frontend
+├── MODEL_EVALUATION.md              # Template dan catatan evaluasi model
+├── .env.example                     # Contoh konfigurasi environment
+└── README.md                        # Dokumentasi utama
 ```
 
 ---
 
-## 🚀 Panduan Instalasi & Pengembangan
+## Prasyarat
 
-### 1. Prasyarat
-Pastikan Anda memiliki tools berikut terinstal di komputer Anda:
-- Python 3.10 atau lebih tinggi
-- Node.js & npm (v18+)
-- Docker & Docker Compose
+Pastikan perangkat Anda memiliki:
 
-### 2. Infrastruktur (Docker)
-Jalankan PostgreSQL, Redis, dan pgvector menggunakan Docker Compose:
+- Python 3.10 atau lebih baru
+- Node.js 18 atau lebih baru
+- npm
+- Docker dan Docker Compose
+- Git
+- Ollama, opsional, hanya jika ingin memakai fitur LLM lokal
+
+---
+
+## Quick Start — Local Development
+
+### 1. Clone repository
+
 ```bash
-docker-compose up -d
+git clone https://github.com/Maliq-dlt/indonesian-cyberbullying-detection-api.git
+cd indonesian-cyberbullying-detection-api
 ```
-*Catatan: Konfigurasi default PostgreSQL & Redis telah diatur agar otomatis terhubung ke sistem backend.*
 
-### 3. Backend Setup (FastAPI)
-1. Buka folder `cyberbullying_api/` dan buat virtual environment:
-   ```bash
-   cd cyberbullying_api
-   python -m venv .venv
-   .venv\Scripts\activate      # Windows
-   source .venv/bin/activate    # macOS/Linux
-   ```
-2. Instal dependensi:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Buat file `.env` di dalam folder `cyberbullying_api/` dan masukkan kunci API:
-   ```env
-   API_KEY=kunci_api_rahasia_anda
-   ENV=development
-   ```
-4. Jalankan server pengembangan backend:
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
+### 2. Buat file environment
 
-### 4. Frontend Setup (React)
-1. Buka folder `frontend/`:
-   ```bash
-   cd ../frontend
-   ```
-2. Instal dependensi npm:
-   ```bash
-   npm install
-   ```
-3. Jalankan server pengembangan React:
-   ```bash
-   npm run dev
-   ```
+Salin file contoh environment:
 
----
-
-## 🧪 Pengujian Unit & Integrasi (Automated Tests)
-
-Sistem dilengkapi dengan unit testing menggunakan `pytest` yang telah dikonfigurasi untuk terisolasi dari database produksi melalui SQLite fallback otomatis.
-
-Untuk menjalankan seluruh pengujian:
 ```bash
-# Di dalam folder root proyek
-.venv\Scripts\pytest cyberbullying_api/tests
+cp .env.example .env
 ```
 
-*Tip Kecepatan: Waktu eksekusi pengujian berkisar ~30-40 detik karena inisialisasi ONNX dan model Sentence-Transformer pada startup.*
+Untuk Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Sesuaikan nilai di dalam `.env`, terutama:
+
+```env
+API_KEY=change_me_to_a_long_random_secret
+ENV=development
+```
+
+### 3. Jalankan database dan Redis
+
+```bash
+docker compose up -d db redis
+```
+
+### 4. Jalankan backend
+
+```bash
+cd cyberbullying_api
+python -m venv .venv
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Windows CMD:
+
+```cmd
+.venv\Scripts\activate
+```
+
+macOS/Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+Install dependency:
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Jalankan API:
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+API akan tersedia di:
+
+```text
+http://localhost:8000
+```
+
+Dokumentasi Swagger biasanya tersedia di:
+
+```text
+http://localhost:8000/docs
+```
+
+### 5. Jalankan frontend
+
+Buka terminal baru dari root project:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend biasanya berjalan di:
+
+```text
+http://localhost:5173
+```
 
 ---
 
-## ⚙️ Mekanisme Active Learning (Human-in-the-Loop)
+## Menjalankan dengan Docker Compose
 
-UI Active Learning membagi data klasifikasi historis menjadi 4 kuadran utama:
-1. **Toxic & Bully**
-2. **Toxic but Non-Bully**
-3. **Non-Toxic but Bully**
-4. **Non-Toxic & Non-Bully**
+Untuk menjalankan seluruh layanan lokal:
 
-### Langkah Kerja Siklus Ulang:
-1. **Penyaringan**: Cari teks atau filter berdasarkan tingkat keyakinan (ragu-ragu) dan sumber keputusan.
-2. **Relokasi**: Geser kartu teks secara manual (atau lakukan *Drag & Drop*) ke kuadran yang benar jika AI salah mendeteksi.
-3. **Validasi**: Data yang Anda pindahkan akan diberi flag `is_validated = 1` di database.
-4. **Pelatihan Ulang (Retraining)**: Klik tombol **"Jalankan Pelatihan Ulang"** untuk memicu kompilasi ulang model ML menggunakan data tervalidasi baru. backend akan melatih ulang model Logistic Regression, mengkalibrasi ulang threshold keputusan optimal, memperbarui disk, dan memuat ulang model secara dinamis (*hot-reload*) menggunakan Redis Pub/Sub.
+```bash
+docker compose up --build
+```
+
+Untuk menjalankan di background:
+
+```bash
+docker compose up -d --build
+```
+
+Untuk menghentikan layanan:
+
+```bash
+docker compose down
+```
+
+Untuk menghapus volume database/cache lokal:
+
+```bash
+docker compose down -v
+```
+
+---
+
+## Contoh Request API
+
+Sesuaikan path endpoint dengan implementasi route di backend Anda.
+
+```bash
+curl -X POST "http://localhost:8000/predict" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: change_me_to_a_long_random_secret" \
+  -d '{"text":"contoh komentar untuk diuji"}'
+```
+
+Jika endpoint berbeda, cek dokumentasi Swagger di `/docs`.
+
+---
+
+## Testing
+
+Jalankan test backend dari root project:
+
+```bash
+pytest cyberbullying_api/tests
+```
+
+Atau dari folder backend:
+
+```bash
+cd cyberbullying_api
+pytest tests
+```
+
+Jalankan lint dan build frontend:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+---
+
+## Evaluasi Model
+
+Evaluasi model harus terdokumentasi sebelum project diklaim layak production. Minimal laporan evaluasi sebaiknya mencakup:
+
+- jumlah data,
+- sumber dataset,
+- distribusi label,
+- metode split train/validation/test,
+- metrik precision, recall, F1-score per label,
+- confusion matrix,
+- contoh false positive,
+- contoh false negative,
+- analisis error pada slang, sarkasme, kutipan, dan konteks bercanda.
+
+Gunakan file [`MODEL_EVALUATION.md`](MODEL_EVALUATION.md) sebagai template dokumentasi evaluasi.
+
+---
+
+## Active Learning
+
+Sistem active learning membantu admin memperbaiki data yang salah klasifikasi.
+
+Alur umumnya:
+
+1. Sistem menyimpan hasil prediksi dan confidence.
+2. Admin mengecek data yang ambigu atau salah klasifikasi.
+3. Admin memindahkan data ke kategori yang benar.
+4. Data diberi tanda validasi.
+5. Model dapat dilatih ulang menggunakan data tervalidasi.
+6. Model baru dimuat ulang sesuai mekanisme backend.
+
+Catatan: retraining sebaiknya tetap dievaluasi sebelum dipakai sebagai model utama. Jangan langsung menganggap model baru lebih baik hanya karena datanya bertambah.
+
+---
+
+## Batasan Sistem
+
+Project ini masih memiliki beberapa batasan penting:
+
+- Model dapat salah memahami sarkasme, ironi, inside joke, dan bahasa daerah.
+- Kata kasar tidak selalu berarti cyberbullying; bisa muncul dalam kutipan, edukasi, atau konteks bercanda.
+- Komentar halus yang merendahkan bisa lolos jika tidak memakai kata eksplisit.
+- Confidence model belum tentu merepresentasikan kepastian nyata tanpa kalibrasi.
+- LLM lokal bergantung pada model, prompt, resource komputer, dan kualitas contoh few-shot.
+- Sistem moderasi tetap memerlukan validasi manusia pada kasus sensitif.
+
+---
+
+## Catatan Keamanan
+
+Untuk deployment yang lebih aman:
+
+- Jangan commit file `.env` ke repository.
+- Gunakan API key yang panjang dan acak.
+- Batasi CORS hanya ke domain frontend yang dipercaya.
+- Jangan memakai credential default Docker Compose di production.
+- Aktifkan HTTPS di reverse proxy.
+- Gunakan secret manager atau environment variable dari platform deployment.
+- Monitor error, request rate, dan penggunaan endpoint admin.
+
+---
+
+## Roadmap Perbaikan
+
+Prioritas berikutnya:
+
+- [ ] Dokumentasi evaluasi model lengkap.
+- [ ] Confusion matrix dan error analysis.
+- [ ] Threshold tuning dan calibration report.
+- [ ] Hardening autentikasi dan authorization.
+- [ ] Refactor Docker Compose agar tidak hard-code credential.
+- [ ] Observability: structured logging, metrics, health check.
+- [ ] Refactor frontend component besar menjadi komponen kecil.
+- [ ] Load testing untuk klaim performa.
+
+---
+
+## Lisensi
+
+Project ini menggunakan lisensi MIT. Lihat file [`LICENSE`](LICENSE) untuk detail.
+
+---
+
+## Disclaimer
+
+BullyGuard ID adalah alat bantu deteksi awal. Hasil prediksi tidak boleh dijadikan satu-satunya dasar pengambilan keputusan yang berdampak serius terhadap pengguna tanpa pemeriksaan manusia dan prosedur banding yang jelas.
