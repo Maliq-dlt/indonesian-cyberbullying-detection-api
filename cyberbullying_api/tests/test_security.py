@@ -27,6 +27,7 @@ def test_is_safe_webhook_url():
 @pytest.mark.anyio
 async def test_rate_limit_ollama_and_batch_new_key():
     # Test rate limiter when the key is new (first request)
+    import hashlib
     mock_redis = MagicMock()
     mock_pipeline = MagicMock()
     mock_pipeline.execute = AsyncMock(return_value=[1, -1])
@@ -38,15 +39,19 @@ async def test_rate_limit_ollama_and_batch_new_key():
     mock_request.client.host = "1.2.3.4"
     mock_request.url.path = "/api/predict/hybrid"
     
+    key_source = "1.2.3.4:/api/predict/hybrid"
+    key_hash = hashlib.sha256(key_source.encode("utf-8")).hexdigest()[:32]
+    expected_key = f"rate_limit:{key_hash}"
+    
     with patch("classifier.get_redis", return_value=mock_redis):
         await rate_limit_ollama_and_batch(mock_request)
         
         # Verify pipe.incr and pipe.ttl were called
-        mock_pipeline.incr.assert_called_once_with("rate_limit:1.2.3.4:/api/predict/hybrid")
-        mock_pipeline.ttl.assert_called_once_with("rate_limit:1.2.3.4:/api/predict/hybrid")
+        mock_pipeline.incr.assert_called_once_with(expected_key)
+        mock_pipeline.ttl.assert_called_once_with(expected_key)
         
         # Verify expire was called because val == 1 and ttl == -1
-        mock_redis.expire.assert_called_once_with("rate_limit:1.2.3.4:/api/predict/hybrid", 60)
+        mock_redis.expire.assert_called_once_with(expected_key, 60)
 
 @pytest.mark.anyio
 async def test_rate_limit_ollama_and_batch_existing_key():
@@ -87,10 +92,11 @@ async def test_rate_limit_ollama_and_batch_limit_exceeded():
             await rate_limit_ollama_and_batch(mock_request)
         
         assert exc_info.value.status_code == 429
-        assert "Batas limit terlampaui" in exc_info.value.detail
+        assert "Too many requests" in exc_info.value.detail
         
         # Verify expire was NOT called
         mock_redis.expire.assert_not_called()
+
 
 def test_production_startup_without_api_key():
     # Test that db_config raises ValueError in production if API_KEY is missing

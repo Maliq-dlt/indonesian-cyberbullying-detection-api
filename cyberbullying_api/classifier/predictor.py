@@ -34,6 +34,14 @@ from normalizer import (
 from classifier.database import init_cache_db, save_classification_memory, get_classification_memory
 from classifier.llm import query_ollama_async, query_ollama_stream_async, OLLAMA_URL
 import classifier.llm as llm_module
+from classifier.confidence import (
+    apply_lexicon_evidence,
+    combine_probabilities,
+    decision_summary,
+    get_threshold,
+    is_confident_pair,
+    llm_decision_to_probability,
+)
 
 # Tentukan direktori dasar dinamis untuk pathing absolut (parent dari classifier/ yaitu cyberbullying_api/)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -405,8 +413,8 @@ def predict_ml(text: str) -> MLResponse:
     prob_toxic = float(pred_probs[0][0][1])
     prob_bully = float(pred_probs[1][0][1])
     
-    is_toxic = prob_toxic >= THRESHOLDS.get("threshold_toxic", 0.5)
-    is_bully = prob_bully >= THRESHOLDS.get("threshold_bully", 0.5)
+    is_toxic = prob_toxic >= get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
+    is_bully = prob_bully >= get_threshold(THRESHOLDS, "threshold_bully", 0.5)
     
     elapsed = (time.perf_counter() - start_time) * 1000.0
     return MLResponse(
@@ -427,8 +435,8 @@ def predict_transformers(text: str) -> TransformerResponse:
     prob_toxic = res["toxic_prob"]
     prob_bully = res["bully_prob"]
     
-    is_toxic = prob_toxic >= THRESHOLDS.get("threshold_toxic", 0.5)
-    is_bully = prob_bully >= THRESHOLDS.get("threshold_bully", 0.5)
+    is_toxic = prob_toxic >= get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
+    is_bully = prob_bully >= get_threshold(THRESHOLDS, "threshold_bully", 0.5)
     
     elapsed = (time.perf_counter() - start_time) * 1000.0
     return TransformerResponse(
@@ -459,15 +467,14 @@ def predict_ensemble(text: str) -> EnsembleResponse:
     w_ml_bully = w.get("ml_bully", 0.65)
     w_tr_bully = w.get("tr_bully", 0.35)
 
-    final_toxic = w_ml_toxic * ml_toxic + w_tr_toxic * tr_toxic if tr_toxic > 0.0 else ml_toxic
-    final_bully = w_ml_bully * ml_bully + w_tr_bully * tr_bully if tr_bully > 0.0 else ml_bully
+    final_toxic = combine_probabilities(ml_toxic, tr_toxic, w_ml_toxic, w_tr_toxic)
+    final_bully = combine_probabilities(ml_bully, tr_bully, w_ml_bully, w_tr_bully)
     
     lex_res = predict_lexicon(text, use_fuzzy=False)
-    if lex_res.is_cyberbullying:
-        final_toxic = max(final_toxic, 0.90)
+    final_toxic = apply_lexicon_evidence(final_toxic, lex_res)
         
-    is_toxic = final_toxic >= THRESHOLDS.get("threshold_toxic", 0.5)
-    is_bully = final_bully >= THRESHOLDS.get("threshold_bully", 0.5)
+    is_toxic = final_toxic >= get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
+    is_bully = final_bully >= get_threshold(THRESHOLDS, "threshold_bully", 0.5)
     
     elapsed = (time.perf_counter() - start_time) * 1000.0
     return EnsembleResponse(
@@ -495,6 +502,9 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     if ML_MODEL is None or ML_VECTORIZER is None:
         return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.", word_importances=[])
 
+    t_t = get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
+    t_b = get_threshold(THRESHOLDS, "threshold_bully", 0.5)
+
     # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat dan Ollama terkonfigurasi)
     is_sarcasm_candidate = detect_sentiment_contrast(text)
     if is_sarcasm_candidate and OLLAMA_URL:
@@ -507,8 +517,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 text=text,
                 is_toxic=is_toxic,
                 is_bully=is_bully,
-                probability_toxic=1.0 if is_toxic else 0.0,
-                probability_bully=1.0 if is_bully else 0.0,
+                probability_toxic=llm_decision_to_probability(is_toxic, t_t),
+                probability_bully=llm_decision_to_probability(is_bully, t_b),
                 category=determine_category(is_toxic, is_bully),
                 decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
                 reason=f"[Sarcasm Bypass] {ollama_res['reason']}",
@@ -518,11 +528,9 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     # 1. Jalankan ML (Tier 1)
     ml_toxic, ml_bully = await asyncio.to_thread(run_ml_inference_sync, text)
 
-    t_t = THRESHOLDS.get("threshold_toxic", 0.5)
-    t_b = THRESHOLDS.get("threshold_bully", 0.5)
-
-    # Jika ML sangat yakin (di luar rentang T - 0.25 s/d T + 0.25)
-    if (abs(ml_toxic - t_t) >= 0.25) and (abs(ml_bully - t_b) >= 0.25):
+    # Jika ML sangat yakin (di luar rentang T - margin s/d T + margin)
+    ml_confidence = is_confident_pair(ml_toxic, ml_bully, t_t, t_b)
+    if ml_confidence.is_confident:
         is_toxic = ml_toxic >= t_t
         is_bully = ml_bully >= t_b
         return HybridResponse(
@@ -533,7 +541,7 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             probability_bully=ml_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 1 (ML Klasik)",
-            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik.",
+            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik. " + ml_confidence.reason,
             word_importances=explain_prediction(text)
         )
 
@@ -548,10 +556,11 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     w_ml_bully = w.get("ml_bully", 0.65)
     w_tr_bully = w.get("tr_bully", 0.35)
 
-    ens_toxic = w_ml_toxic * ml_toxic + w_tr_toxic * tr_toxic if tr_toxic > 0.0 else ml_toxic
-    ens_bully = w_ml_bully * ml_bully + w_tr_bully * tr_bully if tr_bully > 0.0 else ml_bully
+    ens_toxic = combine_probabilities(ml_toxic, tr_toxic, w_ml_toxic, w_tr_toxic)
+    ens_bully = combine_probabilities(ml_bully, tr_bully, w_ml_bully, w_tr_bully)
 
-    if (abs(ens_toxic - t_t) >= 0.25) and (abs(ens_bully - t_b) >= 0.25):
+    ens_confidence = is_confident_pair(ens_toxic, ens_bully, t_t, t_b)
+    if ens_confidence.is_confident:
         is_toxic = ens_toxic >= t_t
         is_bully = ens_bully >= t_b
         return HybridResponse(
@@ -562,7 +571,7 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             probability_bully=ens_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 2 (Ensemble ML & Transformer)",
-            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer.",
+            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer. " + ens_confidence.reason,
             word_importances=explain_prediction(text)
         )
 
@@ -577,8 +586,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 text=text,
                 is_toxic=is_toxic,
                 is_bully=is_bully,
-                probability_toxic=1.0 if is_toxic else 0.0,
-                probability_bully=1.0 if is_bully else 0.0,
+                probability_toxic=llm_decision_to_probability(is_toxic, t_t),
+                probability_bully=llm_decision_to_probability(is_bully, t_b),
                 category=determine_category(is_toxic, is_bully),
                 decision_source="Tier 3 (Ollama Qwen LLM)",
                 reason=ollama_res["reason"],
@@ -638,6 +647,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
         yield {"chunk": res.reason, "done": True, "final_data": res}
         return
     
+    t_t = get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
+    t_b = get_threshold(THRESHOLDS, "threshold_bully", 0.5)
+
     # 0. Pra-penyaringan Kontras Sentimen
     is_sarcasm_candidate = detect_sentiment_contrast(text)
     if is_sarcasm_candidate and OLLAMA_URL:
@@ -652,8 +664,8 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         text=text,
                         is_toxic=is_toxic,
                         is_bully=is_bully,
-                        probability_toxic=1.0 if is_toxic else 0.0,
-                        probability_bully=1.0 if is_bully else 0.0,
+                        probability_toxic=llm_decision_to_probability(is_toxic, t_t),
+                        probability_bully=llm_decision_to_probability(is_bully, t_b),
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
                         reason=f"[Sarcasm Bypass] {ollama_res['reason']}",
@@ -696,11 +708,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
     # 1. Jalankan ML (Tier 1)
     ml_toxic, ml_bully = await asyncio.to_thread(run_ml_inference_sync, text)
     
-    t_t = THRESHOLDS.get("threshold_toxic", 0.5)
-    t_b = THRESHOLDS.get("threshold_bully", 0.5)
-    
     # Jika ML sangat yakin
-    if (abs(ml_toxic - t_t) >= 0.25) and (abs(ml_bully - t_b) >= 0.25):
+    ml_confidence = is_confident_pair(ml_toxic, ml_bully, t_t, t_b)
+    if ml_confidence.is_confident:
         is_toxic = ml_toxic >= t_t
         is_bully = ml_bully >= t_b
         res = HybridResponse(
@@ -711,7 +721,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
             probability_bully=ml_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 1 (ML Klasik)",
-            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik.",
+            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik. " + ml_confidence.reason,
             word_importances=explain_prediction(text)
         )
         embedding_json = None
@@ -736,10 +746,11 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
     w_ml_bully = w.get("ml_bully", 0.65)
     w_tr_bully = w.get("tr_bully", 0.35)
 
-    ens_toxic = w_ml_toxic * ml_toxic + w_tr_toxic * tr_toxic if tr_toxic > 0.0 else ml_toxic
-    ens_bully = w_ml_bully * ml_bully + w_tr_bully * tr_bully if tr_bully > 0.0 else ml_bully
+    ens_toxic = combine_probabilities(ml_toxic, tr_toxic, w_ml_toxic, w_tr_toxic)
+    ens_bully = combine_probabilities(ml_bully, tr_bully, w_ml_bully, w_tr_bully)
     
-    if (abs(ens_toxic - t_t) >= 0.25) and (abs(ens_bully - t_b) >= 0.25):
+    ens_confidence = is_confident_pair(ens_toxic, ens_bully, t_t, t_b)
+    if ens_confidence.is_confident:
         is_toxic = ens_toxic >= t_t
         is_bully = ens_bully >= t_b
         res = HybridResponse(
@@ -750,7 +761,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
             probability_bully=ens_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 2 (Ensemble ML & Transformer)",
-            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer.",
+            reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer. " + ens_confidence.reason,
             word_importances=explain_prediction(text)
         )
         embedding_json = None
@@ -777,8 +788,8 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         text=text,
                         is_toxic=is_toxic,
                         is_bully=is_bully,
-                        probability_toxic=1.0 if is_toxic else 0.0,
-                        probability_bully=1.0 if is_bully else 0.0,
+                        probability_toxic=llm_decision_to_probability(is_toxic, t_t),
+                        probability_bully=llm_decision_to_probability(is_bully, t_b),
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Tier 3 (Ollama Qwen LLM)",
                         reason=ollama_res["reason"],
