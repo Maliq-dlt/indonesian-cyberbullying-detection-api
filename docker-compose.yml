@@ -35,6 +35,7 @@ services:
     build:
       context: .
       dockerfile: cyberbullying_api/Dockerfile
+    image: cyberbullying_api:latest
     container_name: cyberbullying_api
     restart: unless-stopped
     ports:
@@ -67,9 +68,7 @@ services:
       - cache_data:/app/cyberbullying_api/cache
 
   worker:
-    build:
-      context: .
-      dockerfile: cyberbullying_api/Dockerfile
+    image: cyberbullying_api:latest
     container_name: cyberbullying_worker
     restart: unless-stopped
     command: celery -A tasks worker --loglevel=info --concurrency=1
@@ -85,6 +84,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      api:
+        condition: service_started
     volumes:
       - ./cyberbullying_api:/app/cyberbullying_api
       - ./cyberbullying_api/models:/app/cyberbullying_api/models
@@ -93,22 +94,20 @@ services:
       - cache_data:/app/cyberbullying_api/cache
 
   web:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      target: builder
+    image: node:20-alpine
     container_name: cyberbullying_web
     restart: unless-stopped
-    command: npx vite --host 0.0.0.0 --port 3000
+    working_dir: /app
+    command: sh -c "npm install && npx vite --host 0.0.0.0 --port 3000"
     ports:
       - "${WEB_PORT:-3000}:3000"
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     volumes:
       - ./frontend:/app
-      - /app/node_modules
     depends_on:
       - api
+
 
 volumes:
   pgdata:
