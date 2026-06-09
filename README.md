@@ -35,7 +35,7 @@ Sistem ini dirancang sebagai **asisten penyaring awal (screening assistant)** un
 - 🧠 **Hybrid Multi-Tier Pipeline**: 
   - **Tier 1 (Lokal / Cepat)**: Deteksi kilat dengan Lexicon Matching + Machine Learning (Logistic Regression & TF-IDF).
   - **Tier 2 (Lokal / Semantik)**: Evaluasi semantik mendalam menggunakan model Transformer (XLM-RoBERTa) yang dioptimalkan dalam format ONNX Runtime.
-  - **Tier 3 (Eksternal / Komponen Fleksibel)**: Deteksi kalimat sarkasme kompleks menggunakan LLM lokal (Ollama / Qwen).
+  - **Tier 3 (Eksternal / Komponen Fleksibel)**: Deteksi kalimat sarkasme kompleks menggunakan Cloud LLM (OpenCode Go API).
 - 🔍 **Explainable AI (XAI)**: Visualisasi bobot SHAP untuk setiap kata guna menunjukkan kata spesifik yang memicu keputusan AI.
 - ⚡ **Optimasi Docker Berkinerja Tinggi**:
   - Image API dan Worker saling berbagi *cache layers* (Image Re-use) sehingga menghemat RAM dan mempercepat waktu build.
@@ -57,7 +57,7 @@ graph TD
     C -- Tidak (Ragu-ragu) --> E[🧠 Tier 2: Transformer ONNX]
     E --> F{Masih Ambigu?}
     F -- Tidak --> G[🤝 Hasil Ensemble Lokal]
-    F -- Ya --> H[🤖 Tier 3: LLM / Ollama Opsional]
+    F -- Ya --> H[🤖 Tier 3: LLM / OpenCode Go Opsional]
     H --> I[🎯 Hasil LLM / Fallback Ensemble]
     D --> J[💾 Simpan ke Riwayat & Redis Cache]
     G --> J
@@ -102,7 +102,7 @@ Pastikan komputer lokal Anda telah terpasang perangkat lunak berikut:
 - **Python 3.11** atau lebih baru
 - **Node.js 20** atau lebih baru (berserta **npm**)
 - **Docker** & **Docker Compose**
-- **Ollama** *(Opsional, diperlukan jika ingin menggunakan LLM lokal)*
+- **OpenCode Go** *(Opsional, diperlukan jika ingin mengaktifkan Cloud LLM Tier 3)*
 
 ---
 

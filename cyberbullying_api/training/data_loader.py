@@ -207,7 +207,7 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
     """Retrieve validated records from the classification-memory DB.
 
     Tries PostgreSQL first (via :pypi:`asyncpg`).  Falls back to a local
-    SQLite database at ``<base_dir>/cache/ollama_cache.db`` when
+    SQLite database at ``<base_dir>/cache/cloud_llm_cache.db`` when
     ``asyncpg`` is unavailable or the connection fails.
 
     Parameters
@@ -270,7 +270,7 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
     if not pg_records_loaded:
         print("Mencari data baru dari basis data memori SQLite (classification_memory)...")
         try:
-            db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+            db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
             if os.path.exists(db_path):
                 conn = sqlite3.connect(db_path, timeout=10.0)
                 cursor = conn.cursor()

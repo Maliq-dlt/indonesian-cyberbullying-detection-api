@@ -7,12 +7,12 @@ from models import (
     ScrapeTikTokRequest, ScrapeXRequest, ScrapeResponse, ReallocateRequest, ReallocateResponse,
     UpdateCookiesRequest, BulkReallocateRequest
 )
-from routes.deps import verify_api_key, rate_limit_ollama_and_batch
+from routes.deps import verify_api_key, rate_limit_cloud_llm_and_batch
 import routes.state as state
 
 router = APIRouter(prefix="/api", tags=["admin"])
 
-@router.post("/scrape/tiktok", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
+@router.post("/scrape/tiktok", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
 async def api_scrape_tiktok(req: ScrapeTikTokRequest):
     try:
         from scraper.tiktok import scrape_tiktok_comments
@@ -28,7 +28,7 @@ async def api_scrape_tiktok(req: ScrapeTikTokRequest):
         raise HTTPException(status_code=500, detail="Gagal mengikis data komentar TikTok. Silakan coba lagi nanti.")
 
 
-@router.post("/scrape/x", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
+@router.post("/scrape/x", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
 async def api_scrape_x(req: ScrapeXRequest):
     try:
         from scraper.twitter import scrape_x_tweets
@@ -411,7 +411,7 @@ async def api_recalibrate_ensemble():
             # Fallback ke SQLite
             try:
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+                db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
                 if os.path.exists(db_path):
                     conn = sqlite3.connect(db_path)
                     conn.row_factory = sqlite3.Row

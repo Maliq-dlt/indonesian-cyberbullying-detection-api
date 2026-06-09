@@ -10,11 +10,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.metrics import classification_report, f1_score
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from normalizer import init_slang_map, normalize_text
 
 from training import (
     augment_text_with_llm, perturb_text,
-    sarcasm_raw, slang_praise_raw, OLLAMA_URL,
+    sarcasm_raw, slang_praise_raw, OPENCODE_API_KEY, OPENCODE_BASE_URL,
     load_twitter_dataset, load_instagram_dataset,
     load_combined_dataset, ingest_scraped_csv, ingest_database_memory
 )
@@ -102,7 +106,7 @@ if new_records:
                 added_count += 1
                 
                 # Opsi 4: LLM-based Data Augmentation
-                if OLLAMA_URL:
+                if OPENCODE_API_KEY:
                     print(f"  -> Menghasilkan augmentasi LLM untuk teks: '{rec['String']}'")
                     variations = augment_text_with_llm(rec["String"], is_bully)
                     for var in variations:
@@ -272,7 +276,7 @@ except Exception as e:
 
 if not validated_records:
     try:
-        db_path = os.path.join(BASE_DIR, "cache", "ollama_cache.db")
+        db_path = os.path.join(BASE_DIR, "cache", "cloud_llm_cache.db")
         if os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()

@@ -269,7 +269,7 @@ def init_cache_db():
     
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         init_sqlite_db(db_path)
     except Exception as e:

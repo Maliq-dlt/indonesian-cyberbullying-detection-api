@@ -90,7 +90,7 @@ We maintain a high test coverage threshold (>80%).
   pytest cyberbullying_api/tests --cov=cyberbullying_api
   ```
 * Ensure you write unit tests for every new router endpoint, service utility, or data model you add.
-* Mock external API calls (e.g., Hugging Face hub, Ollama LLM, TikTok HTTP endpoints) using pytest fixtures.
+* Mock external API calls (e.g., Hugging Face hub, Cloud LLM (OpenCode Go), TikTok HTTP endpoints) using pytest fixtures.
 
 ---
 

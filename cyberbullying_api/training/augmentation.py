@@ -4,7 +4,7 @@ training/augmentation.py
 Reusable text-augmentation utilities extracted from retrain.py.
 
 Provides:
-  - LLM-based paraphrase augmentation via a local Ollama instance.
+  - LLM-based paraphrase augmentation via a local OpenCode Go instance.
   - Rule-based perturbation (leetspeak, censoring, typos, character
     repetition) targeting abusive words.
   - Ready-made template lists for sarcasm and slang-praise patterns
@@ -20,10 +20,11 @@ import httpx
 from normalizer import normalize_text
 
 # ---------------------------------------------------------------------------
-# Ollama configuration (read from environment at import time)
+# Cloud LLM configuration (read from environment at import time)
 # ---------------------------------------------------------------------------
-OLLAMA_URL: str = os.getenv("OLLAMA_URL", "")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+OPENCODE_API_KEY: str = os.getenv("OPENCODE_API_KEY", "")
+OPENCODE_BASE_URL: str = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
+OPENCODE_MODEL: str = os.getenv("OPENCODE_MODEL", "opencode-go/kimi-k2.6")
 
 # ---------------------------------------------------------------------------
 # Leetspeak substitution map used by perturb_text
@@ -87,14 +88,14 @@ slang_praise_raw: list[str] = [
 # ---------------------------------------------------------------------------
 
 def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
-    """Use a local Ollama instance to generate paraphrase variations.
+    """Use a local OpenCode Go instance to generate paraphrase variations.
 
     Returns up to 2 paraphrased versions of *text*, preserving the
     original register (slang / harsh / polite) and label semantics.
-    Returns an empty list when ``OLLAMA_URL`` is not configured or
+    Returns an empty list when ``OPENCODE_BASE_URL`` is not configured or
     when the request fails for any reason.
     """
-    if not OLLAMA_URL:
+    if not OPENCODE_API_KEY:
         return []
 
     label_desc = (
@@ -106,31 +107,35 @@ def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
         f"alternatif untuk kalimat berikut.\n"
         f"Variasi harus tetap mempertahankan gaya bahasa "
         f"(gaul/kasar/sopan) dan makna aslinya sebagai {label_desc}.\n"
-        f"Keluaran harus berupa daftar string mentah JSON tanpa markdown, "
-        f'seperti: ["variasi 1", "variasi 2"]\n\n'
+        f"Keluaran harus berupa array string mentah JSON tanpa markdown, "
+        f'seperti: {{"variations": ["variasi 1", "variasi 2"]}}\n\n'
         f'Kalimat asli: "{text}"'
     )
 
-    url = f"{OLLAMA_URL.rstrip('/')}/api/generate"
+    url = f"{OPENCODE_BASE_URL.rstrip('/')}/chat/completions"
     payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "format": {
-            "type": "array",
-            "items": {"type": "string"},
-        },
-        "options": {
-            "temperature": 0.5,  # slightly creative for paraphrase variety
-        },
+        "model": OPENCODE_MODEL,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.5,
+        "stream": False
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {OPENCODE_API_KEY}",
+        "Content-Type": "application/json"
     }
 
     try:
         with httpx.Client(timeout=15.0) as client:
-            response = client.post(url, json=payload)
+            response = client.post(url, headers=headers, json=payload)
             if response.status_code == 200:
                 res_json = response.json()
-                variations = json.loads(res_json["response"])
+                content_str = res_json["choices"][0]["message"]["content"]
+                content = json.loads(content_str)
+                variations = content.get("variations", [])
                 if isinstance(variations, list):
                     return [str(v).strip() for v in variations if str(v).strip()]
     except Exception as e:

@@ -151,8 +151,8 @@ async def clear_redis_cache(redis_url: str):
     print(f"[Redis] Menghubungkan ke Redis...")
     try:
         r = redis.from_url(redis_url, decode_responses=True)
-        # Ambil keys cache memori dan cache ollama
-        keys = await r.keys("mem:*") + await r.keys("ollama:*")
+        # Ambil keys cache memori dan cache opencode_go
+        keys = await r.keys("mem:*") + await r.keys("cloud_llm:*")
         if keys:
             await r.delete(*keys)
             print(f"[Redis] Berhasil menghapus {len(keys)} cache keys lama yang terpengaruh rotasi.")
@@ -174,7 +174,7 @@ async def main():
     redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
     
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    sqlite_db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+    sqlite_db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
     
     print("\n=== Memulai Utilitas Rotasi Kunci Enkripsi BullyGuard ID ===\n")
     

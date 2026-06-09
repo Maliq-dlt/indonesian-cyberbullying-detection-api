@@ -79,7 +79,7 @@ async def save_classification_memory(res: HybridResponse, embedding_json: str | 
     # Fallback to SQLite
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         async with SQLITE_WRITE_LOCK:
             conn = sqlite3.connect(db_path, timeout=30.0)
@@ -183,7 +183,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
     # SQLite fallback read
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         if os.path.exists(db_path):
             conn = sqlite3.connect(db_path, timeout=10.0)
             conn.row_factory = sqlite3.Row
@@ -291,7 +291,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
             try:
                 import numpy as np
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+                db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
                 if os.path.exists(db_path):
                     conn = sqlite3.connect(db_path, timeout=10.0)
                     cursor = conn.cursor()
@@ -392,7 +392,7 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
     # SQLite fallback
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         if os.path.exists(db_path):
             conn = sqlite3.connect(db_path, timeout=10.0)
             conn.row_factory = sqlite3.Row
@@ -456,7 +456,7 @@ async def get_categorized_memory(
     if not records:
         try:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+            db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
             if os.path.exists(db_path):
                 conn = sqlite3.connect(db_path, timeout=10.0)
                 conn.row_factory = sqlite3.Row
@@ -585,7 +585,7 @@ async def update_validation_status(text: str, is_toxic: bool, is_bully: bool, is
     # SQLite fallback
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         async with SQLITE_WRITE_LOCK:
             conn = sqlite3.connect(db_path, timeout=30.0)
@@ -628,7 +628,7 @@ async def save_retraining_history(f1_toxic: float, f1_bully: float, threshold_to
 
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         async with SQLITE_WRITE_LOCK:
             conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
@@ -658,7 +658,7 @@ async def get_retraining_history(limit: int = 50) -> List[Dict[str, Any]]:
 
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         conn = sqlite3.connect(db_path, timeout=30.0)
         cursor = conn.cursor()
         cursor.execute("""

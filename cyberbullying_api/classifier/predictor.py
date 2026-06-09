@@ -2,7 +2,6 @@ import os
 import re
 import json
 import joblib
-import torch
 import numpy as np
 import pandas as pd
 import asyncio
@@ -11,6 +10,11 @@ import sys
 from typing import List, Dict, Any, AsyncGenerator
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+try:
+    import torch
+except ImportError:
+    torch = None
+
 try:
     import onnxruntime as ort
 except ImportError:
@@ -32,7 +36,7 @@ from normalizer import (
     BASE_CYBERBULLYING_LEXICON
 )
 from classifier.database import init_cache_db, save_classification_memory, get_classification_memory
-from classifier.llm import query_ollama_async, query_ollama_stream_async, OLLAMA_URL
+from classifier.llm import query_cloud_llm_async, query_cloud_llm_stream_async, OPENCODE_API_KEY
 import classifier.llm as llm_module
 from classifier.confidence import (
     apply_lexicon_evidence,
@@ -183,7 +187,7 @@ def init_models():
     onnx_filename = f"model_{model_slug}_quantized.onnx"
     onnx_path = os.path.join(BASE_DIR, "models", onnx_filename)
     
-    if not os.path.exists(onnx_path):
+    if not os.path.exists(onnx_path) and os.getenv("AUTO_EXPORT_ONNX", "false").lower() in {"1", "true", "yes"}:
         print(f"{onnx_filename} tidak ditemukan. Menjalankan ekspor otomatis...")
         try:
             export_script = os.path.join(BASE_DIR, "export_onnx.py")
@@ -207,6 +211,8 @@ def init_models():
                 raise FileNotFoundError("Berkas ekspor model_quantized.onnx tidak ditemukan setelah proses ekspor selesai.")
         except Exception as e:
             print("Gagal ekspor ONNX otomatis, fallback ke PyTorch:", e)
+    elif not os.path.exists(onnx_path):
+        print(f"{onnx_filename} tidak ditemukan. Auto-export ONNX dinonaktifkan.")
 
     if os.path.exists(onnx_path) and ort is not None:
         try:
@@ -217,11 +223,14 @@ def init_models():
             TRANSFORMER_SESSION = None
 
     if TRANSFORMER_SESSION is None:
-        try:
-            TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name)
-            print("Model PyTorch berhasil dimuat (ONNX Fallback)!")
-        except Exception as e:
-            print("Warning: Gagal memuat model PyTorch:", e)
+        if torch is None:
+            print("Warning: PyTorch tidak terinstal. Fallback PyTorch dinonaktifkan.")
+        else:
+            try:
+                TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name)
+                print("Model PyTorch berhasil dimuat (ONNX Fallback)!")
+            except Exception as e:
+                print("Warning: Gagal memuat model PyTorch:", e)
 
     # 6. Load Sentence Transformer for pgvector/RAG
     print("Memuat model sentence-transformer untuk vector embedding...")
@@ -317,7 +326,7 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
             print("Warning: Gagal memproses menggunakan session ONNX, fallback ke PyTorch:", e)
 
     global TRANSFORMER_MODEL
-    if TRANSFORMER_MODEL is None:
+    if TRANSFORMER_MODEL is None and torch is not None:
         try:
             model_name = os.getenv("TRANSFORMER_MODEL_PATH", "nahiar/hatespeech-abusive-xlm-roberta-v1")
             print(f"Memuat model PyTorch secara dinamis untuk fallback: {model_name}...")
@@ -326,7 +335,7 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
         except Exception as load_err:
             print("Error: Gagal memuat model PyTorch secara dinamis:", load_err)
 
-    if TRANSFORMER_MODEL is not None:
+    if TRANSFORMER_MODEL is not None and torch is not None:
         inputs = TRANSFORMER_TOKENIZER(text, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
             logits = TRANSFORMER_MODEL(**inputs).logits[0]
@@ -505,14 +514,14 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     t_t = get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
     t_b = get_threshold(THRESHOLDS, "threshold_bully", 0.5)
 
-    # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat dan Ollama terkonfigurasi)
+    # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat dan Cloud LLM terkonfigurasi)
     is_sarcasm_candidate = detect_sentiment_contrast(text)
-    if is_sarcasm_candidate and OLLAMA_URL:
-        print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Ollama LLM) untuk: '{text}'")
-        ollama_res = await query_ollama_async(text)
-        if ollama_res["success"]:
-            is_toxic = ollama_res["is_toxic"]
-            is_bully = ollama_res["is_bully"]
+    if is_sarcasm_candidate and OPENCODE_API_KEY:
+        print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Cloud LLM) untuk: '{text}'")
+        llm_res = await query_cloud_llm_async(text)
+        if llm_res["success"]:
+            is_toxic = llm_res["is_toxic"]
+            is_bully = llm_res["is_bully"]
             return HybridResponse(
                 text=text,
                 is_toxic=is_toxic,
@@ -520,8 +529,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                 probability_bully=llm_decision_to_probability(is_bully, t_b),
                 category=determine_category(is_toxic, is_bully),
-                decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
-                reason=f"[Sarcasm Bypass] {ollama_res['reason']}",
+                decision_source="Tier 3 (Cloud LLM - Sarcasm Bypass)",
+                reason=f"[Sarcasm Bypass] {llm_res['reason']}",
                 word_importances=explain_prediction(text)
             )
 
@@ -575,13 +584,13 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             word_importances=explain_prediction(text)
         )
 
-    # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3 jika terkonfigurasi)
-    if OLLAMA_URL:
-        print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{text}'")
-        ollama_res = await query_ollama_async(text)
-        if ollama_res["success"]:
-            is_toxic = ollama_res["is_toxic"]
-            is_bully = ollama_res["is_bully"]
+    # 3. Sangat ragu-ragu -> Panggil Cloud LLM (Tier 3 jika terkonfigurasi)
+    if OPENCODE_API_KEY:
+        print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Cloud LLM) untuk: '{text}'")
+        llm_res = await query_cloud_llm_async(text)
+        if llm_res["success"]:
+            is_toxic = llm_res["is_toxic"]
+            is_bully = llm_res["is_bully"]
             return HybridResponse(
                 text=text,
                 is_toxic=is_toxic,
@@ -589,8 +598,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                 probability_bully=llm_decision_to_probability(is_bully, t_b),
                 category=determine_category(is_toxic, is_bully),
-                decision_source="Tier 3 (Ollama Qwen LLM)",
-                reason=ollama_res["reason"],
+                decision_source="Tier 3 (Cloud LLM)",
+                reason=llm_res["reason"],
                 word_importances=explain_prediction(text)
             )
 
@@ -605,7 +614,7 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         probability_bully=ens_bully,
         category=determine_category(is_toxic, is_bully),
         decision_source="Fallback (Ensemble Terbatas)",
-        reason="Ollama lokal tidak merespons, menggunakan keputusan cadangan dari model lokal.",
+        reason="Cloud LLM tidak merespons, menggunakan keputusan cadangan dari model lokal.",
         word_importances=explain_prediction(text)
     )
 
@@ -652,14 +661,14 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
 
     # 0. Pra-penyaringan Kontras Sentimen
     is_sarcasm_candidate = detect_sentiment_contrast(text)
-    if is_sarcasm_candidate and OLLAMA_URL:
-        print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Ollama LLM) untuk: '{text}'")
-        async for state in query_ollama_stream_async(text):
+    if is_sarcasm_candidate and OPENCODE_API_KEY:
+        print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Cloud LLM) untuk: '{text}'")
+        async for state in query_cloud_llm_stream_async(text):
             if state["done"]:
-                ollama_res = state["final_data"]
-                if ollama_res["success"]:
-                    is_toxic = ollama_res["is_toxic"]
-                    is_bully = ollama_res["is_bully"]
+                llm_res = state["final_data"]
+                if llm_res["success"]:
+                    is_toxic = llm_res["is_toxic"]
+                    is_bully = llm_res["is_bully"]
                     final_res = HybridResponse(
                         text=text,
                         is_toxic=is_toxic,
@@ -667,8 +676,8 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                         probability_bully=llm_decision_to_probability(is_bully, t_b),
                         category=determine_category(is_toxic, is_bully),
-                        decision_source="Tier 3 (Ollama Qwen LLM - Sarcasm Bypass)",
-                        reason=f"[Sarcasm Bypass] {ollama_res['reason']}",
+                        decision_source="Tier 3 (Cloud LLM - Sarcasm Bypass)",
+                        reason=f"[Sarcasm Bypass] {llm_res['reason']}",
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
@@ -689,7 +698,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         probability_bully=0.0,
                         category="Aman",
                         decision_source="Fallback",
-                        reason=ollama_res["reason"],
+                        reason=llm_res["reason"],
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
@@ -775,15 +784,15 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
         yield {"chunk": res.reason, "done": True, "final_data": res}
         return
             
-    # 3. Sangat ragu-ragu -> Panggil Ollama (Tier 3 jika terkonfigurasi)
-    if OLLAMA_URL:
-        print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Ollama LLM) untuk: '{text}'")
-        async for state in query_ollama_stream_async(text):
+    # 3. Sangat ragu-ragu -> Panggil Cloud LLM (Tier 3 jika terkonfigurasi)
+    if OPENCODE_API_KEY:
+        print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Cloud LLM) untuk: '{text}'")
+        async for state in query_cloud_llm_stream_async(text):
             if state["done"]:
-                ollama_res = state["final_data"]
-                if ollama_res["success"]:
-                    is_toxic = ollama_res["is_toxic"]
-                    is_bully = ollama_res["is_bully"]
+                llm_res = state["final_data"]
+                if llm_res["success"]:
+                    is_toxic = llm_res["is_toxic"]
+                    is_bully = llm_res["is_bully"]
                     final_res = HybridResponse(
                         text=text,
                         is_toxic=is_toxic,
@@ -791,8 +800,8 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                         probability_bully=llm_decision_to_probability(is_bully, t_b),
                         category=determine_category(is_toxic, is_bully),
-                        decision_source="Tier 3 (Ollama Qwen LLM)",
-                        reason=ollama_res["reason"],
+                        decision_source="Tier 3 (Cloud LLM)",
+                        reason=llm_res["reason"],
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
@@ -815,7 +824,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         probability_bully=ens_bully,
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Fallback (Ensemble Terbatas)",
-                        reason="Ollama lokal gagal merespons, menggunakan keputusan cadangan dari model lokal.",
+                        reason="Cloud LLM gagal merespons, menggunakan keputusan cadangan dari model lokal.",
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
@@ -831,7 +840,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                 yield {"chunk": state["chunk"], "done": False, "final_data": None}
         return
         
-    # Fallback jika Ollama tidak terkonfigurasi
+    # Fallback jika Cloud LLM tidak terkonfigurasi
     is_toxic = ens_toxic >= t_t
     is_bully = ens_bully >= t_b
     res = HybridResponse(
@@ -842,7 +851,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
         probability_bully=ens_bully,
         category=determine_category(is_toxic, is_bully),
         decision_source="Fallback (Ensemble Terbatas)",
-        reason="Ollama lokal tidak dikonfigurasi, menggunakan keputusan cadangan dari model lokal.",
+        reason="Cloud LLM tidak dikonfigurasi, menggunakan keputusan cadangan dari model lokal.",
         word_importances=explain_prediction(text)
     )
     embedding_json = None
@@ -854,4 +863,3 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
             pass
     await save_classification_memory(res, embedding_json)
     yield {"chunk": res.reason, "done": True, "final_data": res}
-

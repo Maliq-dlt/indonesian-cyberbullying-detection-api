@@ -5,7 +5,7 @@ from models import (
     TextRequest, LexiconResponse, MLResponse, TransformerResponse, EnsembleResponse, HybridResponse,
     BatchTextRequest, BatchResponse, BatchItemResponse
 )
-from routes.deps import verify_api_key, rate_limit_ollama_and_batch
+from routes.deps import verify_api_key, rate_limit_cloud_llm_and_batch
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
@@ -48,7 +48,7 @@ async def send_webhook_notification(webhook_url: str, payload: dict):
     except Exception as e:
         print(f"Failed to send webhook to {webhook_url}: {e}")
 
-@router.post("/hybrid", response_model=HybridResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
+@router.post("/hybrid", response_model=HybridResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
 async def predict_hybrid(req: TextRequest, background_tasks: BackgroundTasks):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
@@ -81,7 +81,7 @@ async def predict_hybrid(req: TextRequest, background_tasks: BackgroundTasks):
         
     return res
 
-@router.post("/batch", response_model=BatchResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_ollama_and_batch)])
+@router.post("/batch", response_model=BatchResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
 async def predict_batch(req: BatchTextRequest):
     for text in req.texts:
         if not text or len(text.strip()) == 0:

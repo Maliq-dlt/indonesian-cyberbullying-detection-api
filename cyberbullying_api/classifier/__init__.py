@@ -11,7 +11,7 @@ from classifier.database import (
     get_categorized_memory
 )
 from classifier.llm import (
-    retrieve_relevant_examples, query_ollama_async, query_ollama_stream_async
+    retrieve_relevant_examples, query_cloud_llm_async, query_cloud_llm_stream_async
 )
 from classifier.predictor import (
     load_thresholds, init_models, sigmoid, predict_transformer_raw,
@@ -21,7 +21,7 @@ from classifier.predictor import (
 
 # Use __getattr__ to dynamically look up global variables from their defining modules
 def __getattr__(name):
-    if name in ("OLLAMA_URL", "OLLAMA_MODEL", "ABUSIVE_WORDS_SET", "RAG_POOL_TEXTS", "RAG_POOL_VECTORS", "RAG_POOL_LABELS"):
+    if name in ("OPENCODE_BASE_URL", "OPENCODE_MODEL", "ABUSIVE_WORDS_SET", "RAG_POOL_TEXTS", "RAG_POOL_VECTORS", "RAG_POOL_LABELS"):
         return getattr(_llm, name)
     if name in ("BASE_DIR", "PREPARED_LEXICON", "ML_MODEL", "ML_VECTORIZER", "TRANSFORMER_SESSION", "TRANSFORMER_TOKENIZER", "TRANSFORMER_MODEL", "THRESHOLDS"):
         return getattr(_predictor, name)

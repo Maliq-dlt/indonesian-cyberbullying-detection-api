@@ -178,7 +178,7 @@ async def test_key_rotation_utility():
     await save_classification_memory(res)
     
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    db_path = os.path.join(base_dir, "cache", "ollama_cache.db")
+    db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()

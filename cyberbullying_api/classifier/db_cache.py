@@ -9,7 +9,7 @@ async def get_cached_response(text: str) -> Dict[str, Any] | None:
     if r:
         try:
             text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-            res = await r.get(f"ollama:{text_hash}")
+            res = await r.get(f"cloud_llm:{text_hash}")
             if res:
                 return json.loads(res)
         except Exception as e:
@@ -21,6 +21,6 @@ async def save_cached_response(text: str, response_dict: Dict[str, Any]):
     if r:
         try:
             text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-            await r.set(f"ollama:{text_hash}", json.dumps(response_dict), ex=604800) # Cache 7 hari
+            await r.set(f"cloud_llm:{text_hash}", json.dumps(response_dict), ex=604800) # Cache 7 hari
         except Exception as e:
             print(f"Warning: Redis error pada save_cached_response: {e}")

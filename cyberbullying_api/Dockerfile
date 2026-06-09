@@ -16,10 +16,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN /bin/uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy and install requirements using uv and cache mounts to speed up consecutive builds
-COPY cyberbullying_api/requirements.txt /app/requirements.txt
+# Copy and install runtime requirements using uv and cache mounts to speed up consecutive builds.
+# The full requirements.txt keeps training/export/dev dependencies for local use.
+COPY cyberbullying_api/requirements.docker.txt /app/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
-    /bin/uv pip install --index-url https://download.pytorch.org/whl/cpu torch && \
     /bin/uv pip install -r /app/requirements.txt
 
 
@@ -29,23 +29,24 @@ FROM python:3.11-slim AS runner
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    AUTO_EXPORT_ONNX=false \
     HF_HUB_DISABLE_SYMLINKS_WARNING=1 \
     PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright \
     PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
-# Cache Playwright Chromium and system dependencies in an early layer.
-# This avoids reinstalling browsers and system libraries whenever python package dependencies change.
-COPY cyberbullying_api/requirements.txt /tmp/requirements.txt
+# Playwright is optional because its browser/system dependencies make the image much larger.
+ARG INSTALL_PLAYWRIGHT=false
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
-    && pip install --no-cache-dir $(grep -E '^playwright[>=]*' /tmp/requirements.txt || echo "playwright") \
-    && playwright install --with-deps chromium \
-    && pip uninstall -y playwright \
+    && if [ "$INSTALL_PLAYWRIGHT" = "true" ]; then \
+        pip install --no-cache-dir "playwright>=1.40.0" \
+        && playwright install --with-deps chromium; \
+    fi \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/requirements.txt
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder stage
 COPY --from=builder /opt/venv /opt/venv
@@ -53,14 +54,17 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy dataset kamus yang diperlukan untuk preprocessing
 COPY ["dataset", "/app/dataset/"]
 
-# Copy seluruh isi folder API beserta file model yang telah dilatih
+# Copy API source. Large runtime artifacts are mounted by Compose and excluded by .dockerignore.
 COPY cyberbullying_api /app/cyberbullying_api
 
 # Set working directory ke folder API
 WORKDIR /app/cyberbullying_api
 
-# Pastikan direktori browser profile ada dan writable
-RUN mkdir -p /app/cyberbullying_api/tiktok_browser_profile
+# Pastikan direktori runtime ada dan writable
+RUN mkdir -p \
+    /app/cyberbullying_api/cache \
+    /app/cyberbullying_api/models \
+    /app/cyberbullying_api/tiktok_browser_profile
 
 # Tambahkan user non-privileged untuk faktor keamanan
 RUN adduser --disabled-password --gecos '' appuser && chown -R appuser:appuser /app

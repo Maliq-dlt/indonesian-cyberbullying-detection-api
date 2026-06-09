@@ -8,10 +8,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Set ENV ke development agar pengujian API Key dilewati saat testing
 os.environ["ENV"] = "development"
+os.environ["ALLOW_MISSING_API_KEY_IN_DEV"] = "true"
 # Kosongkan PG_URL dan REDIS_URL agar testing menggunakan SQLite isolated fallback,
 # menghindari masalah konkurensi/cross-loop sharing pool asyncpg & redis.
 os.environ["PG_URL"] = ""
 os.environ["REDIS_URL"] = ""
+os.environ["API_KEY"] = "test-key"
 
 from main import app
 
@@ -22,5 +24,5 @@ def client():
     di setiap file uji, sehingga mempercepat waktu eksekusi pengujian secara drastis
     tanpa mengurangi cakupan pengujian sama sekali.
     """
-    with TestClient(app) as c:
+    with TestClient(app, headers={"X-API-Key": "test-key"}) as c:
         yield c

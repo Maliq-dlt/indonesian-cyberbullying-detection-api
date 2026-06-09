@@ -7,7 +7,7 @@ from fastapi import HTTPException, Request
 # Ensure parent path is in sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from routes.deps import is_safe_webhook_url, rate_limit_ollama_and_batch
+from routes.deps import is_safe_webhook_url, rate_limit_cloud_llm_and_batch
 
 def test_is_safe_webhook_url():
     # Safe URLs
@@ -25,7 +25,7 @@ def test_is_safe_webhook_url():
     assert is_safe_webhook_url("gopher://localhost") is False
 
 @pytest.mark.anyio
-async def test_rate_limit_ollama_and_batch_new_key():
+async def test_rate_limit_cloud_llm_and_batch_new_key():
     # Test rate limiter when the key is new (first request)
     import hashlib
     mock_redis = MagicMock()
@@ -44,7 +44,7 @@ async def test_rate_limit_ollama_and_batch_new_key():
     expected_key = f"rate_limit:{key_hash}"
     
     with patch("classifier.get_redis", return_value=mock_redis):
-        await rate_limit_ollama_and_batch(mock_request)
+        await rate_limit_cloud_llm_and_batch(mock_request)
         
         # Verify pipe.incr and pipe.ttl were called
         mock_pipeline.incr.assert_called_once_with(expected_key)
@@ -54,7 +54,7 @@ async def test_rate_limit_ollama_and_batch_new_key():
         mock_redis.expire.assert_called_once_with(expected_key, 60)
 
 @pytest.mark.anyio
-async def test_rate_limit_ollama_and_batch_existing_key():
+async def test_rate_limit_cloud_llm_and_batch_existing_key():
     # Test rate limiter when key already exists and has TTL (second request)
     mock_redis = MagicMock()
     mock_pipeline = MagicMock()
@@ -68,13 +68,13 @@ async def test_rate_limit_ollama_and_batch_existing_key():
     mock_request.url.path = "/api/predict/hybrid"
     
     with patch("classifier.get_redis", return_value=mock_redis):
-        await rate_limit_ollama_and_batch(mock_request)
+        await rate_limit_cloud_llm_and_batch(mock_request)
         
         # Verify expire was NOT called because val > 1 and ttl > 0
         mock_redis.expire.assert_not_called()
 
 @pytest.mark.anyio
-async def test_rate_limit_ollama_and_batch_limit_exceeded():
+async def test_rate_limit_cloud_llm_and_batch_limit_exceeded():
     # Test rate limiter when request count exceeds 15
     mock_redis = MagicMock()
     mock_pipeline = MagicMock()
@@ -89,7 +89,7 @@ async def test_rate_limit_ollama_and_batch_limit_exceeded():
     
     with patch("classifier.get_redis", return_value=mock_redis):
         with pytest.raises(HTTPException) as exc_info:
-            await rate_limit_ollama_and_batch(mock_request)
+            await rate_limit_cloud_llm_and_batch(mock_request)
         
         assert exc_info.value.status_code == 429
         assert "Too many requests" in exc_info.value.detail

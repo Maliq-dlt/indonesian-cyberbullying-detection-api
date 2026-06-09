@@ -19,7 +19,7 @@ Tabel di bawah ini merangkum spesifikasi umum dari sistem klasifikasi hybrid yan
 | **Tugas Utama** | Multi-label klasifikasi (Toxic, Cyberbullying, Aman) |
 | **Model Tier 1** | TF-IDF + Logistic Regression + Lexicon Matcher |
 | **Model Tier 2** | Deep Learning XLM-RoBERTa (Format ONNX Runtime) |
-| **Model Tier 3** | Large Language Model (LLM) Lokal (Qwen/Ollama) |
+| **Model Tier 3** | Large Language Model (Cloud LLM) (OpenCode Go API) |
 | **Tanggal Evaluasi** | *Belum Ditentukan (TODO)* |
 | **Petugas Evaluator** | *Belum Ditentukan (TODO)* |
 | **Versi Commit Git** | *Belum Ditentukan (TODO)* |
@@ -180,7 +180,7 @@ Menghitung performa dan penghematan biaya/waktu berkat mekanisme Multi-Tier Rout
 | :--- | :---: | :---: | :---: |
 | **Tier 1: ML Statistik & Lexicon** | *TODO* % | ~2-5 ms | *TODO*% |
 | **Tier 2: Transformer ONNX (CPU)** | *TODO* % | ~50-120 ms | *TODO*% |
-| **Tier 3: LLM Lokal (Ollama)** | *TODO* % | ~800-2500 ms | *TODO*% |
+| **Tier 3: Cloud LLM (OpenCode Go API)** | *TODO* % | ~800-2500 ms | *TODO*% |
 
 *Pertanyaan Kunci:*
 - Berapa persen trafik request yang berhasil diselesaikan langsung pada **Tier 1** tanpa naik ke **Tier 2**? (Target: >70%)

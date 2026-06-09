@@ -105,7 +105,7 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-async def rate_limit_ollama_and_batch(request: Request) -> None:
+async def rate_limit_cloud_llm_and_batch(request: Request) -> None:
     """Rate limit expensive endpoints.
 
     Defaults:
@@ -187,7 +187,7 @@ def is_safe_webhook_url(url: str) -> bool:
             if hostname.lower() not in allowed_hosts:
                 return False
 
-        addr_info = socket.getaddrinfo(hostname, None)
+        addr_info = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
         for addr in addr_info:
             ip = ipaddress.ip_address(addr[4][0])
             if (

@@ -8,9 +8,10 @@ from typing import List, Dict, Any, AsyncGenerator
 from classifier.database import get_cached_response, save_cached_response, get_pg_pool, decrypt_text
 from normalizer import normalize_text
 
-# Konfigurasi Ollama dinamis dari environment variables
-OLLAMA_URL = os.getenv("OLLAMA_URL", "")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+# Konfigurasi OpenCode Go dinamis dari environment variables
+OPENCODE_API_KEY = os.getenv("OPENCODE_API_KEY", "")
+OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
+OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "opencode-go/kimi-k2.6")
 
 # Konfigurasi RAG Pool untuk Few-Shot LLM Dinamis
 ABUSIVE_WORDS_SET = set()
@@ -18,7 +19,7 @@ RAG_POOL_TEXTS = []
 RAG_POOL_VECTORS = None
 RAG_POOL_LABELS = []
 
-OLLAMA_SEM = asyncio.Semaphore(3)
+CLOUD_LLM_SEM = asyncio.Semaphore(3)
 
 async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
     """Mengambil contoh relevan menggunakan pencarian vektor (pgvector) jika tersedia,
@@ -102,30 +103,30 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
         print("Warning: Gagal melakukan RAG retrieval:", e)
         return ""
 
-async def query_ollama_async(text: str, model_name: str | None = None) -> Dict[str, Any]:
+async def query_cloud_llm_async(text: str, model_name: str | None = None) -> Dict[str, Any]:
     # Cek cache terlebih dahulu
     cached = await get_cached_response(text)
     if cached:
         print(f"[CACHE HIT] Mengambil hasil analisis LLM dari cache untuk teks: '{text}'")
         return cached
 
-    async with OLLAMA_SEM:
-        return await _query_ollama_async_raw(text, model_name)
+    async with CLOUD_LLM_SEM:
+        return await _query_cloud_llm_async_raw(text, model_name)
 
-async def _query_ollama_async_raw(text: str, model_name: str | None = None) -> Dict[str, Any]:
+async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -> Dict[str, Any]:
 
-    if not OLLAMA_URL:
+    if not OPENCODE_API_KEY:
         return {
             "is_toxic": False,
             "is_bully": False,
-            "reason": "Ollama URL tidak dikonfigurasi.",
+            "reason": "OpenCode API Key tidak dikonfigurasi.",
             "success": False
         }
     
-    url = f"{OLLAMA_URL.rstrip('/')}/api/generate"
+    url = f"{OPENCODE_BASE_URL.rstrip('/')}/chat/completions"
     
     if not model_name:
-        model_name = OLLAMA_MODEL
+        model_name = OPENCODE_MODEL
     
     # Skema output terstruktur yang formal dengan Chain-of-Thought (reasoning diletakkan pertama)
     schema = {
@@ -160,8 +161,6 @@ async def _query_ollama_async_raw(text: str, model_name: str | None = None) -> D
     )
     
     prompt = f"""
-    {system_instruction}
-    
     Gunakan format JSON yang valid mengikuti skema ini secara ketat (isi field 'reasoning' terlebih dahulu untuk melakukan Chain-of-Thought):
     {json.dumps(schema, indent=2)}
     
@@ -169,24 +168,31 @@ async def _query_ollama_async_raw(text: str, model_name: str | None = None) -> D
     "{text}"
     """
     
-    # Payload dengan opsi temperature 0.0 untuk hasil deterministik (Opsi 2)
+    # Payload OpenAI-compatible format
     payload = {
         "model": model_name,
-        "prompt": prompt,
-        "stream": False,
-        "format": schema,
-        "options": {
-            "temperature": 0.0
-        }
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.0,
+        "stream": False
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {OPENCODE_API_KEY}",
+        "Content-Type": "application/json"
     }
     
     try:
-        # Peningkatan timeout menjadi 15.0 detik untuk keandalan loading VRAM
+        # Timeout 15 detik cukup untuk API cloud
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(url, headers=headers, json=payload)
             if response.status_code == 200:
                 res_json = response.json()
-                content = json.loads(res_json["response"])
+                content_str = res_json["choices"][0]["message"]["content"]
+                content = json.loads(content_str)
                 
                 # Menggabungkan reasoning dan summary untuk visualisasi penjelasan yang kaya di UI
                 reasoning = content.get("reasoning", "").strip()
@@ -201,17 +207,19 @@ async def _query_ollama_async_raw(text: str, model_name: str | None = None) -> D
                 }
                 await save_cached_response(text, result)
                 return result
+            else:
+                print(f"Warning: Cloud LLM API Error: {response.status_code} - {response.text}")
     except Exception as e:
-        print("Warning: Gagal menghubungi Ollama dengan skema JSON:", e)
+        print("Warning: Gagal menghubungi Cloud LLM:", e)
         
     return {
         "is_toxic": False,
         "is_bully": False,
-        "reason": "Gagal terhubung ke Ollama lokal dengan format skema.",
+        "reason": "Gagal terhubung ke Cloud LLM.",
         "success": False
     }
 
-async def query_ollama_stream_async(text: str, model_name: str | None = None) -> AsyncGenerator[Dict[str, Any], None]:
+async def query_cloud_llm_stream_async(text: str, model_name: str | None = None) -> AsyncGenerator[Dict[str, Any], None]:
     # Cek cache terlebih dahulu
     cached = await get_cached_response(text)
     if cached:
@@ -220,24 +228,24 @@ async def query_ollama_stream_async(text: str, model_name: str | None = None) ->
         yield {"chunk": cached.get("reason", ""), "done": True, "final_data": cached}
         return
 
-    async with OLLAMA_SEM:
-        async for chunk in _query_ollama_stream_async_raw(text, model_name):
+    async with CLOUD_LLM_SEM:
+        async for chunk in _query_cloud_llm_stream_async_raw(text, model_name):
             yield chunk
 
-async def _query_ollama_stream_async_raw(text: str, model_name: str | None = None) -> AsyncGenerator[Dict[str, Any], None]:
+async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = None) -> AsyncGenerator[Dict[str, Any], None]:
 
-    if not OLLAMA_URL:
+    if not OPENCODE_API_KEY:
         yield {
-            "chunk": "Ollama URL tidak dikonfigurasi.", 
+            "chunk": "OpenCode API Key tidak dikonfigurasi.", 
             "done": True, 
-            "final_data": {"is_toxic": False, "is_bully": False, "reason": "Ollama URL tidak dikonfigurasi.", "success": False}
+            "final_data": {"is_toxic": False, "is_bully": False, "reason": "OpenCode API Key tidak dikonfigurasi.", "success": False}
         }
         return
     
-    url = f"{OLLAMA_URL.rstrip('/')}/api/generate"
+    url = f"{OPENCODE_BASE_URL.rstrip('/')}/chat/completions"
     
     if not model_name:
-        model_name = OLLAMA_MODEL
+        model_name = OPENCODE_MODEL
     
     schema = {
         "type": "object",
@@ -269,8 +277,6 @@ async def _query_ollama_stream_async_raw(text: str, model_name: str | None = Non
     )
     
     prompt = f"""
-    {system_instruction}
-    
     Gunakan format JSON yang valid mengikuti skema ini secara ketat (isi field 'reasoning' terlebih dahulu untuk melakukan Chain-of-Thought):
     {json.dumps(schema, indent=2)}
     
@@ -280,38 +286,48 @@ async def _query_ollama_stream_async_raw(text: str, model_name: str | None = Non
     
     payload = {
         "model": model_name,
-        "prompt": prompt,
-        "stream": True,
-        "format": schema,
-        "options": {
-            "temperature": 0.0
-        }
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.0,
+        "stream": True
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {OPENCODE_API_KEY}",
+        "Content-Type": "application/json"
     }
     
     full_response = ""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            async with client.stream("POST", url, json=payload) as response:
+            async with client.stream("POST", url, headers=headers, json=payload) as response:
                 if response.status_code != 200:
-                     yield {"chunk": f"Error: {response.status_code}", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": f"Gagal terhubung ke Ollama: {response.status_code}", "success": False}}
+                     yield {"chunk": f"Error: {response.status_code}", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": f"Gagal terhubung ke Cloud LLM: {response.status_code}", "success": False}}
                      return
 
                 async for line in response.aiter_lines():
-                    if not line.strip():
+                    line = line.strip()
+                    if not line:
                         continue
-                    try:
-                        data = json.loads(line)
-                        chunk = data.get("response", "")
-                        full_response += chunk
                         
-                        # Ollama sends fragments of the JSON string.
-                        # We yield the raw fragment so the UI can display it as it arrives.
-                        yield {"chunk": chunk, "done": False, "final_data": None}
+                    if line == "data: [DONE]":
+                        break
                         
-                        if data.get("done", False):
-                            break
-                    except json.JSONDecodeError:
-                        pass
+                    if line.startswith("data: "):
+                        json_str = line[6:]
+                        try:
+                            data = json.loads(json_str)
+                            if "choices" in data and len(data["choices"]) > 0:
+                                delta = data["choices"][0].get("delta", {})
+                                chunk = delta.get("content", "")
+                                if chunk:
+                                    full_response += chunk
+                                    yield {"chunk": chunk, "done": False, "final_data": None}
+                        except json.JSONDecodeError:
+                            pass
                 
                 # Parsing the final complete JSON
                 try:
@@ -329,10 +345,10 @@ async def _query_ollama_stream_async_raw(text: str, model_name: str | None = Non
                     await save_cached_response(text, result)
                     yield {"chunk": "", "done": True, "final_data": result}
                 except json.JSONDecodeError:
-                    yield {"chunk": "", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": "Gagal memparsing JSON balasan dari Ollama.", "success": False}}
+                    yield {"chunk": "", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": "Gagal memparsing JSON balasan dari Cloud LLM.", "success": False}}
 
     except Exception as e:
-        print("Warning: Gagal menghubungi Ollama secara streaming:", e)
+        print("Warning: Gagal menghubungi Cloud LLM secara streaming:", e)
         yield {
             "chunk": "", 
             "done": True, 
