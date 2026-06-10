@@ -89,7 +89,11 @@ async def predict_batch(req: BatchTextRequest):
         if len(text) > 500:
             raise HTTPException(status_code=422, detail="Panjang setiap teks dalam batch maksimal 500 karakter.")
             
-    tasks = [classifier.predict_hybrid(text) for text in req.texts]
+    _batch_sem = asyncio.Semaphore(5)
+    async def _limited_predict(t):
+        async with _batch_sem:
+            return await classifier.predict_hybrid(t)
+    tasks = [_limited_predict(text) for text in req.texts]
     predictions = await asyncio.gather(*tasks)
     
     results = []

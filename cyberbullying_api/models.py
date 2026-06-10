@@ -3,6 +3,7 @@ from typing import List, Optional
 import urllib.parse
 import ipaddress
 import re
+import socket
 
 def check_ssrf_url(url: str, allowed_domains: List[str]) -> str:
     # Harus menggunakan HTTP atau HTTPS
@@ -44,6 +45,16 @@ def check_ssrf_url(url: str, allowed_domains: List[str]) -> str:
             for pattern in private_ip_patterns:
                 if re.match(pattern, hostname):
                     raise ValueError("URL tidak boleh merujuk ke alamat IP lokal/privat")
+
+            # Resolusi DNS untuk memverifikasi IP aktual hostname
+            try:
+                addr_info = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
+                for addr in addr_info:
+                    resolved_ip = ipaddress.ip_address(addr[4][0])
+                    if resolved_ip.is_loopback or resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved:
+                        raise ValueError("URL tidak boleh merujuk ke alamat IP lokal/privat (terdeteksi via DNS)")
+            except socket.gaierror:
+                raise ValueError("Gagal melakukan resolusi DNS untuk hostname")
     except ValueError as e:
         raise e
     except Exception as e:

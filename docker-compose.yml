@@ -42,7 +42,7 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-8000}:8000"
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
     environment:
       ENV: ${ENV:-development}
       API_KEY: ${API_KEY:-}
@@ -51,7 +51,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-cyber_redis_pass}@redis:6379/0
       OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
       OPENCODE_BASE_URL: ${OPENCODE_BASE_URL:-https://opencode.ai/zen/go/v1}
-      OPENCODE_MODEL: ${OPENCODE_MODEL:-opencode-go/kimi-k2.6}
+      OPENCODE_MODEL: ${OPENCODE_MODEL:-kimi-k2.6}
       HF_TOKEN: ${HF_TOKEN:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173}
       RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-15}

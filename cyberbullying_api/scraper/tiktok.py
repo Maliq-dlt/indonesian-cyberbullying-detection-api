@@ -254,6 +254,7 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
     video_id = extract_tiktok_id(url)
     comments = []
     seen = set()
+    pending_tasks = []
     max_scroll = min(max(max_comments // 2, 15), 60)
 
     # Pastikan direktori browser profile ada
@@ -328,7 +329,7 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
                         comments.append(text)
                         print(f'  [Komentar #{len(comments)}] {normalized["username"]}: {text[:80]}')
 
-                asyncio.ensure_future(process_response())
+                pending_tasks.append(asyncio.ensure_future(process_response()))
 
             page.on("response", handle_response)
 
@@ -369,6 +370,10 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
                 if stagnant_round >= 8:
                     print("Tidak ada tambahan komentar setelah beberapa scroll. Berhenti.")
                     break
+
+            # Tunggu semua task pemrosesan response selesai sebelum menutup browser
+            if pending_tasks:
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
 
             await browser_context.close()
 

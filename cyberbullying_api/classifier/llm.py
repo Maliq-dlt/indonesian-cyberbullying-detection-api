@@ -11,7 +11,7 @@ from normalizer import normalize_text
 # Konfigurasi OpenCode Go dinamis dari environment variables
 OPENCODE_API_KEY = os.getenv("OPENCODE_API_KEY", "")
 OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
-OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "opencode-go/kimi-k2.6")
+OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "kimi-k2.6")
 
 # Konfigurasi RAG Pool untuk Few-Shot LLM Dinamis
 ABUSIVE_WORDS_SET = set()

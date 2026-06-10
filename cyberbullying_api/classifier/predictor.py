@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import asyncio
 import subprocess
+import threading
 import sys
 from typing import List, Dict, Any, AsyncGenerator
 
@@ -64,6 +65,8 @@ THRESHOLDS = {
     "threshold_bully": 0.5
 }
 
+_MODEL_LOCK = threading.Lock()
+
 def load_thresholds():
     global THRESHOLDS
     thresholds_path = os.path.join(BASE_DIR, "models", "thresholds.json")
@@ -94,6 +97,10 @@ def get_calibrated_weights() -> dict:
         }
 
 def init_models():
+    with _MODEL_LOCK:
+        _init_models_inner()
+
+def _init_models_inner():
     global PREPARED_LEXICON, ML_MODEL, ML_VECTORIZER, TRANSFORMER_SESSION, TRANSFORMER_TOKENIZER, TRANSFORMER_MODEL, EMBEDDING_MODEL
     
     print("=== Inisialisasi Model Klasifikasi ===")

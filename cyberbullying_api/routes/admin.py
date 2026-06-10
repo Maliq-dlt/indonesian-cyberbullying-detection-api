@@ -376,7 +376,7 @@ async def api_test_webhook(req: TestWebhookRequest):
                 "response": res.text[:200]
             }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Gagal menghubungi webhook: {str(e)}")
+        raise HTTPException(status_code=400, detail="Gagal menghubungi webhook. Periksa URL dan pastikan server webhook aktif.")
 
 @router.post("/settings/recalibrate", dependencies=[Depends(verify_api_key)])
 async def api_recalibrate_ensemble():

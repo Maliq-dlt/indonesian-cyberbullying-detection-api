@@ -24,7 +24,7 @@ from normalizer import normalize_text
 # ---------------------------------------------------------------------------
 OPENCODE_API_KEY: str = os.getenv("OPENCODE_API_KEY", "")
 OPENCODE_BASE_URL: str = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
-OPENCODE_MODEL: str = os.getenv("OPENCODE_MODEL", "opencode-go/kimi-k2.6")
+OPENCODE_MODEL: str = os.getenv("OPENCODE_MODEL", "kimi-k2.6")
 
 # ---------------------------------------------------------------------------
 # Leetspeak substitution map used by perturb_text

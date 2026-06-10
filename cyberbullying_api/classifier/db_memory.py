@@ -382,8 +382,13 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
                 """, limit)
                 for r in rows:
                     row_dict = dict(r)
-                    decrypted = decrypt_text(row_dict.pop("encrypted_text", ""))
-                    row_dict["text"] = decrypted
+                    enc_text = row_dict.pop("encrypted_text", "")
+                    decrypted = decrypt_text(enc_text)
+                    # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
+                    if decrypted == enc_text and enc_text.startswith("gAAAAA"):
+                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
+                    else:
+                        row_dict["text"] = decrypted
                     results.append(row_dict)
             return results
         except Exception as e:
@@ -407,8 +412,13 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
             rows = cursor.fetchall()
             for r in rows:
                 row_dict = dict(r)
-                decrypted = decrypt_text(row_dict.pop("encrypted_text", ""))
-                row_dict["text"] = decrypted
+                enc_text = row_dict.pop("encrypted_text", "")
+                decrypted = decrypt_text(enc_text)
+                # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
+                if decrypted == enc_text and enc_text.startswith("gAAAAA"):
+                    row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
+                else:
+                    row_dict["text"] = decrypted
                 results.append(row_dict)
             conn.close()
     except Exception as e:
@@ -447,8 +457,13 @@ async def get_categorized_memory(
                 """, fetch_limit)
                 for r in rows:
                     row_dict = dict(r)
-                    decrypted = decrypt_text(row_dict.pop("encrypted_text", ""))
-                    row_dict["text"] = decrypted
+                    enc_text = row_dict.pop("encrypted_text", "")
+                    decrypted = decrypt_text(enc_text)
+                    # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
+                    if decrypted == enc_text and enc_text.startswith("gAAAAA"):
+                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
+                    else:
+                        row_dict["text"] = decrypted
                     records.append(row_dict)
         except Exception as e:
             print(f"Warning: PostgreSQL error pada get_categorized_memory: {e}")
@@ -470,8 +485,13 @@ async def get_categorized_memory(
                 rows = cursor.fetchall()
                 for r in rows:
                     row_dict = dict(r)
-                    decrypted = decrypt_text(row_dict.pop("encrypted_text", ""))
-                    row_dict["text"] = decrypted
+                    enc_text = row_dict.pop("encrypted_text", "")
+                    decrypted = decrypt_text(enc_text)
+                    # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
+                    if decrypted == enc_text and enc_text.startswith("gAAAAA"):
+                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
+                    else:
+                        row_dict["text"] = decrypted
                     records.append(row_dict)
                 conn.close()
         except Exception as e:
@@ -543,7 +563,9 @@ async def update_validation_status(text: str, is_toxic: bool, is_bully: bool, is
                 "is_bully": is_bully,
                 "reason": "Umpan balik koreksi manusia (Validated)",
                 "decision_source": "Koreksi Manusia",
-                "confidence": 1.0
+                "confidence": 1.0,
+                "probability_toxic": 1.0 if is_toxic else 0.0,
+                "probability_bully": 1.0 if is_bully else 0.0
             }
             await r.set(f"mem:{text_hash}", json.dumps(mem_data), ex=2592000)
         except Exception:

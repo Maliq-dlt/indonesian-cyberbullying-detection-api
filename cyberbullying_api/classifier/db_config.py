@@ -5,6 +5,7 @@ import asyncio
 import base64
 import hashlib
 from typing import List, Dict, Any
+import time
 
 try:
     import asyncpg
@@ -26,7 +27,19 @@ if not api_key:
             "CRITICAL: Variabel lingkungan API_KEY tidak diatur di lingkungan non-development! "
             "Server menolak startup demi perlindungan data (Kunci enkripsi tidak boleh menggunakan nilai bawaan)."
         )
-    key_source = "default_secure_fallback_key_for_cyberbullying_api_classification_memory".encode("utf-8")
+    # Gunakan kunci acak unik per-instalasi (disimpan ke file lokal) agar tidak hardcoded di source code
+    _dev_key_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", ".dev_encryption_key")
+    os.makedirs(os.path.dirname(_dev_key_path), exist_ok=True)
+    if os.path.exists(_dev_key_path):
+        with open(_dev_key_path, "r") as _f:
+            key_source = _f.read().strip().encode("utf-8")
+    else:
+        import secrets
+        _random_key = secrets.token_hex(32)
+        with open(_dev_key_path, "w") as _f:
+            _f.write(_random_key)
+        key_source = _random_key.encode("utf-8")
+        print(f"WARNING: Kunci enkripsi development baru digenerate dan disimpan di {_dev_key_path}")
 else:
     key_source = api_key.encode("utf-8")
 
@@ -59,11 +72,17 @@ PG_POOL = None
 REDIS_CLIENT = None
 SQLITE_WRITE_LOCK = asyncio.Lock()
 
+PG_FAILED_UNTIL = 0.0
+
 async def get_pg_pool():
-    global PG_POOL
+    global PG_POOL, PG_FAILED_UNTIL
+    current_time = time.time()
+    if PG_POOL is None and current_time < PG_FAILED_UNTIL:
+        return None
+        
     if PG_POOL is None and asyncpg is not None:
         try:
-            PG_POOL = await asyncpg.create_pool(PG_URL, min_size=1, max_size=10)
+            PG_POOL = await asyncpg.create_pool(PG_URL, min_size=1, max_size=10, timeout=2.0)
             async with PG_POOL.acquire() as conn:
                 await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
                 
@@ -154,17 +173,30 @@ async def get_pg_pool():
             print("PostgreSQL terkoneksi & tabel diverifikasi (dengan pgvector).")
         except Exception as e:
             print(f"Warning: Gagal inisialisasi PostgreSQL: {e}")
+            PG_FAILED_UNTIL = current_time + 60.0
     return PG_POOL
 
+REDIS_FAILED_UNTIL = 0.0
+
 async def get_redis():
-    global REDIS_CLIENT
+    global REDIS_CLIENT, REDIS_FAILED_UNTIL
+    current_time = time.time()
+    if REDIS_CLIENT is None and current_time < REDIS_FAILED_UNTIL:
+        return None
+
     if REDIS_CLIENT is None and redis is not None:
         try:
-            REDIS_CLIENT = redis.from_url(REDIS_URL, decode_responses=True)
+            REDIS_CLIENT = redis.from_url(
+                REDIS_URL, 
+                decode_responses=True, 
+                socket_timeout=1.5, 
+                socket_connect_timeout=1.5
+            )
             await REDIS_CLIENT.ping()
             print("Redis terkoneksi.")
         except Exception as e:
             print(f"Warning: Gagal inisialisasi Redis: {e}")
+            REDIS_FAILED_UNTIL = current_time + 60.0
             REDIS_CLIENT = None
     return REDIS_CLIENT
 
