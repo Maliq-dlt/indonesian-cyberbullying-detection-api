@@ -8,6 +8,8 @@
 
 **BullyGuard ID** adalah sistem deteksi cyberbullying, ujaran kebencian (hate speech), dan kata kasar (profanity) berbahasa Indonesia berbasis API modern. Sistem ini menggunakan arsitektur **Hybrid Multi-Tier** yang secara cerdas menggabungkan **model statistik klasik**, **lexicon matching**, **Deep Learning Transformer (PyTorch/ONNX)**, dan opsi **Large Language Model (LLM)** lokal untuk menghasilkan keputusan klasifikasi yang cepat, akurat, dan dapat dijelaskan (*explainable*).
 
+![BullyGuard ID Dashboard](docs/bullyguard_dashboard.png)
+
 ---
 
 ## 📌 Status Proyek
@@ -126,7 +128,20 @@ Buka berkas `.env` dan atur nilai yang aman:
 ENV=development
 API_KEY=rahasia_api_key_anda_yang_panjang_dan_aman
 ALLOW_MISSING_API_KEY_IN_DEV=true
+
+# Database & Cache (Jika PostgreSQL/Redis mati/tidak ada, otomatis fallback ke SQLite & Memory Cache)
+PG_URL=postgresql://cyber_user:change_this_postgres_password@db:5432/cyberbullying_db
+REDIS_URL=redis://:change_this_redis_password@redis:6379/0
+
+# Layanan Cloud LLM Tier 3
+OPENCODE_API_KEY=sk-...
+OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1
+OPENCODE_MODEL=kimi-k2.6
 ```
+
+> [!TIP]
+> **Zero-Config/Offline Fallback:** Jika Anda sedang mematikan database Docker (misal saat hemat baterai), backend BullyGuard ID akan otomatis mengaktifkan *cooldown* timeout cepat dan mengalihkan seluruh memori klasifikasi secara transparan ke database lokal SQLite `cyberbullying_api/cache/cloud_llm_cache.db`.
+
 
 ### 3. Jalankan Database & Cache (Docker)
 Sebelum menjalankan backend, nyalakan Postgres dan Redis menggunakan Docker:

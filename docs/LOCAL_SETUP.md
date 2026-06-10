@@ -1,5 +1,7 @@
 # 💻 Panduan Setup Lokal — BullyGuard ID
 
+![BullyGuard ID Dashboard](bullyguard_dashboard.png)
+
 Dokumen ini memandu Anda melakukan instalasi dan konfigurasi sistem BullyGuard ID di mesin lokal untuk keperluan pengembangan (*development*).
 
 > [!NOTE]
@@ -35,10 +37,22 @@ Copy-Item .env.example .env
 Buka file `.env` baru Anda dan sesuaikan konfigurasi minimal di bawah ini:
 ```env
 ENV=development
-API_KEY=change_me_to_a_long_random_secret
-PG_URL=postgresql://cyber_user:cyber_password@localhost:5432/cyberbullying_db
-REDIS_URL=redis://:cyber_redis_pass@localhost:6379/0
+API_KEY=rahasia_api_key_anda_yang_panjang_dan_aman
+ALLOW_MISSING_API_KEY_IN_DEV=true
+
+# Database & Cache (Jika dikosongkan/tidak aktif, otomatis fallback ke SQLite & Memory Cache)
+PG_URL=postgresql://cyber_user:change_this_postgres_password@db:5432/cyberbullying_db
+REDIS_URL=redis://:change_this_redis_password@redis:6379/0
+
+# Layanan Cloud LLM Tier 3 (Opsional)
+OPENCODE_API_KEY=sk-...
+OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1
+OPENCODE_MODEL=kimi-k2.6
 ```
+
+> [!TIP]
+> **Zero-Config/Offline Fallback:** Jika Anda sedang tidak menggunakan charger laptop (mode hemat daya) dan mematikan Docker, sistem tetap dapat berjalan lancar. Backend BullyGuard ID akan mendeteksi PostgreSQL/Redis mati secara otomatis dalam waktu singkat (dengan batas timeout 1.5 - 2 detik), lalu mengaktifkan *cooldown* 60 detik (Circuit Breaker) agar request berikutnya tidak menggantung (*hang*) dan langsung membaca/menulis memori klasifikasi pada database lokal SQLite `cyberbullying_api/cache/cloud_llm_cache.db`.
+
 
 ---
 

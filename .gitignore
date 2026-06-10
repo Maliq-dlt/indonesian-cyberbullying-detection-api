@@ -41,3 +41,9 @@ cyberbullying-detector/
 *.jpeg
 *.gif
 
+# Allow images in docs/ directory
+!docs/*.png
+!docs/*.jpg
+!docs/*.jpeg
+!docs/*.gif
+
