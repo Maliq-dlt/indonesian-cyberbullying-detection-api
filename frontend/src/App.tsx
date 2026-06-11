@@ -191,6 +191,8 @@ export default function App() {
                   theme={theme} 
                   toggleTheme={toggleTheme} 
                   apiStatus={apiStatus} 
+                  apiUrl={apiUrl}
+                  apiKey={apiKey}
                 />
               )}
               {activeTab === 'detector' && (
