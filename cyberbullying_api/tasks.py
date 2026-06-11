@@ -17,9 +17,10 @@ celery_app.conf.update(
 )
 
 @celery_app.task
-def run_retrain_task():
+def run_retrain_task(model_type: str = "both"):
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    script_path = os.path.join(base_dir, "retrain.py")
+    ml_script_path = os.path.join(base_dir, "retrain.py")
+    transformer_script_path = os.path.join(base_dir, "train_transformer.py")
     log_path = os.path.join(base_dir, "cache", "training.log")
     
     # 1. Update status to running in Redis
@@ -32,27 +33,35 @@ def run_retrain_task():
         
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, "w", encoding="utf-8") as f:
-        f.write("=== Memulai Pelatihan Ulang via Celery Worker ===\n")
+        f.write(f"=== Memulai Pelatihan Ulang ({model_type.upper()}) via Celery Worker ===\n")
         
     try:
-        with open(log_path, "a", encoding="utf-8", buffering=1) as log_file:
-            # Jalankan retrain.py dengan mode unbuffered (-u)
-            proc = subprocess.Popen(
-                [sys.executable, "-u", script_path],
-                stdout=log_file,
-                stderr=subprocess.STDOUT
-            )
-            proc.wait()
+        scripts_to_run = []
+        if model_type in ("ml", "both"):
+            scripts_to_run.append(("Machine Learning (retrain.py)", ml_script_path))
+        if model_type in ("transformer", "both"):
+            scripts_to_run.append(("Transformer (train_transformer.py)", transformer_script_path))
             
-        if proc.returncode == 0:
-            if r is not None:
-                r.set("training_status", "completed")
-                r.publish("model_reload", "reload")
-            return "Retraining success"
-        else:
-            if r is not None:
-                r.set("training_status", "failed")
-            raise Exception(f"Retraining failed with exit code {proc.returncode}")
+        for name, script_path in scripts_to_run:
+            with open(log_path, "a", encoding="utf-8", buffering=1) as log_file:
+                log_file.write(f"\n>>> Menjalankan {name}...\n")
+                # Jalankan script dengan mode unbuffered (-u)
+                proc = subprocess.Popen(
+                    [sys.executable, "-u", script_path],
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT
+                )
+                proc.wait()
+                
+            if proc.returncode != 0:
+                if r is not None:
+                    r.set("training_status", "failed")
+                raise Exception(f"Pelatihan {name} gagal dengan exit code {proc.returncode}")
+                
+        if r is not None:
+            r.set("training_status", "completed")
+            r.publish("model_reload", "reload")
+        return f"Retraining {model_type} success"
     except Exception as e:
         if r is not None:
             r.set("training_status", "failed")

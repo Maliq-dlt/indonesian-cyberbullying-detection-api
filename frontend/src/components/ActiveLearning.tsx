@@ -298,7 +298,7 @@ export default function ActiveLearning({ apiUrl, apiKey, checkConnection }: Acti
     }
   };
 
-  const handleStartTraining = async () => {
+  const handleStartTraining = async (modelType: string) => {
     if (isTraining) return;
     setIsTraining(true);
     setTrainingLogs([]);
@@ -307,7 +307,7 @@ export default function ActiveLearning({ apiUrl, apiKey, checkConnection }: Acti
     if (apiKey) headers['x-api-key'] = apiKey;
 
     try {
-      const response = await fetch(`${apiUrl}/api/train/start`, {
+      const response = await fetch(`${apiUrl}/api/train/start?model_type=${modelType}`, {
         method: 'POST',
         headers
       });

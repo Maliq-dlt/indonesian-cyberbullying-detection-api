@@ -103,7 +103,10 @@ async def api_reallocate_data_bulk(req: BulkReallocateRequest):
 
 
 @router.post("/train/start", dependencies=[Depends(verify_api_key)])
-async def api_start_training():
+async def api_start_training(model_type: str = "both"):
+    if model_type not in ["ml", "transformer", "both"]:
+        raise HTTPException(status_code=400, detail="model_type harus berupa 'ml', 'transformer', atau 'both'")
+        
     async with state.TRAINING_LOCK:
         r = await classifier.get_redis()
         
@@ -143,21 +146,28 @@ async def api_start_training():
                         await r.set("training_status", "running")
                     except Exception as redis_err:
                         print(f"Warning: Gagal update status di Redis: {redis_err}")
-                getattr(run_retrain_task, "delay")()
-                return {"success": True, "message": "Proses pelatihan ulang berhasil dimulai di Celery worker di latar belakang."}
+                getattr(run_retrain_task, "delay")(model_type)
+                return {"success": True, "message": f"Proses pelatihan ulang ({model_type.upper()}) berhasil dimulai di Celery worker di latar belakang."}
             except Exception as e:
                 print(f"Error starting Celery retrain: {e}. Fallback ke mode lokal...")
                 
         # 4. Fallback ke subprocess lokal
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        script_path = os.path.join(base_dir, "retrain.py")
+        
+        # Tentukan skrip yang akan dijalankan berdasarkan model_type
+        scripts_to_run = []
+        if model_type in ("ml", "both"):
+            scripts_to_run.append(os.path.join(base_dir, "retrain.py"))
+        if model_type in ("transformer", "both"):
+            scripts_to_run.append(os.path.join(base_dir, "train_transformer.py"))
+            
         log_path = os.path.join(base_dir, "cache", "training.log")
         
         # Bersihkan file log lama
         try:
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
             with open(log_path, "w", encoding="utf-8") as f:
-                f.write("=== Memulai Pelatihan Ulang (Background Process) ===\n")
+                f.write(f"=== Memulai Pelatihan Ulang ({model_type.upper()}) (Background Process) ===\n")
         except Exception as e:
             print(f"Warning: Gagal membersihkan log: {e}")
             
@@ -176,16 +186,36 @@ async def api_start_training():
                         await r.set("training_status", "running")
                     except Exception as redis_err:
                         print(f"Warning: Gagal update status di Redis: {redis_err}")
+                
+                # Jalankan proses pertama
+                first_script = scripts_to_run[0]
                 state.TRAINING_PROCESS = subprocess.Popen(
-                    [sys.executable, "-u", script_path],
+                    [sys.executable, "-u", first_script],
                     stdout=state.LOG_FILE_HANDLE,
                     stderr=subprocess.STDOUT
                 )
                 
-                async def monitor_training(proc, log_handle):
+                async def monitor_training(proc, log_handle, remaining_scripts):
                     try:
                         await asyncio.to_thread(proc.wait)
-                        print(f"Proses retraining selesai dengan kode keluar: {proc.returncode}")
+                        print(f"Proses pelatihan ({proc.pid}) selesai dengan kode keluar: {proc.returncode}")
+                        
+                        if proc.returncode == 0 and remaining_scripts:
+                            next_script = remaining_scripts[0]
+                            print(f"Menjalankan script berikutnya: {next_script}")
+                            try:
+                                log_handle.write(f"\n>>> Menjalankan {os.path.basename(next_script)}...\n")
+                            except Exception:
+                                pass
+                            next_proc = subprocess.Popen(
+                                [sys.executable, "-u", next_script],
+                                stdout=log_handle,
+                                stderr=subprocess.STDOUT
+                            )
+                            # Rekursif monitor script berikutnya
+                            await monitor_training(next_proc, log_handle, remaining_scripts[1:])
+                            return
+                            
                         try:
                             log_handle.close()
                         except Exception:
@@ -216,7 +246,7 @@ async def api_start_training():
                         except Exception as redis_err:
                             print(f"Warning: Gagal update status di Redis setelah error: {redis_err}")
                 
-                asyncio.create_task(monitor_training(state.TRAINING_PROCESS, state.LOG_FILE_HANDLE))
+                asyncio.create_task(monitor_training(state.TRAINING_PROCESS, state.LOG_FILE_HANDLE, scripts_to_run[1:]))
                 
             except Exception:
                 state.LOG_FILE_HANDLE.close()
@@ -227,7 +257,7 @@ async def api_start_training():
                     except Exception as redis_err:
                         print(f"Warning: Gagal update status di Redis setelah error: {redis_err}")
                 raise
-            return {"success": True, "message": "Proses pelatihan ulang berhasil dimulai di latar belakang."}
+            return {"success": True, "message": f"Proses pelatihan ulang ({model_type.upper()}) berhasil dimulai di latar belakang."}
         except Exception as e:
             print(f"Error starting retrain process: {e}")
             raise HTTPException(status_code=500, detail="Gagal memulai proses pelatihan ulang model.")

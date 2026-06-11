@@ -1,8 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { TrendingUp, Terminal as TermIcon, RefreshCw } from 'lucide-react';
 
 interface RetrainTerminalProps {
-  onStartTraining: () => void;
+  onStartTraining: (modelType: string) => void;
   isTraining: boolean;
   trainingLogs: string[];
   onClearLogs: () => void;
@@ -15,6 +15,7 @@ export default function RetrainTerminal({
   onClearLogs
 }: RetrainTerminalProps) {
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const [modelType, setModelType] = useState<string>('both');
 
   useEffect(() => {
     if (terminalEndRef.current) {
@@ -34,10 +35,25 @@ export default function RetrainTerminal({
           <p className="text-xs text-gray-500 leading-relaxed">
             Setelah Anda memindahkan dan menyeimbangkan label di kuadran, klik tombol di bawah untuk memicu pelatihan ulang di server backend. Perubahan bobot akan segera diterapkan.
           </p>
+          
+          <div className="flex flex-col gap-1.5 mt-1">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tipe Pelatihan Model</label>
+            <select
+              value={modelType}
+              onChange={(e) => setModelType(e.target.value)}
+              disabled={isTraining}
+              className="w-full bg-white border border-gray-200 text-gray-700 px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition cursor-pointer"
+            >
+              <option value="both">Latih Keduanya (ML & Transformer)</option>
+              <option value="ml">Machine Learning (Logistic Regression) Saja</option>
+              <option value="transformer">Transformer (XLM-RoBERTa ONNX) Saja</option>
+            </select>
+          </div>
+
           <button
-            onClick={onStartTraining}
+            onClick={() => onStartTraining(modelType)}
             disabled={isTraining}
-            className="w-full bg-blue-600 text-white py-3 rounded-xl text-sm font-bold hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400 transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+            className="w-full bg-blue-600 text-white py-3 rounded-xl text-sm font-bold hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400 transition-all cursor-pointer border-none flex items-center justify-center gap-2 mt-2"
           >
             {isTraining ? (
               <><RefreshCw className="w-4 h-4 animate-spin" /> Sedang Melatih...</>
