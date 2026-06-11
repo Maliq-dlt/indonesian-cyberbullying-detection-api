@@ -181,6 +181,114 @@ Buka peramban (*browser*) Anda ke alamat `http://localhost:5173`.
 
 ---
 
+## 🔌 Panduan Setup & Menjalankan Manual Tanpa Docker
+
+Jika Anda tidak ingin menginstal atau menggunakan Docker, BullyGuard ID telah dirancang secara modular agar dapat berjalan sepenuhnya secara lokal menggunakan **Mode Fallback SQLite & Memory Cache**. Anda tidak memerlukan PostgreSQL atau Redis yang berjalan aktif untuk menjalankan backend dan frontend.
+
+Berikut adalah langkah-langkah lengkap untuk memasang dan menjalankan aplikasi secara manual di komputer Anda:
+
+### 📋 Prasyarat Sistem
+Sebelum memulai, pastikan komputer Anda telah terpasang:
+1. **Python 3.11** atau versi lebih baru.
+2. **Node.js 20** atau versi lebih baru (beserta **npm**).
+3. (Opsional) **Git** untuk kloning repositori.
+
+---
+
+### 🛠️ Langkah 1: Kloning & Inisialisasi Environment
+1. Buka terminal Anda dan jalankan perintah kloning berikut (jika belum dilakukan):
+   ```bash
+   git clone https://github.com/Maliq-dlt/indonesian-cyberbullying-detection-api.git
+   cd indonesian-cyberbullying-detection-api
+   ```
+2. Salin berkas template environment `.env.example` menjadi berkas aktif `.env`:
+   * **Linux / macOS / Git Bash:**
+     ```bash
+     cp .env.example .env
+     ```
+   * **Windows PowerShell:**
+     ```powershell
+     Copy-Item .env.example .env
+     ```
+   * **Windows Command Prompt (CMD):**
+     ```cmd
+     copy .env.example .env
+     ```
+3. Buka berkas `.env` dan atur `API_KEY` Anda. Anda dapat mengabaikan parameter `PG_URL` dan `REDIS_URL` karena backend akan otomatis menggunakan SQLite lokal dan memory cache apabila kedua server database tersebut tidak terdeteksi aktif.
+
+---
+
+### 🐍 Langkah 2: Setup & Jalankan Backend API
+1. Masuk ke direktori backend `cyberbullying_api`:
+   ```bash
+   cd cyberbullying_api
+   ```
+2. Buat *virtual environment* Python khusus:
+   ```bash
+   python -m venv .venv
+   ```
+3. Aktifkan *virtual environment* sesuai terminal Anda:
+   * **Windows (PowerShell):**
+     ```powershell
+     .\.venv\Scripts\Activate.ps1
+     ```
+   * **Windows (CMD):**
+     ```cmd
+     .venv\Scripts\activate.bat
+     ```
+   * **macOS / Linux:**
+     ```bash
+     source .venv/bin/activate
+     ```
+4. Lakukan pembaruan pip dan pasang pustaka dependensi yang dibutuhkan:
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+5. Jalankan server pengembangan FastAPI menggunakan Uvicorn:
+   ```bash
+   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
+   *Server backend kini aktif di `http://localhost:8000`. Swagger API Docs interaktif dapat diakses langsung di `http://localhost:8000/docs`.*
+
+---
+
+### 🖥️ Langkah 3: Setup & Jalankan Frontend Web Dashboard
+1. Buka terminal baru di root direktori proyek, lalu masuk ke folder `frontend`:
+   ```bash
+   cd frontend
+   ```
+2. Pasang paket dependensi frontend menggunakan npm:
+   ```bash
+   npm install
+   ```
+3. Jalankan server pengembangan frontend (Vite):
+   ```bash
+   npm run dev
+   ```
+   *Frontend kini aktif dan siap diakses di peramban pada alamat `http://localhost:5173`.*
+
+---
+
+### 🚀 Cara Cepat: Menggunakan Batch Script (Khusus Windows)
+Bagi pengguna sistem operasi Windows, kami menyediakan file batch script untuk meluncurkan backend dan frontend secara otomatis:
+1. Pastikan Anda telah menyelesaikan setup instalasi dependensi di atas sekali saja (pembuatan `.venv` + `pip install` di backend, dan `npm install` di frontend).
+2. Jalankan berkas `run_local.bat` dari root direktori proyek:
+   ```cmd
+   .\run_local.bat
+   ```
+3. Script akan mendeteksi `.env`, meluncurkan backend FastAPI di port `8000`, dan meluncurkan frontend Vite di port `5173` secara bersamaan dalam jendela terminal terpisah.
+
+---
+
+### 🧠 Bagaimana Mode Fallback Bekerja?
+Saat dijalankan secara manual tanpa Docker (dan PostgreSQL/Redis tidak menyala):
+- **Database Fallback:** Riwayat deteksi, parameter ambang batas, dan data active learning akan disimpan secara lokal di database SQLite pada berkas `cyberbullying_api/cache/cloud_llm_cache.db`.
+- **Cache Fallback:** Hasil cache klasifikasi LLM Tier 3 akan disimpan secara lokal dalam RAM backend (in-memory cache).
+- **Retraining Fallback:** Proses retraining model statistik (`ml` / `transformer`) yang dipicu dari Admin Dashboard akan berjalan secara sinkron/langsung di latar belakang menggunakan proses lokal (subprocess fallback) tanpa membutuhkan antrean Redis/Celery worker.
+
+---
+
 ## 🐳 Menjalankan dengan Docker Compose
 
 Untuk menjalankan seluruh ekosistem aplikasi secara kontainerisasi dengan konfigurasi yang sudah dioptimalkan (hemat memori dan waktu build):
