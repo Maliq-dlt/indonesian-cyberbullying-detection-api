@@ -158,13 +158,13 @@ class BatchResponse(BaseModel):
 
 def determine_category(is_toxic: bool, is_bully: bool) -> str:
     if is_toxic and is_bully:
-        return "Toxic & Bully (Serangan Langsung)"
-    elif is_toxic and not is_bully:
-        return "Toxic but Non-Bully (Casual Slang / Swearing)"
+        return "Bully-toxic(bully)"
     elif not is_toxic and is_bully:
-        return "Non-Toxic but Bully (Sarcasm / Insult)"
+        return "non-Toxic Bully(Sarkasme)"
+    elif is_toxic and not is_bully:
+        return "Toxic non-bully(slang)"
     else:
-        return "Non-Toxic & Non-Bully (Aman)"
+        return "non-toxic non-bully(Normal)"
 
 
 class ScrapeTikTokRequest(BaseModel):

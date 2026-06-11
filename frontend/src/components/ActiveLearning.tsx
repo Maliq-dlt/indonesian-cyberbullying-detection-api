@@ -507,7 +507,7 @@ export default function ActiveLearning({ apiUrl, apiKey, checkConnection }: Acti
       <LayoutGroup id="active-learning-quadrants">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Quadrant
-          title="Toxic & Bully"
+          title="Bully-toxic(bully)"
           items={categorizedData.toxic_bully}
           theme="rose"
           selectedItems={selectedItems}
@@ -519,7 +519,7 @@ export default function ActiveLearning({ apiUrl, apiKey, checkConnection }: Acti
         />
 
         <Quadrant
-          title="Toxic but Non-Bully"
+          title="Toxic non-bully(slang)"
           items={categorizedData.toxic_non_bully}
           theme="amber"
           selectedItems={selectedItems}
@@ -531,7 +531,7 @@ export default function ActiveLearning({ apiUrl, apiKey, checkConnection }: Acti
         />
 
         <Quadrant
-          title="Non-Toxic but Bully"
+          title="non-Toxic Bully(Sarkasme)"
           items={categorizedData.non_toxic_bully}
           theme="purple"
           selectedItems={selectedItems}
@@ -543,7 +543,7 @@ export default function ActiveLearning({ apiUrl, apiKey, checkConnection }: Acti
         />
 
         <Quadrant
-          title="Non-Toxic & Non-Bully"
+          title="non-toxic non-bully(Normal)"
           items={categorizedData.non_toxic_non_bully}
           theme="emerald"
           selectedItems={selectedItems}
@@ -579,25 +579,25 @@ export default function ActiveLearning({ apiUrl, apiKey, checkConnection }: Acti
                 onClick={() => handleBulkReallocate(true, true)}
                 className="bg-rose-600 text-white text-[10px] font-bold px-3 py-2 rounded-lg hover:bg-rose-700 transition cursor-pointer border-none"
               >
-                Toxic &amp; Bully
+                Bully-toxic(bully)
               </button>
               <button
                 onClick={() => handleBulkReallocate(true, false)}
                 className="bg-amber-500 text-white text-[10px] font-bold px-3 py-2 rounded-lg hover:bg-amber-600 transition cursor-pointer border-none"
               >
-                Toxic but Non-Bully
+                Toxic non-bully(slang)
               </button>
               <button
                 onClick={() => handleBulkReallocate(false, true)}
                 className="bg-purple-600 text-white text-[10px] font-bold px-3 py-2 rounded-lg hover:bg-purple-700 transition cursor-pointer border-none"
               >
-                Non-Toxic but Bully
+                non-Toxic Bully(Sarkasme)
               </button>
               <button
                 onClick={() => handleBulkReallocate(false, false)}
                 className="bg-emerald-600 text-white text-[10px] font-bold px-3 py-2 rounded-lg hover:bg-emerald-700 transition cursor-pointer border-none"
               >
-                Aman
+                non-toxic non-bully(Normal)
               </button>
               <button
                 onClick={() => handleBulkReallocate(null, null)}

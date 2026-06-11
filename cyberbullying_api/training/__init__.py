@@ -5,5 +5,7 @@ from training.augmentation import (
 )
 from training.data_loader import (
     load_twitter_dataset, load_instagram_dataset,
-    load_combined_dataset, ingest_scraped_csv, ingest_database_memory
+    load_combined_dataset, ingest_scraped_csv, ingest_database_memory,
+    load_mendeley_dataset, load_tiktok_rhiosutoyo_dataset
 )
+

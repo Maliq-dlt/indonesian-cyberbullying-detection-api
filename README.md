@@ -219,7 +219,7 @@ curl -X POST "http://localhost:8000/predict/hybrid" \
   "is_bully": true,
   "probability_toxic": 0.88,
   "probability_bully": 0.79,
-  "category": "Toxic & Bully (Serangan Langsung)",
+  "category": "Bully-toxic(bully)",
   "decision_source": "Tier 1 (ML Klasik)",
   "reason": "Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik.",
   "word_importances": [

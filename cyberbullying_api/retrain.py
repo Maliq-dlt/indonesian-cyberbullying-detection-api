@@ -20,7 +20,8 @@ from training import (
     augment_text_with_llm, perturb_text,
     sarcasm_raw, slang_praise_raw, OPENCODE_API_KEY, OPENCODE_BASE_URL,
     load_twitter_dataset, load_instagram_dataset,
-    load_combined_dataset, ingest_scraped_csv, ingest_database_memory
+    load_combined_dataset, ingest_scraped_csv, ingest_database_memory,
+    load_mendeley_dataset, load_tiktok_rhiosutoyo_dataset
 )
 
 # Tentukan direktori dasar dinamis untuk pathing absolut
@@ -39,6 +40,8 @@ ABUSIVE_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "abusive.csv")
 DATASET_TWITTER_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "data.csv")
 DATASET_INSTAGRAM_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_instagram", "DATASET CYBERBULLYING INSTAGRAM - FINAL.xlsx")
 DATASET_COMBINED_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_2", "combined_dataset.csv")
+DATASET_MENDELEY_DIR = os.path.join(BASE_DIR, "..", "dataset", "ds_mendeley")
+DATASET_TIKTOK_RHIOSUTOYO_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_tiktok_rhiosutoyo", "Dataset-Research.csv")
 
 # Inisialisasi kamus slang di normalizer secara global
 init_slang_map(ALAY_PATH, SINGKATAN_PATH)
@@ -168,6 +171,18 @@ df_combined_loaded = load_combined_dataset(DATASET_COMBINED_PATH, clean_and_norm
 if df_combined_loaded is not None:
     datasets_loaded.append(df_combined_loaded)
     print("Berhasil memuat dataset kombinasi.")
+
+# Load Mendeley Dataset
+df_mendeley = load_mendeley_dataset(DATASET_MENDELEY_DIR, clean_and_normalize, check_toxic_by_lexicon)
+if df_mendeley is not None:
+    datasets_loaded.append(df_mendeley)
+    print("Berhasil memuat dataset Mendeley (Instagram, Twitter, Youtube).")
+
+# Load TikTok Rhiosutoyo Dataset
+df_tiktok_rhiosutoyo = load_tiktok_rhiosutoyo_dataset(DATASET_TIKTOK_RHIOSUTOYO_PATH, clean_and_normalize, check_toxic_by_lexicon)
+if df_tiktok_rhiosutoyo is not None:
+    datasets_loaded.append(df_tiktok_rhiosutoyo)
+    print("Berhasil memuat dataset TikTok Rhiosutoyo.")
 
 if not datasets_loaded:
     print("Critical Error: Tidak ada dataset utama yang berhasil dimuat untuk retraining.")
@@ -455,9 +470,9 @@ try:
         threshold_bully=float(best_thresh_bully),
         active_version=timestamp
     ))
-    print("✅ Berhasil menyimpan riwayat retraining ke database.")
+    print("[SUKSES] Berhasil menyimpan riwayat retraining ke database.")
 except Exception as db_err:
-    print(f"Warning: Gagal menyimpan riwayat retraining ke database: {db_err}")
+    print(f"Warning: Gagal menyimpan riwayat retraining ke database: {str(db_err)}")
 
 print("\n=== HASIL EVALUASI RETRAINING DENGAN AMBANG BATAS TERKALIBRASI ===")
 from sklearn.metrics import classification_report

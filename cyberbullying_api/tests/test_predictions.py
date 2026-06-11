@@ -28,7 +28,7 @@ def test_predict_ml_safe(client):
     data = response.json()
     assert data["is_toxic"] is False
     assert data["is_bully"] is False
-    assert "Aman" in data["category"]
+    assert "Normal" in data["category"]
 
 def test_predict_ml_sarcasm(client):
     """Menguji ML mendeteksi sarkasme sebagai non-toxic tapi bully."""
@@ -38,7 +38,7 @@ def test_predict_ml_sarcasm(client):
     data = response.json()
     assert data["is_toxic"] is False
     assert data["is_bully"] is True
-    assert "Sarcasm" in data["category"]
+    assert "Sarkasme" in data["category"]
 
 def test_predict_ml_slang_praise(client):
     """Menguji ML mendeteksi slang pujian sebagai toxic tapi non-bully."""
@@ -48,7 +48,7 @@ def test_predict_ml_slang_praise(client):
     data = response.json()
     assert data["is_toxic"] is True
     assert data["is_bully"] is False
-    assert "Casual Slang" in data["category"]
+    assert "slang" in data["category"]
 
 def test_predict_ml_direct_bully(client):
     """Menguji ML mendeteksi serangan langsung sebagai toxic & bully."""
@@ -58,7 +58,7 @@ def test_predict_ml_direct_bully(client):
     data = response.json()
     assert data["is_toxic"] is True
     assert data["is_bully"] is True
-    assert "Serangan Langsung" in data["category"]
+    assert "bully" in data["category"]
 
 def test_predict_ensemble_sarcasm(client):
     """Menguji Ensemble mendeteksi sarkasme halus ujian nol sebagai non-toxic & bully."""
@@ -68,7 +68,7 @@ def test_predict_ensemble_sarcasm(client):
     data = response.json()
     assert data["is_toxic"] is False
     assert data["is_bully"] is True
-    assert "Sarcasm" in data["category"]
+    assert "Sarkasme" in data["category"]
 
 def test_predict_hybrid_route_fast(client):
     """Menguji rute hybrid menyelesaikan kalimat mudah langsung di Tier 1."""
@@ -79,7 +79,7 @@ def test_predict_hybrid_route_fast(client):
     assert data["is_toxic"] is False
     assert data["is_bully"] is False
     assert "Tier 1" in data["decision_source"]
-    assert "Aman" in data["category"]
+    assert "Normal" in data["category"]
 
 def test_predict_batch_processing(client):
     """Menguji endpoint prediksi batch untuk daftar komentar."""

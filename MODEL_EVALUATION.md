@@ -28,17 +28,16 @@ Tabel di bawah ini merangkum spesifikasi umum dari sistem klasifikasi hybrid yan
 
 ## 📊 2. Dataset Pengujian
 
-Statistik dataset yang digunakan untuk melatih dan mengevaluasi performa model:
+Statistik dataset yang digunakan untuk melatih dan mengevaluasi performa model (setelah downsampling dan integrasi data baru):
 
 | Jenis Data / Label | Jumlah Sampel | Persentase | Sumber / Catatan |
 | :--- | :---: | :---: | :--- |
-| **Total Data** | 2070 | 100% | Gabungan dataset publik & scraping |
-| **Data Train (Latih)** | 1759 | 85.0% | Digunakan untuk pelatihan model statistik/ML |
-| **Data Validation** | - | - | Diuji menggunakan K-Fold Cross-Validation |
-| **Data Test (Uji)** | 311 | 15.0% | Evaluasi akhir performa *out-of-sample* |
-| **Label Toxic** | 825 | 39.9% | Kalimat mengandung kata kasar/abusive |
-| **Label Cyberbullying** | 1138 | 55.0% | Kalimat pelecehan verbal personal/grup |
-| **Label Aman (Clean)** | 803 | 38.8% | Kalimat percakapan netral/positif |
+| **Total Data** | 35938 | 100% | Gabungan dataset Twitter, Instagram, Combined, Mendeley, & TikTok Rhiosutoyo |
+| **Data Train (Latih)** | 30547 | 85.0% | Digunakan untuk train set (sebelum augmentasi/perturbasi) |
+| **Data Test (Uji)** | 5391 | 15.0% | Evaluasi akhir performa *out-of-sample* (Test Set bersih) |
+| **Label Toxic (di Test Set)** | 1347 | 25.0% | Kalimat mengandung kata kasar/abusive di set uji |
+| **Label Bully (di Test Set)** | 2131 | 39.5% | Kalimat cyberbullying di set uji |
+| **Label Aman (di Test Set)** | 3260 | 60.5% | Kalimat non-bullying di set uji |
 
 ### 📝 Catatan Integritas Sumber Data
 - **Scraping & Publik**: Apakah data bersumber dari media sosial publik (Twitter/X, Instagram, TikTok)?
@@ -90,19 +89,19 @@ Kalimat-kalimat abu-abu seperti sarkasme halus, kutipan (*quoting*) kata kasar u
 
 | Metrik Evaluasi | Kelas: Aman | Kelas: Toxic | Macro Avg | Weighted Avg |
 | :--- | :---: | :---: | :---: | :---: |
-| **Precision** | 0.9424 | 0.9500 | 0.9462 | 0.9455 |
-| **Recall** | 0.9677 | 0.9120 | 0.9399 | 0.9453 |
-| **F1-Score** | 0.9549 | 0.9306 | 0.9428 | 0.9451 |
-| **Akurasi Keseluruhan** | | | **94.53%** | |
+| **Precision** | 0.94 | 0.80 | 0.87 | 0.91 |
+| **Recall** | 0.93 | 0.82 | 0.88 | 0.90 |
+| **F1-Score** | 0.94 | 0.81 | 0.87 | 0.90 |
+| **Akurasi Keseluruhan** | | | **90.00%** | |
 
 ### 2. Klasifikasi Cyberbullying
 
 | Metrik Evaluasi | Kelas: Aman | Kelas: Bully | Macro Avg | Weighted Avg |
 | :--- | :---: | :---: | :---: | :---: |
-| **Precision** | 0.8571 | 0.9510 | 0.9041 | 0.9055 |
-| **Recall** | 0.9536 | 0.8500 | 0.9018 | 0.9003 |
-| **F1-Score** | 0.9028 | 0.8977 | 0.9003 | 0.9002 |
-| **Akurasi Keseluruhan** | | | **90.03%** | |
+| **Precision** | 0.84 | 0.74 | 0.79 | 0.80 |
+| **Recall** | 0.83 | 0.75 | 0.79 | 0.80 |
+| **F1-Score** | 0.83 | 0.75 | 0.79 | 0.80 |
+| **Akurasi Keseluruhan** | | | **80.00%** | |
 
 ---
 
@@ -203,7 +202,7 @@ Menghitung performa dan penghematan biaya/waktu berkat mekanisme Multi-Tier Rout
 
 > [!IMPORTANT]
 > **Kesimpulan Akhir**: Sistem klasifikasi hybrid BullyGuard ID berhasil mendeteksi ujaran kebencian (toxic) dan perundungan siber (cyberbullying) dengan performa tinggi dan latensi rendah melalui arsitektur routing 3-tier. Tier 1 menyaring sebagian besar pesan aman/terang-terangan kasar, Tier 2 menangani ambiguitas struktural lewat deep learning, dan Tier 3 menangani sarkasme kompleks via Cloud LLM.
-> Berdasarkan hasil uji coba pada dataset sebanyak **2070** sampel, BullyGuard ID versi MVP ini menunjukkan performa akurasi **94.53%** untuk deteksi toxic umum dan **90.03%** untuk deteksi cyberbullying. Namun, untuk kasus pelecehan terarah yang sangat implisit dan sarkasme sosiokultural, sistem masih memerlukan pengawasan manusia (*Human-in-the-Loop*).
+> Berdasarkan hasil uji coba pada dataset sebanyak **35938** sampel, BullyGuard ID versi MVP ini menunjukkan performa akurasi **90.00%** untuk deteksi toxic umum dan **80.00%** untuk deteksi cyberbullying. Namun, untuk kasus pelecehan terarah yang sangat implisit dan sarkasme sosiokultural, sistem masih memerlukan pengawasan manusia (*Human-in-the-Loop*).
 
 ---
 

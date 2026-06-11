@@ -301,3 +301,84 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
             print(f"Warning: Gagal memuat data dari basis data memori SQLite: {e}")
 
     return new_records
+
+
+def load_mendeley_dataset(
+    folder_path: str,
+    clean_fn: Callable[[str], str],
+    check_toxic_fn: Callable[[str], bool],
+) -> Optional[pd.DataFrame]:
+    """Load the Mendeley cyberbullying dataset (Instagram, Twitter, Youtube).
+
+    Downsamples the Youtube dataset (non-bullying) to match a reasonable ratio.
+    """
+    if not os.path.exists(folder_path):
+        print(f"Informasi: Folder Mendeley tidak ditemukan di {folder_path}, dilewati.")
+        return None
+
+    files = {
+        "instagram": "DSPreprocessing_Instagram.csv",
+        "twitter": "DSPreprocessing_Twitter.csv",
+        "youtube": "DSPreprocessing_Youtube_fix_.csv"
+    }
+
+    dfs = []
+    for platform, filename in files.items():
+        file_path = os.path.join(folder_path, filename)
+        if not os.path.exists(file_path):
+            print(f"Warning: File Mendeley {filename} tidak ditemukan.")
+            continue
+
+        try:
+            df = pd.read_csv(file_path)
+            df = df.dropna(subset=["Text", "Label"])
+            
+            # YouTube downsampling
+            if platform == "youtube":
+                df_bully = df[df["Label"] == 1]
+                df_non_bully = df[df["Label"] == 0]
+                
+                # downsample non-bully to max 10000
+                if len(df_non_bully) > 10000:
+                    df_non_bully = df_non_bully.sample(n=10000, random_state=42)
+                
+                df = pd.concat([df_bully, df_non_bully], ignore_index=True)
+                print(f"Youtube Mendeley downsampled: {len(df_bully)} bullying, {len(df_non_bully)} non-bullying.")
+
+            df["text_clean"] = df["Text"].apply(clean_fn)
+            df["is_bully"] = df["Label"] == 1
+            df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
+            
+            dfs.append(df[["text_clean", "is_toxic", "is_bully"]])
+            print(f"Berhasil memuat dataset Mendeley {platform} ({len(df)} baris).")
+        except Exception as e:
+            print(f"Warning: Gagal memuat dataset Mendeley {filename}: {e}")
+
+    if not dfs:
+        return None
+    return pd.concat(dfs, ignore_index=True)
+
+
+def load_tiktok_rhiosutoyo_dataset(
+    path: str,
+    clean_fn: Callable[[str], str],
+    check_toxic_fn: Callable[[str], bool],
+) -> Optional[pd.DataFrame]:
+    """Load the TikTok cyberbullying dataset (Dataset-Research.csv).
+
+    Expected columns: 'comment', 'sentiment'
+    """
+    if not os.path.exists(path):
+        print(f"Informasi: Dataset TikTok Rhiosutoyo tidak ditemukan di {path}, dilewati.")
+        return None
+    try:
+        df = pd.read_csv(path)
+        df = df.dropna(subset=["comment", "sentiment"])
+        df["text_clean"] = df["comment"].apply(clean_fn)
+        df["is_bully"] = df["sentiment"] == -1
+        df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
+        return df[["text_clean", "is_toxic", "is_bully"]]
+    except Exception as e:
+        print(f"Warning: Gagal memuat dataset TikTok Rhiosutoyo ({path}): {e}")
+        return None
+
