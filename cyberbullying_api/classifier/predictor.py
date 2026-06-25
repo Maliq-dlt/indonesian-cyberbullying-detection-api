@@ -488,6 +488,7 @@ def predict_ensemble(text: str) -> EnsembleResponse:
     
     lex_res = predict_lexicon(text, use_fuzzy=False)
     final_toxic = apply_lexicon_evidence(final_toxic, lex_res)
+    final_bully = apply_lexicon_evidence(final_bully, lex_res)
         
     is_toxic = final_toxic >= get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
     is_bully = final_bully >= get_threshold(THRESHOLDS, "threshold_bully", 0.5)
@@ -540,6 +541,22 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
                 reason=f"[Sarcasm Bypass] {llm_res['reason']}",
                 word_importances=explain_prediction(text)
             )
+
+    # 0.5 Pra-penyaringan Lexicon (Bypass jika terdeteksi sangat kasar / masuk kamus blacklist)
+    lex_res = predict_lexicon(text, use_fuzzy=True)
+    if lex_res.is_cyberbullying and lex_res.risk_label in ["sedang", "tinggi"]:
+        matched_words = [m.matched_phrase for m in lex_res.matches]
+        return HybridResponse(
+            text=text,
+            is_toxic=True,
+            is_bully=True,  # Asumsikan bully jika tertangkap kamus keras (body shaming dll)
+            probability_toxic=0.85,
+            probability_bully=0.85,
+            category=determine_category(True, True),
+            decision_source="Tier 1 (Lexicon Kamus)",
+            reason=f"Terdeteksi kata kasar/larangan di dalam teks: {', '.join(matched_words)}",
+            word_importances=explain_prediction(text)
+        )
 
     # 1. Jalankan ML (Tier 1)
     ml_toxic, ml_bully = await asyncio.to_thread(run_ml_inference_sync, text)

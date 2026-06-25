@@ -287,5 +287,21 @@ BASE_CYBERBULLYING_LEXICON = [
     {"phrase": "bangsat", "category": "kata kasar", "severity": "sedang"},
     {"phrase": "babi", "category": "kata kasar", "severity": "sedang"},
     {"phrase": "kampret", "category": "kata kasar", "severity": "rendah"},
+    # Body Shaming
+    {"phrase": "gendut", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "gendutan", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "jadi bola", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "kayak tong", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "kayak babi", "category": "body shaming", "severity": "tinggi"},
+    {"phrase": "ceking", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "kerempeng", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "pesek", "category": "body shaming", "severity": "rendah"},
+    {"phrase": "buluk", "category": "body shaming", "severity": "rendah"},
+    {"phrase": "dekil", "category": "body shaming", "severity": "rendah"},
+    {"phrase": "item", "category": "body shaming", "severity": "rendah"},
+    {"phrase": "jelek", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "pendek", "category": "body shaming", "severity": "rendah"},
+    {"phrase": "bantet", "category": "body shaming", "severity": "sedang"},
+    {"phrase": "burik", "category": "body shaming", "severity": "sedang"},
 ]
 
