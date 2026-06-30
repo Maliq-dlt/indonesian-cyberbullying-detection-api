@@ -291,6 +291,7 @@ def init_sqlite_db(db_path: str):
                 active_version TEXT
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_class_mem_timestamp ON classification_memory(timestamp);")
         conn.commit()
     conn.close()
 

@@ -255,15 +255,17 @@ def sigmoid(x):
 
 def explain_prediction(text: str) -> List[Any]:
     from models import WordImportance
-    if ML_MODEL is None or ML_VECTORIZER is None:
+    ml_model = ML_MODEL
+    ml_vectorizer = ML_VECTORIZER
+    if ml_model is None or ml_vectorizer is None:
         return []
         
     try:
         norm = normalize_text(text)["spaced"]
         
         # Ekstrak estimator individual dari MultiOutputClassifier
-        toxic_estimator = ML_MODEL.estimators_[0]
-        bully_estimator = ML_MODEL.estimators_[1]
+        toxic_estimator = ml_model.estimators_[0]
+        bully_estimator = ml_model.estimators_[1]
         
         # Ekstrak koefisien masing-masing kelas secara aman
         def get_coefs(est):
@@ -282,8 +284,8 @@ def explain_prediction(text: str) -> List[Any]:
         toxic_coefs = get_coefs(toxic_estimator)
         bully_coefs = get_coefs(bully_estimator)
         
-        feature_names = ML_VECTORIZER.get_feature_names_out()
-        tfidf_matrix = ML_VECTORIZER.transform([norm])
+        feature_names = ml_vectorizer.get_feature_names_out()
+        tfidf_matrix = ml_vectorizer.transform([norm])
         nonzero_indices = tfidf_matrix.nonzero()[1]
         
         impacts = []
@@ -312,17 +314,19 @@ def explain_prediction(text: str) -> List[Any]:
         return []
 
 def predict_transformer_raw(text: str) -> Dict[str, float]:
-    if TRANSFORMER_TOKENIZER is None:
+    transformer_tokenizer = TRANSFORMER_TOKENIZER
+    transformer_session = TRANSFORMER_SESSION
+    if transformer_tokenizer is None:
         return {"toxic_prob": 0.0, "bully_prob": 0.0}
     
-    if TRANSFORMER_SESSION is not None:
+    if transformer_session is not None:
         try:
-            inputs = TRANSFORMER_TOKENIZER(text, padding=True, truncation=True, return_tensors="np")
+            inputs = transformer_tokenizer(text, padding=True, truncation=True, return_tensors="np")
             ort_inputs = {
                 "input_ids": inputs["input_ids"].astype(np.int64),
                 "attention_mask": inputs["attention_mask"].astype(np.int64)
             }
-            ort_outputs: Any = TRANSFORMER_SESSION.run(None, ort_inputs)
+            ort_outputs: Any = transformer_session.run(None, ort_inputs)
             logits = ort_outputs[0][0]
             probs = sigmoid(logits)
             return {
@@ -333,19 +337,21 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
             print("Warning: Gagal memproses menggunakan session ONNX, fallback ke PyTorch:", e)
 
     global TRANSFORMER_MODEL
-    if TRANSFORMER_MODEL is None and torch is not None:
+    transformer_model = TRANSFORMER_MODEL
+    if transformer_model is None and torch is not None:
         try:
             model_name = os.getenv("TRANSFORMER_MODEL_PATH", "nahiar/hatespeech-abusive-xlm-roberta-v1")
             print(f"Memuat model PyTorch secara dinamis untuk fallback: {model_name}...")
             TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name)
+            transformer_model = TRANSFORMER_MODEL
             print("Model PyTorch berhasil dimuat secara dinamis!")
         except Exception as load_err:
             print("Error: Gagal memuat model PyTorch secara dinamis:", load_err)
 
-    if TRANSFORMER_MODEL is not None and torch is not None:
-        inputs = TRANSFORMER_TOKENIZER(text, padding=True, truncation=True, return_tensors="pt")
+    if transformer_model is not None and torch is not None:
+        inputs = transformer_tokenizer(text, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
-            logits = TRANSFORMER_MODEL(**inputs).logits[0]
+            logits = transformer_model(**inputs).logits[0]
         probs = torch.sigmoid(logits).tolist()
         return {
             "bully_prob": probs[0],
@@ -419,13 +425,15 @@ def predict_lexicon(text: str, use_fuzzy: bool = True) -> LexiconResponse:
 def predict_ml(text: str) -> MLResponse:
     import time
     start_time = time.perf_counter()
-    if ML_MODEL is None or ML_VECTORIZER is None:
+    ml_model = ML_MODEL
+    ml_vectorizer = ML_VECTORIZER
+    if ml_model is None or ml_vectorizer is None:
         return MLResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Model ML belum termuat.", word_importances=[], execution_time=0.0)
     
     norm = normalize_text(text)["spaced"]
-    tfidf_text = ML_VECTORIZER.transform([norm])
+    tfidf_text = ml_vectorizer.transform([norm])
     
-    pred_probs = ML_MODEL.predict_proba(tfidf_text)
+    pred_probs = ml_model.predict_proba(tfidf_text)
     prob_toxic = float(pred_probs[0][0][1])
     prob_bully = float(pred_probs[1][0][1])
     
@@ -655,9 +663,10 @@ async def predict_hybrid(text: str) -> HybridResponse:
 
     # Simpan hasil analisis baru ke dalam memori database persistent
     embedding_json = None
-    if EMBEDDING_MODEL is not None:
+    embedding_model = EMBEDDING_MODEL
+    if embedding_model is not None:
         try:
-            emb = EMBEDDING_MODEL.encode([text])[0]
+            emb = embedding_model.encode([text])[0]
             embedding_json = str(emb.tolist())
         except Exception:
             pass
@@ -667,6 +676,11 @@ async def predict_hybrid(text: str) -> HybridResponse:
 # predict_hybrid_stream definition below handles streaming logic
 
 async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], None]:
+    # Capture local references to prevent race conditions during model reload
+    ml_model = ML_MODEL
+    ml_vectorizer = ML_VECTORIZER
+    embedding_model = EMBEDDING_MODEL
+
     # 1. Cek memori klasifikasi historis terlebih dahulu
     cached_memory = await get_classification_memory(text)
     if cached_memory:
@@ -675,7 +689,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
         yield {"chunk": cached_memory.reason, "done": True, "final_data": cached_memory}
         return
 
-    if ML_MODEL is None or ML_VECTORIZER is None:
+    if ml_model is None or ml_vectorizer is None:
         res = HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.", word_importances=[])
         yield {"chunk": res.reason, "done": True, "final_data": res}
         return
@@ -705,9 +719,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
-                    if EMBEDDING_MODEL is not None:
+                    if embedding_model is not None:
                         try:
-                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            emb = embedding_model.encode([text])[0]
                             embedding_json = str(emb.tolist())
                         except Exception:
                             pass
@@ -726,9 +740,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
-                    if EMBEDDING_MODEL is not None:
+                    if embedding_model is not None:
                         try:
-                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            emb = embedding_model.encode([text])[0]
                             embedding_json = str(emb.tolist())
                         except Exception:
                             pass
@@ -754,13 +768,13 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
             probability_bully=ml_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 1 (ML Klasik)",
-            reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik. " + ml_confidence.reason,
+            reason="Klasifikasi berbasis ambang batas probabilitas model statistik. " + ml_confidence.reason,
             word_importances=explain_prediction(text)
         )
         embedding_json = None
-        if EMBEDDING_MODEL is not None:
+        if embedding_model is not None:
             try:
-                emb = EMBEDDING_MODEL.encode([text])[0]
+                emb = embedding_model.encode([text])[0]
                 embedding_json = str(emb.tolist())
             except Exception:
                 pass
@@ -768,20 +782,10 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
         yield {"chunk": res.reason, "done": True, "final_data": res}
         return
         
-    # 2. Ragu-ragu -> Jalankan Transformer (Tier 2 ONNX / Fallback PyTorch)
-    res_tr = await asyncio.to_thread(predict_transformer_raw, text)
-    tr_toxic = res_tr["toxic_prob"]
-    tr_bully = res_tr["bully_prob"]
+    # 2. Ragu-ragu -> Jalankan Deep Learning (Tier 2 ONNX Ensemble)
+    ens_toxic, ens_bully = await run_ensemble_inference_async(text, ml_toxic, ml_bully)
     
-    w = get_calibrated_weights()
-    w_ml_toxic = w.get("ml_toxic", 0.5)
-    w_tr_toxic = w.get("tr_toxic", 0.5)
-    w_ml_bully = w.get("ml_bully", 0.65)
-    w_tr_bully = w.get("tr_bully", 0.35)
-
-    ens_toxic = combine_probabilities(ml_toxic, tr_toxic, w_ml_toxic, w_tr_toxic)
-    ens_bully = combine_probabilities(ml_bully, tr_bully, w_ml_bully, w_tr_bully)
-    
+    # Cek keyakinan model ensemble
     ens_confidence = is_confident_pair(ens_toxic, ens_bully, t_t, t_b)
     if ens_confidence.is_confident:
         is_toxic = ens_toxic >= t_t
@@ -798,9 +802,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
             word_importances=explain_prediction(text)
         )
         embedding_json = None
-        if EMBEDDING_MODEL is not None:
+        if embedding_model is not None:
             try:
-                emb = EMBEDDING_MODEL.encode([text])[0]
+                emb = embedding_model.encode([text])[0]
                 embedding_json = str(emb.tolist())
             except Exception:
                 pass
@@ -829,9 +833,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
-                    if EMBEDDING_MODEL is not None:
+                    if embedding_model is not None:
                         try:
-                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            emb = embedding_model.encode([text])[0]
                             embedding_json = str(emb.tolist())
                         except Exception:
                             pass
@@ -852,9 +856,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
                         word_importances=explain_prediction(text)
                     )
                     embedding_json = None
-                    if EMBEDDING_MODEL is not None:
+                    if embedding_model is not None:
                         try:
-                            emb = EMBEDDING_MODEL.encode([text])[0]
+                            emb = embedding_model.encode([text])[0]
                             embedding_json = str(emb.tolist())
                         except Exception:
                             pass
@@ -879,9 +883,9 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
         word_importances=explain_prediction(text)
     )
     embedding_json = None
-    if EMBEDDING_MODEL is not None:
+    if embedding_model is not None:
         try:
-            emb = EMBEDDING_MODEL.encode([text])[0]
+            emb = embedding_model.encode([text])[0]
             embedding_json = str(emb.tolist())
         except Exception:
             pass

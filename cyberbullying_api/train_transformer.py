@@ -25,6 +25,9 @@ if sys.platform.startswith('win'):
     except Exception:
         pass
 
+if __name__ != "__main__":
+    raise ImportError("This script is intended to be run as a standalone script, not imported.")
+
 # Tambahkan base_dir ke sys.path agar impor lokal berfungsi
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:

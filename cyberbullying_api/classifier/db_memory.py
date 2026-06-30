@@ -81,7 +81,8 @@ async def save_classification_memory(res: HybridResponse, embedding_json: str | 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        async with SQLITE_WRITE_LOCK:
+        
+        def write_sqlite():
             conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
             cursor.execute("""
@@ -112,6 +113,9 @@ async def save_classification_memory(res: HybridResponse, embedding_json: str | 
             ))
             conn.commit()
             conn.close()
+
+        async with SQLITE_WRITE_LOCK:
+            await asyncio.to_thread(write_sqlite)
     except Exception as sq_err:
         print(f"Warning: SQLite error pada save_classification_memory fallback: {sq_err}")
 
@@ -185,16 +189,20 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         if os.path.exists(db_path):
-            conn = sqlite3.connect(db_path, timeout=10.0)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT is_toxic, is_bully, reason, decision_source, confidence, probability_toxic, probability_bully 
-                FROM classification_memory 
-                WHERE text_hash = ?
-            """, (text_hash,))
-            row = cursor.fetchone()
-            conn.close()
+            def read_sqlite():
+                conn = sqlite3.connect(db_path, timeout=10.0)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT is_toxic, is_bully, reason, decision_source, confidence, probability_toxic, probability_bully 
+                    FROM classification_memory 
+                    WHERE text_hash = ?
+                """, (text_hash,))
+                row = cursor.fetchone()
+                conn.close()
+                return dict(row) if row else None
+
+            row = await asyncio.to_thread(read_sqlite)
             if row:
                 is_toxic = bool(row["is_toxic"])
                 is_bully = bool(row["is_bully"])
@@ -293,16 +301,21 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
                 if os.path.exists(db_path):
-                    conn = sqlite3.connect(db_path, timeout=10.0)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, probability_toxic, probability_bully, embedding
-                        FROM classification_memory
-                        WHERE embedding IS NOT NULL
-                    """)
-                    rows = cursor.fetchall()
-                    conn.close()
-                    
+                    def run_sqlite_semantic():
+                        conn = sqlite3.connect(db_path, timeout=10.0)
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, probability_toxic, probability_bully, embedding
+                            FROM classification_memory
+                            WHERE embedding IS NOT NULL
+                            ORDER BY timestamp DESC
+                            LIMIT 1000
+                        """)
+                        rows = cursor.fetchall()
+                        conn.close()
+                        return rows
+
+                    rows = await asyncio.to_thread(run_sqlite_semantic)
                     if rows:
                         best_sim = -1.0
                         best_row = None
@@ -399,19 +412,24 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         if os.path.exists(db_path):
-            conn = sqlite3.connect(db_path, timeout=10.0)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, timestamp, is_validated
-                FROM classification_memory
-                WHERE is_validated = 0
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """, (limit,))
-            rows = cursor.fetchall()
-            for r in rows:
-                row_dict = dict(r)
+            def read_sqlite_unvalidated():
+                conn = sqlite3.connect(db_path, timeout=10.0)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, timestamp, is_validated
+                    FROM classification_memory
+                    WHERE is_validated = 0
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, (limit,))
+                rows = cursor.fetchall()
+                res_list = [dict(r) for r in rows]
+                conn.close()
+                return res_list
+
+            rows = await asyncio.to_thread(read_sqlite_unvalidated)
+            for row_dict in rows:
                 enc_text = row_dict.pop("encrypted_text", "")
                 decrypted = decrypt_text(enc_text)
                 # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
@@ -420,7 +438,6 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
                 else:
                     row_dict["text"] = decrypted
                 results.append(row_dict)
-            conn.close()
     except Exception as e:
         print(f"Warning: SQLite error pada get_unvalidated_memory: {e}")
     return results
@@ -473,18 +490,23 @@ async def get_categorized_memory(
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
             if os.path.exists(db_path):
-                conn = sqlite3.connect(db_path, timeout=10.0)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, timestamp, is_validated
-                    FROM classification_memory
-                    ORDER BY abs(confidence - 0.5) ASC, timestamp DESC
-                    LIMIT ?
-                """, (fetch_limit,))
-                rows = cursor.fetchall()
-                for r in rows:
-                    row_dict = dict(r)
+                def read_sqlite_categorized():
+                    conn = sqlite3.connect(db_path, timeout=10.0)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, timestamp, is_validated
+                        FROM classification_memory
+                        ORDER BY abs(confidence - 0.5) ASC, timestamp DESC
+                        LIMIT ?
+                    """, (fetch_limit,))
+                    rows = cursor.fetchall()
+                    res_list = [dict(r) for r in rows]
+                    conn.close()
+                    return res_list
+
+                rows = await asyncio.to_thread(read_sqlite_categorized)
+                for row_dict in rows:
                     enc_text = row_dict.pop("encrypted_text", "")
                     decrypted = decrypt_text(enc_text)
                     # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
@@ -493,7 +515,6 @@ async def get_categorized_memory(
                     else:
                         row_dict["text"] = decrypted
                     records.append(row_dict)
-                conn.close()
         except Exception as e:
             print(f"Warning: SQLite error pada get_categorized_memory: {e}")
             
@@ -609,7 +630,8 @@ async def update_validation_status(text: str, is_toxic: bool, is_bully: bool, is
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        async with SQLITE_WRITE_LOCK:
+        
+        def write_validation_sqlite():
             conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
             cursor.execute("""
@@ -629,6 +651,9 @@ async def update_validation_status(text: str, is_toxic: bool, is_bully: bool, is
             """, (text_hash, enc_text, 1 if is_toxic else 0, 1 if is_bully else 0, "Umpan balik koreksi manusia (Validated)", "Koreksi Manusia", 1.0 if is_toxic else 0.0, 1.0 if is_bully else 0.0, is_validated))
             conn.commit()
             conn.close()
+
+        async with SQLITE_WRITE_LOCK:
+            await asyncio.to_thread(write_validation_sqlite)
         print(f"[HITL] Berhasil memvalidasi data di SQLite untuk: '{text}'")
         return True
     except Exception as e:
@@ -651,7 +676,8 @@ async def save_retraining_history(f1_toxic: float, f1_bully: float, threshold_to
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
-        async with SQLITE_WRITE_LOCK:
+        
+        def save_history_sqlite():
             conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
             cursor.execute("""
@@ -660,6 +686,9 @@ async def save_retraining_history(f1_toxic: float, f1_bully: float, threshold_to
             """, (f1_toxic, f1_bully, threshold_toxic, threshold_bully, active_version))
             conn.commit()
             conn.close()
+
+        async with SQLITE_WRITE_LOCK:
+            await asyncio.to_thread(save_history_sqlite)
     except Exception as e:
         print(f"Warning: SQLite error pada save_retraining_history: {e}")
 
@@ -681,16 +710,21 @@ async def get_retraining_history(limit: int = 50) -> List[Dict[str, Any]]:
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
-        conn = sqlite3.connect(db_path, timeout=30.0)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, timestamp, f1_toxic, f1_bully, threshold_toxic, threshold_bully, active_version
-            FROM retraining_history
-            ORDER BY id ASC
-            LIMIT ?
-        """, (limit,))
-        rows = cursor.fetchall()
-        conn.close()
+        
+        def read_history_sqlite():
+            conn = sqlite3.connect(db_path, timeout=30.0)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, timestamp, f1_toxic, f1_bully, threshold_toxic, threshold_bully, active_version
+                FROM retraining_history
+                ORDER BY id ASC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            conn.close()
+            return rows
+
+        rows = await asyncio.to_thread(read_history_sqlite)
         
         result = []
         for r in rows:

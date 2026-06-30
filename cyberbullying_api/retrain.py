@@ -18,6 +18,9 @@ elif os.path.exists("../.env"):
 else:
     load_dotenv()
 
+if __name__ != "__main__":
+    raise ImportError("This script is intended to be run as a standalone script, not imported.")
+
 from normalizer import init_slang_map, normalize_text
 
 from training import (

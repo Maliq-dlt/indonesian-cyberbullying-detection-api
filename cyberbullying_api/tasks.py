@@ -55,7 +55,14 @@ def run_retrain_task(model_type: str = "both"):
                     stdout=log_file,
                     stderr=subprocess.STDOUT
                 )
-                proc.wait()
+                try:
+                    proc.wait(timeout=3600)  # Timeout 1 jam per script
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()  # Bersihkan status zombie
+                    if r is not None:
+                        r.set("training_status", "failed")
+                    raise Exception(f"Pelatihan {name} dibatalkan karena melebihi batas waktu (timeout 1 jam)")
                 
             if proc.returncode != 0:
                 if r is not None:

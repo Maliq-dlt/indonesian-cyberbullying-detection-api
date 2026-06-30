@@ -160,12 +160,16 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
         "PENTING: Lakukan penalaran/analisis nuansa kata di bidang 'reasoning' terlebih dahulu sebelum mengisi 'is_toxic', 'is_bully', dan 'reason' (ringkasan penjelasan)."
     )
     
+    user_payload = {
+        "text_to_analyze": text
+    }
+    
     prompt = f"""
     Gunakan format JSON yang valid mengikuti skema ini secara ketat (isi field 'reasoning' terlebih dahulu untuk melakukan Chain-of-Thought):
     {json.dumps(schema, indent=2)}
     
-    Teks yang dianalisis:
-    "{text}"
+    Data input untuk dianalisis:
+    {json.dumps(user_payload, ensure_ascii=False)}
     """
     
     # Payload OpenAI-compatible format
