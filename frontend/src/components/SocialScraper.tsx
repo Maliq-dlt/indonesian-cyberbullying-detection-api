@@ -26,7 +26,12 @@ export default function SocialScraper({ apiUrl, apiKey, handleExportCSV }: Socia
   const [maxComments, setMaxComments] = useState<number | ''>(15);
   const [scrapingLoading, setScrapingLoading] = useState(false);
   const [scrapedResults, setScrapedResults] = useState<PredictionResult[]>([]);
-  const [detectedPlatform, setDetectedPlatform] = useState<'tiktok' | 'x' | null>(null);
+  const trimmedUrl = socialUrl.trim();
+  const detectedPlatform = trimmedUrl.includes('tiktok.com')
+    ? 'tiktok'
+    : (trimmedUrl.includes('x.com') || trimmedUrl.includes('twitter.com') || trimmedUrl.includes('/status/'))
+    ? 'x'
+    : null;
 
   // Hitung frekuensi kata kasar terpopuler
   const getToxicWordFrequencies = (results: PredictionResult[]) => {
@@ -49,17 +54,6 @@ export default function SocialScraper({ apiUrl, apiKey, handleExportCSV }: Socia
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
   };
-
-  useEffect(() => {
-    const trimmed = socialUrl.trim();
-    if (trimmed.includes('tiktok.com')) {
-      setDetectedPlatform('tiktok');
-    } else if (trimmed.includes('x.com') || trimmed.includes('twitter.com') || trimmed.includes('/status/')) {
-      setDetectedPlatform('x');
-    } else {
-      setDetectedPlatform(null);
-    }
-  }, [socialUrl]);
 
   const handleScrapeAndAnalyze = async () => {
     if (!socialUrl.trim()) {

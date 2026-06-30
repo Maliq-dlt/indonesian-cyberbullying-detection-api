@@ -23,7 +23,7 @@ export function XAIHighlightText({ text, wordImportances }: XAIHighlightTextProp
   });
 
   // Split text by word boundaries or punctuation, keeping separators
-  const tokens = text.split(/(\s+|[.,\/#!$%\^&\*;:{}=\-_`~()??"'“”[\]{}<>\\|]+)/g);
+  const tokens = text.split(/(\s+|[.,/#!$%^&*;:{}=\-_`~()??"'“”[\]{}<>\\|]+)/g);
 
   return (
     <span className="leading-relaxed">

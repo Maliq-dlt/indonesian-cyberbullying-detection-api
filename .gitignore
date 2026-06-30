@@ -35,11 +35,12 @@ cyberbullying_api/models/vectorizer_*.joblib
 # Development scratch files
 scratch/
 stitch/
-cyberbullying-detector/
-*.png
-*.jpg
-*.jpeg
-*.gif
+# Ignore dynamically generated retraining model versions
+cyberbullying_api/models/fine_tuned_transformer/
+cyberbullying_api/models/model_C
+cyberbullying_api/models/model_C/
+cyberbullying_api/models/results/
+cyberbullying_api/scraper/logs/
 
 # Allow images in docs/ directory
 !docs/*.png
