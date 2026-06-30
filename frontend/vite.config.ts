@@ -7,5 +7,10 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss()
-  ]
+  ],
+  // @ts-expect-error - vitest types mismatch with vite 8
+  test: {
+    globals: true,
+    environment: 'jsdom',
+  }
 })

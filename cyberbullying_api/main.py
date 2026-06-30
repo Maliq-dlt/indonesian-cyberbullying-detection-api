@@ -9,8 +9,20 @@ Stage 2 security cleanup:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import sys
 from contextlib import asynccontextmanager
+
+# Configure structured JSON logging for production observability
+logging.basicConfig(
+    level=logging.INFO,
+    format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s"}',
+    datefmt='%Y-%m-%dT%H:%M:%S',
+    stream=sys.stdout,
+    force=True
+)
+logger = logging.getLogger("bullyguard")
 
 from dotenv import load_dotenv
 if os.path.exists(".env"):
@@ -20,7 +32,7 @@ elif os.path.exists("../.env"):
 else:
     load_dotenv()
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 import classifier
@@ -55,10 +67,10 @@ def validate_runtime_config() -> None:
         raise RuntimeError("ALLOWED_ORIGINS must be explicit in production/staging. Do not use '*'.")
 
     if is_development_env() and not api_key:
-        print("WARNING: API_KEY is not set. Protected endpoints may run without authentication in development mode.")
+        logger.warning("API_KEY is not set. Protected endpoints may run without authentication in development mode.")
 
     if env == "production" and os.getenv("RATE_LIMIT_FAIL_OPEN", "").lower() in {"1", "true", "yes"}:
-        print("WARNING: RATE_LIMIT_FAIL_OPEN is enabled in production. This weakens abuse protection.")
+        logger.warning("RATE_LIMIT_FAIL_OPEN is enabled in production. This weakens abuse protection.")
 
 
 async def listen_model_reload() -> None:
@@ -72,19 +84,19 @@ async def listen_model_reload() -> None:
             if redis_client:
                 pubsub = redis_client.pubsub()
                 await pubsub.subscribe("model_reload")
-                print("[Redis Pub/Sub] Subscribed to 'model_reload'.")
+                logger.info("[Redis Pub/Sub] Subscribed to 'model_reload'.")
 
                 while True:
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if message and message.get("data") == "reload":
-                        print("[Redis Pub/Sub] Received model_reload signal. Reloading model...")
+                        logger.info("[Redis Pub/Sub] Received model_reload signal. Reloading model...")
                         try:
                             from classifier.predictor import init_models
 
                             await asyncio.to_thread(init_models)
-                            print("[Redis Pub/Sub] Model reloaded successfully.")
+                            logger.info("[Redis Pub/Sub] Model reloaded successfully.")
                         except Exception as reload_err:
-                            print(f"[Redis Pub/Sub] Failed to reload model: {reload_err}")
+                            logger.error(f"[Redis Pub/Sub] Failed to reload model: {reload_err}")
                     await asyncio.sleep(0.5)
             else:
                 await asyncio.sleep(10.0)
@@ -92,7 +104,7 @@ async def listen_model_reload() -> None:
         except asyncio.CancelledError:
             break
         except Exception as exc:
-            print(f"[Redis Pub/Sub] Connection error: {exc}. Reconnecting in 10 seconds...")
+            logger.error(f"[Redis Pub/Sub] Connection error: {exc}. Reconnecting in 10 seconds...")
             await asyncio.sleep(10.0)
 
 
@@ -119,19 +131,19 @@ async def lifespan(app: FastAPI):
                     state.LOG_FILE_HANDLE.close()
                 except Exception:
                     pass
-                print("Training log file handle closed.")
+                logger.info("Training log file handle closed.")
 
             pool = getattr(classifier, "PG_POOL", None)
             if pool:
                 await pool.close()
-                print("PostgreSQL connection pool closed.")
+                logger.info("PostgreSQL connection pool closed.")
 
             redis_client = getattr(classifier, "REDIS_CLIENT", None)
             if redis_client:
                 await redis_client.close()
-                print("Redis connection closed.")
+                logger.info("Redis connection closed.")
         except Exception as exc:
-            print(f"Warning: shutdown cleanup failed: {exc}")
+            logger.error(f"Warning: shutdown cleanup failed: {exc}")
 
 
 app = FastAPI(
@@ -185,12 +197,39 @@ def read_root():
 
 
 @app.get("/health")
-def health_check():
-    return {
+async def health_check(response: Response):
+    health_status = {
         "status": "healthy",
         "message": "API is alive.",
         "environment": current_env(),
+        "database": "unconfigured",
+        "redis": "unconfigured"
     }
+
+    # Test PostgreSQL
+    pg_pool = await classifier.get_pg_pool()
+    if pg_pool:
+        try:
+            async with pg_pool.acquire() as conn:
+                await conn.execute("SELECT 1")
+            health_status["database"] = "connected"
+        except Exception as e:
+            health_status["database"] = f"error: {str(e)}"
+            health_status["status"] = "unhealthy"
+            response.status_code = 503
+    
+    # Test Redis
+    redis_client = await classifier.get_redis()
+    if redis_client:
+        try:
+            await redis_client.ping()
+            health_status["redis"] = "connected"
+        except Exception as e:
+            health_status["redis"] = f"error: {str(e)}"
+            health_status["status"] = "unhealthy"
+            response.status_code = 503
+
+    return health_status
 
 
 @app.get("/models/status", dependencies=[Depends(verify_api_key)])
