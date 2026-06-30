@@ -5,7 +5,7 @@ Proyek ini mendemonstrasikan bagaimana memigrasikan model deteksi cyberbullying 
 ---
 
 ## 🌟 Fitur Enterprise (Arsitektur Lanjut)
-1. **LLM Streaming (Real-time Typing):** Panel UI mendukung *Server-Sent Events (SSE)* / *Generators*. Saat komentar diteruskan ke Tier 3 (Cloud LLM (OpenCode Go)), proses penalaran (Chain-of-Thought) akan ditampilkan secara seketika (*typing effect*).
+1. **LLM Streaming (Real-time Typing):** Panel UI mendukung *Server-Sent Events (SSE)* / *Generators*. Saat komentar diteruskan ke Tier 3 (Cloud LLM (Gemini API)), proses penalaran (Chain-of-Thought) akan ditampilkan secara seketika (*typing effect*).
 2. **Vector Search dengan `pgvector`:** Pencarian *Few-Shot* (RAG) menggunakan *database* PostgreSQL melalui ekstensi `pgvector` dan model `sentence-transformers`, memberikan skalabilitas pencarian tak terbatas dengan latensi sub-milidetik.
 3. **Human-in-the-Loop (Active Learning):** Terdapat Admin Dashboard di mana prediksi salah dapat dikoreksi. Sistem akan melakukan *oversampling* (bobot x5) pada data tervalidasi manusia ini saat proses *retraining*.
 4. **Auto-Rollback Mechanism:** Jika skrip pelatihan otomatis menghasilkan model yang kualitas F1-score-nya turun > 8%, sistem secara otomatis membatalkan *deployment* dan mempertahankan model lama.

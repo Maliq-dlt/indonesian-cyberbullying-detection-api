@@ -1,10 +1,10 @@
 {
-    "active_version": "20260611_085116",
-    "model_file": "model_lr_20260611_085116.joblib",
-    "vectorizer_file": "vectorizer_20260611_085116.joblib",
-    "f1_toxic": 0.8115412710007305,
-    "f1_bully": 0.7494756467024004,
+    "active_version": "20260630_170257",
+    "model_file": "model_lr_20260630_170257.joblib",
+    "vectorizer_file": "vectorizer_20260630_170257.joblib",
+    "f1_toxic": 0.8057080131723381,
+    "f1_bully": 0.7385089069716296,
     "threshold_toxic": 0.40000000000000013,
-    "threshold_bully": 0.45000000000000007,
-    "updated_at": "2026-06-11 08:51:16.599054"
+    "threshold_bully": 0.40000000000000013,
+    "updated_at": "2026-06-30 17:02:57.872038"
 }

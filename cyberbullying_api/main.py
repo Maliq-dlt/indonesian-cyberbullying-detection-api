@@ -13,7 +13,12 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-load_dotenv()
+if os.path.exists(".env"):
+    load_dotenv(".env")
+elif os.path.exists("../.env"):
+    load_dotenv("../.env")
+else:
+    load_dotenv()
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware

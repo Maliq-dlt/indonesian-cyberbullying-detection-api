@@ -154,6 +154,24 @@ async def auto_open_comment_panel(page):
             if await item.count() > 0 and await item.is_visible(timeout=1500):
                 await item.click(timeout=3000)
                 await page.wait_for_timeout(4000)
+                
+                # Klik tab "Komentar" secara spesifik jika tab "Anda mungkin suka" aktif secara default
+                try:
+                    await page.evaluate("""
+                        () => {
+                            const tab = Array.from(document.querySelectorAll('button[data-testid="tux-web-tab-bar"]'))
+                                .find(el => el.textContent.includes('Komentar'));
+                            if (tab) {
+                                const rect = tab.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    tab.click();
+                                }
+                            }
+                        }
+                    """)
+                    await page.wait_for_timeout(2000)
+                except Exception:
+                    pass
                 return True
         except Exception:
             pass
@@ -182,6 +200,23 @@ async def auto_open_comment_panel(page):
         """)
         if clicked:
             await page.wait_for_timeout(4000)
+            # Klik tab "Komentar" secara spesifik jika tab "Anda mungkin suka" aktif secara default
+            try:
+                await page.evaluate("""
+                    () => {
+                        const tab = Array.from(document.querySelectorAll('button[data-testid="tux-web-tab-bar"]'))
+                            .find(el => el.textContent.includes('Komentar'));
+                        if (tab) {
+                            const rect = tab.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                tab.click();
+                            }
+                        }
+                    }
+                """)
+                await page.wait_for_timeout(2000)
+            except Exception:
+                pass
             return True
     except Exception:
         pass
@@ -262,7 +297,7 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
 
     try:
         async with async_playwright() as p:
-            headless_mode = os.getenv("TIKTOK_HEADLESS", "True").lower() == "true"
+            headless_mode = os.getenv("TIKTOK_HEADLESS", "False").lower() == "true"
 
             chrome_path = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
             if not os.path.exists(chrome_path):
@@ -378,7 +413,16 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
             await browser_context.close()
 
     except Exception as e:
-        print(f"Error scraping TikTok via Playwright: {e}")
+        import traceback
+        error_msg = f"Error scraping TikTok via Playwright: {e}\n{traceback.format_exc()}"
+        print(error_msg)
+        try:
+            log_dir = os.path.join(BASE_DIR, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, "scraper.log"), "a", encoding="utf-8") as f:
+                f.write(f"--- {datetime.now()} ---\n{error_msg}\n")
+        except Exception:
+            pass
 
     return comments[:max_comments]
 

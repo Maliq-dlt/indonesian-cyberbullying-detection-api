@@ -4,8 +4,12 @@ import subprocess
 from celery import Celery
 import redis
 from dotenv import load_dotenv
-
-load_dotenv()
+if os.path.exists(".env"):
+    load_dotenv(".env")
+elif os.path.exists("../.env"):
+    load_dotenv("../.env")
+else:
+    load_dotenv()
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 celery_app = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)

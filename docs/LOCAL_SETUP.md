@@ -45,9 +45,9 @@ PG_URL=postgresql://cyber_user:change_this_postgres_password@db:5432/cyberbullyi
 REDIS_URL=redis://:change_this_redis_password@redis:6379/0
 
 # Layanan Cloud LLM Tier 3 (Opsional)
-OPENCODE_API_KEY=sk-...
-OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1
-OPENCODE_MODEL=kimi-k2.6
+GEMINI_API_KEY=AIzaSy...
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+GEMINI_MODEL=gemini-1.5-flash
 ```
 
 > [!TIP]

@@ -12,7 +12,7 @@ Dokumen ini memandu Anda dalam merumuskan narasi, deskripsi portofolio, pitch, a
 | Kategori Penggunaan | Narasi Deskripsi yang Direkomendasikan |
 | :--- | :--- |
 | **Deskripsi Umum** | *"BullyGuard ID adalah **advanced MVP** untuk deteksi cyberbullying berbahasa Indonesia berbasis **Hybrid Multi-Tier AI** dan sistem peninjauan moderator manusia (*Human-in-the-Loop*)."* |
-| **Deskripsi Teknis** | *"BullyGuard ID adalah prototipe sistem moderasi berbasis API yang menggabungkan kecerdasan lexicon matching, model statistik klasifikasi cepat (Logistic Regression), pemahaman semantik Transformer (XLM-RoBERTa ONNX), serta opsi peninjauan konteks kompleks menggunakan Cloud LLM (OpenCode Go)."* |
+| **Deskripsi Teknis** | *"BullyGuard ID adalah prototipe sistem moderasi berbasis API yang menggabungkan kecerdasan lexicon matching, model statistik klasifikasi cepat (Logistic Regression), pemahaman semantik Transformer (XLM-RoBERTa ONNX), serta opsi peninjauan konteks kompleks menggunakan Cloud LLM (Gemini API)."* |
 
 ---
 

@@ -37,7 +37,7 @@ from normalizer import (
     BASE_CYBERBULLYING_LEXICON
 )
 from classifier.database import init_cache_db, save_classification_memory, get_classification_memory
-from classifier.llm import query_cloud_llm_async, query_cloud_llm_stream_async, OPENCODE_API_KEY
+from classifier.llm import query_cloud_llm_async, query_cloud_llm_stream_async, GEMINI_API_KEY
 import classifier.llm as llm_module
 from classifier.confidence import (
     apply_lexicon_evidence,
@@ -524,7 +524,7 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
 
     # 0. Pra-penyaringan Kontras Sentimen (Bypass langsung ke Tier 3 jika terindikasi sarkasme kuat dan Cloud LLM terkonfigurasi)
     is_sarcasm_candidate = detect_sentiment_contrast(text)
-    if is_sarcasm_candidate and OPENCODE_API_KEY:
+    if is_sarcasm_candidate and GEMINI_API_KEY:
         print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Cloud LLM) untuk: '{text}'")
         llm_res = await query_cloud_llm_async(text)
         if llm_res["success"]:
@@ -609,7 +609,7 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         )
 
     # 3. Sangat ragu-ragu -> Panggil Cloud LLM (Tier 3 jika terkonfigurasi)
-    if OPENCODE_API_KEY:
+    if GEMINI_API_KEY:
         print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Cloud LLM) untuk: '{text}'")
         llm_res = await query_cloud_llm_async(text)
         if llm_res["success"]:
@@ -685,7 +685,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
 
     # 0. Pra-penyaringan Kontras Sentimen
     is_sarcasm_candidate = detect_sentiment_contrast(text)
-    if is_sarcasm_candidate and OPENCODE_API_KEY:
+    if is_sarcasm_candidate and GEMINI_API_KEY:
         print(f"Pola kontras sentimen terdeteksi. Bypass ke Tier 3 (Cloud LLM) untuk: '{text}'")
         async for state in query_cloud_llm_stream_async(text):
             if state["done"]:
@@ -809,7 +809,7 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
         return
             
     # 3. Sangat ragu-ragu -> Panggil Cloud LLM (Tier 3 jika terkonfigurasi)
-    if OPENCODE_API_KEY:
+    if GEMINI_API_KEY:
         print(f"Kasus kompleks terdeteksi, meneruskan ke Tier 3 (Cloud LLM) untuk: '{text}'")
         async for state in query_cloud_llm_stream_async(text):
             if state["done"]:

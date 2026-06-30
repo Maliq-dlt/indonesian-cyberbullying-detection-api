@@ -22,9 +22,9 @@ from normalizer import normalize_text
 # ---------------------------------------------------------------------------
 # Cloud LLM configuration (read from environment at import time)
 # ---------------------------------------------------------------------------
-OPENCODE_API_KEY: str = os.getenv("OPENCODE_API_KEY", "")
-OPENCODE_BASE_URL: str = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
-OPENCODE_MODEL: str = os.getenv("OPENCODE_MODEL", "kimi-k2.6")
+GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+GEMINI_BASE_URL: str = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 # ---------------------------------------------------------------------------
 # Leetspeak substitution map used by perturb_text
@@ -88,14 +88,14 @@ slang_praise_raw: list[str] = [
 # ---------------------------------------------------------------------------
 
 def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
-    """Use a local OpenCode Go instance to generate paraphrase variations.
+    """Use a local Gemini API instance to generate paraphrase variations.
 
     Returns up to 2 paraphrased versions of *text*, preserving the
     original register (slang / harsh / polite) and label semantics.
-    Returns an empty list when ``OPENCODE_BASE_URL`` is not configured or
+    Returns an empty list when ``GEMINI_BASE_URL`` is not configured or
     when the request fails for any reason.
     """
-    if not OPENCODE_API_KEY:
+    if not GEMINI_API_KEY:
         return []
 
     label_desc = (
@@ -112,9 +112,9 @@ def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
         f'Kalimat asli: "{text}"'
     )
 
-    url = f"{OPENCODE_BASE_URL.rstrip('/')}/chat/completions"
+    url = f"{GEMINI_BASE_URL.rstrip('/')}/chat/completions"
     payload = {
-        "model": OPENCODE_MODEL,
+        "model": GEMINI_MODEL,
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -124,7 +124,7 @@ def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
     }
     
     headers = {
-        "Authorization": f"Bearer {OPENCODE_API_KEY}",
+        "Authorization": f"Bearer {GEMINI_API_KEY}",
         "Content-Type": "application/json"
     }
 

@@ -10,6 +10,21 @@ from models import (
 from routes.deps import verify_api_key, rate_limit_cloud_llm_and_batch
 import routes.state as state
 
+import sys
+
+def run_async_in_new_loop(coro_func, *args):
+    """Helper to run an async function in a new thread with ProactorEventLoop on Windows.
+    This resolves the NotImplementedError when launching subprocesses in SelectorEventLoop under Uvicorn.
+    """
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro_func(*args))
+    finally:
+        loop.close()
+
 router = APIRouter(prefix="/api", tags=["admin"])
 
 @router.post("/scrape/tiktok", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
@@ -17,7 +32,8 @@ async def api_scrape_tiktok(req: ScrapeTikTokRequest):
     try:
         from scraper.tiktok import scrape_tiktok_comments
         max_comments = req.max_comments if req.max_comments is not None else 20
-        comments, success = await scrape_tiktok_comments(req.url, max_comments)
+        # Run scraper in a separate thread with a clean ProactorEventLoop
+        comments, success = await asyncio.to_thread(run_async_in_new_loop, scrape_tiktok_comments, req.url, max_comments)
         if not success:
             raise HTTPException(status_code=502, detail="Gagal mengikis data dari TikTok. Server tujuan tidak merespons atau memblokir scraping.")
         return ScrapeResponse(success=success, count=len(comments), data=comments)
@@ -33,7 +49,8 @@ async def api_scrape_x(req: ScrapeXRequest):
     try:
         from scraper.twitter import scrape_x_tweets
         max_tweets = req.max_tweets if req.max_tweets is not None else 20
-        tweets, success = await scrape_x_tweets(req.url, max_tweets)
+        # Run scraper in a separate thread with a clean ProactorEventLoop
+        tweets, success = await asyncio.to_thread(run_async_in_new_loop, scrape_x_tweets, req.url, max_tweets)
         if not success:
             raise HTTPException(status_code=502, detail="Gagal mengikis data dari X. Server tujuan tidak merespons atau memblokir scraping.")
         return ScrapeResponse(success=success, count=len(tweets), data=tweets)

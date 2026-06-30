@@ -13,7 +13,7 @@ if not exist .env (
 
 :: 2. Jalankan Backend FastAPI di jendela baru
 echo [INFO] Menjalankan Backend API...
-start "BullyGuard Backend API" cmd /k "cd cyberbullying_api && call .venv\Scripts\activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
+start "BullyGuard Backend API" cmd /k "cd cyberbullying_api && ..\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000"
 
 :: 3. Jalankan Frontend React di jendela baru
 echo [INFO] Menjalankan Frontend Web Dashboard...

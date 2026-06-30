@@ -37,7 +37,7 @@ Sistem ini dirancang sebagai **asisten penyaring awal (screening assistant)** un
 - 🧠 **Hybrid Multi-Tier Pipeline**: 
   - **Tier 1 (Lokal / Cepat)**: Deteksi kilat dengan Lexicon Matching + Machine Learning (Logistic Regression & TF-IDF).
   - **Tier 2 (Lokal / Semantik)**: Evaluasi semantik mendalam menggunakan model Transformer (XLM-RoBERTa) yang dioptimalkan dalam format ONNX Runtime.
-  - **Tier 3 (Eksternal / Komponen Fleksibel)**: Deteksi kalimat sarkasme kompleks menggunakan Cloud LLM (OpenCode Go API).
+  - **Tier 3 (Eksternal / Komponen Fleksibel)**: Deteksi kalimat sarkasme kompleks menggunakan Cloud LLM (Gemini API).
 - 🔍 **Explainable AI (XAI)**: Visualisasi bobot SHAP untuk setiap kata guna menunjukkan kata spesifik yang memicu keputusan AI.
 - ⚡ **Optimasi Docker Berkinerja Tinggi**:
   - Image API dan Worker saling berbagi *cache layers* (Image Re-use) sehingga menghemat RAM dan mempercepat waktu build.
@@ -59,7 +59,7 @@ graph TD
     C -- Tidak (Ragu-ragu) --> E[🧠 Tier 2: Transformer ONNX]
     E --> F{Masih Ambigu?}
     F -- Tidak --> G[🤝 Hasil Ensemble Lokal]
-    F -- Ya --> H[🤖 Tier 3: LLM / OpenCode Go Opsional]
+    F -- Ya --> H[🤖 Tier 3: LLM / Gemini API Opsional]
     H --> I[🎯 Hasil LLM / Fallback Ensemble]
     D --> J[💾 Simpan ke Riwayat & Redis Cache]
     G --> J
@@ -104,7 +104,7 @@ Pastikan komputer lokal Anda telah terpasang perangkat lunak berikut:
 - **Python 3.11** atau lebih baru
 - **Node.js 20** atau lebih baru (berserta **npm**)
 - **Docker** & **Docker Compose**
-- **OpenCode Go** *(Opsional, diperlukan jika ingin mengaktifkan Cloud LLM Tier 3)*
+- **Gemini API (Google)** *(Opsional, diperlukan jika ingin mengaktifkan Cloud LLM Tier 3)*
 
 ---
 
@@ -134,9 +134,9 @@ PG_URL=postgresql://cyber_user:change_this_postgres_password@db:5432/cyberbullyi
 REDIS_URL=redis://:change_this_redis_password@redis:6379/0
 
 # Layanan Cloud LLM Tier 3
-OPENCODE_API_KEY=sk-...
-OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1
-OPENCODE_MODEL=kimi-k2.6
+GEMINI_API_KEY=AIzaSy...
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+GEMINI_MODEL=gemini-1.5-flash
 ```
 
 > [!TIP]

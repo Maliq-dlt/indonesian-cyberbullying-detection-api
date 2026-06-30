@@ -8,10 +8,10 @@ from typing import List, Dict, Any, AsyncGenerator
 from classifier.database import get_cached_response, save_cached_response, get_pg_pool, decrypt_text
 from normalizer import normalize_text
 
-# Konfigurasi OpenCode Go dinamis dari environment variables
-OPENCODE_API_KEY = os.getenv("OPENCODE_API_KEY", "")
-OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
-OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "kimi-k2.6")
+# Konfigurasi Gemini API dinamis dari environment variables
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 # Konfigurasi RAG Pool untuk Few-Shot LLM Dinamis
 ABUSIVE_WORDS_SET = set()
@@ -115,18 +115,18 @@ async def query_cloud_llm_async(text: str, model_name: str | None = None) -> Dic
 
 async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -> Dict[str, Any]:
 
-    if not OPENCODE_API_KEY:
+    if not GEMINI_API_KEY:
         return {
             "is_toxic": False,
             "is_bully": False,
-            "reason": "OpenCode API Key tidak dikonfigurasi.",
+            "reason": "Gemini API Key tidak dikonfigurasi.",
             "success": False
         }
     
-    url = f"{OPENCODE_BASE_URL.rstrip('/')}/chat/completions"
+    url = f"{GEMINI_BASE_URL.rstrip('/')}/chat/completions"
     
     if not model_name:
-        model_name = OPENCODE_MODEL
+        model_name = GEMINI_MODEL
     
     # Skema output terstruktur yang formal dengan Chain-of-Thought (reasoning diletakkan pertama)
     schema = {
@@ -181,7 +181,7 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
     }
     
     headers = {
-        "Authorization": f"Bearer {OPENCODE_API_KEY}",
+        "Authorization": f"Bearer {GEMINI_API_KEY}",
         "Content-Type": "application/json"
     }
     
@@ -234,18 +234,18 @@ async def query_cloud_llm_stream_async(text: str, model_name: str | None = None)
 
 async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = None) -> AsyncGenerator[Dict[str, Any], None]:
 
-    if not OPENCODE_API_KEY:
+    if not GEMINI_API_KEY:
         yield {
-            "chunk": "OpenCode API Key tidak dikonfigurasi.", 
+            "chunk": "Gemini API Key tidak dikonfigurasi.", 
             "done": True, 
-            "final_data": {"is_toxic": False, "is_bully": False, "reason": "OpenCode API Key tidak dikonfigurasi.", "success": False}
+            "final_data": {"is_toxic": False, "is_bully": False, "reason": "Gemini API Key tidak dikonfigurasi.", "success": False}
         }
         return
     
-    url = f"{OPENCODE_BASE_URL.rstrip('/')}/chat/completions"
+    url = f"{GEMINI_BASE_URL.rstrip('/')}/chat/completions"
     
     if not model_name:
-        model_name = OPENCODE_MODEL
+        model_name = GEMINI_MODEL
     
     schema = {
         "type": "object",
@@ -296,7 +296,7 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
     }
     
     headers = {
-        "Authorization": f"Bearer {OPENCODE_API_KEY}",
+        "Authorization": f"Bearer {GEMINI_API_KEY}",
         "Content-Type": "application/json"
     }
     

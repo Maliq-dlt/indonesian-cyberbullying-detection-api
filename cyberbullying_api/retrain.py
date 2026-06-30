@@ -11,14 +11,18 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.metrics import classification_report, f1_score
 from dotenv import load_dotenv
-
-load_dotenv()
+if os.path.exists(".env"):
+    load_dotenv(".env")
+elif os.path.exists("../.env"):
+    load_dotenv("../.env")
+else:
+    load_dotenv()
 
 from normalizer import init_slang_map, normalize_text
 
 from training import (
     augment_text_with_llm, perturb_text,
-    sarcasm_raw, slang_praise_raw, OPENCODE_API_KEY, OPENCODE_BASE_URL,
+    sarcasm_raw, slang_praise_raw, GEMINI_API_KEY, GEMINI_BASE_URL,
     load_twitter_dataset, load_instagram_dataset,
     load_combined_dataset, ingest_scraped_csv, ingest_database_memory,
     load_mendeley_dataset, load_tiktok_rhiosutoyo_dataset
@@ -109,7 +113,7 @@ if new_records:
                 added_count += 1
                 
                 # Opsi 4: LLM-based Data Augmentation
-                if OPENCODE_API_KEY:
+                if GEMINI_API_KEY:
                     print(f"  -> Menghasilkan augmentasi LLM untuk teks: '{rec['String']}'")
                     variations = augment_text_with_llm(rec["String"], is_bully)
                     for var in variations:
@@ -129,7 +133,7 @@ if new_records:
         if appended_list:
             df_to_append = pd.DataFrame(appended_list)
             df_combined = pd.concat([df_combined, df_to_append], ignore_index=True)
-            df_combined.to_csv(DATASET_COMBINED_PATH, index=False)
+            df_combined.to_csv(DATASET_COMBINED_PATH, index=False, encoding="utf-8")
             print(f"Sukses mengintegrasikan {added_count} sampel baru secara unik ke {DATASET_COMBINED_PATH}!")
         else:
             print("Seluruh sampel baru sudah ada dalam dataset (duplikat diabaikan).")

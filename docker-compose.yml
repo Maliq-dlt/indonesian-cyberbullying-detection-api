@@ -49,9 +49,9 @@ services:
       ALLOW_MISSING_API_KEY_IN_DEV: ${ALLOW_MISSING_API_KEY_IN_DEV:-true}
       PG_URL: postgresql://${POSTGRES_USER:-cyber_user}:${POSTGRES_PASSWORD:-cyber_password}@db:5432/${POSTGRES_DB:-cyberbullying_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-cyber_redis_pass}@redis:6379/0
-      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
-      OPENCODE_BASE_URL: ${OPENCODE_BASE_URL:-https://opencode.ai/zen/go/v1}
-      OPENCODE_MODEL: ${OPENCODE_MODEL:-kimi-k2.6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
       HF_TOKEN: ${HF_TOKEN:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173}
       RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-15}
@@ -81,9 +81,9 @@ services:
       API_KEY: ${API_KEY:-}
       PG_URL: postgresql://${POSTGRES_USER:-cyber_user}:${POSTGRES_PASSWORD:-cyber_password}@db:5432/${POSTGRES_DB:-cyberbullying_db}
       REDIS_URL: redis://:${REDIS_PASSWORD:-cyber_redis_pass}@redis:6379/0
-      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
-      OPENCODE_BASE_URL: ${OPENCODE_BASE_URL:-https://opencode.ai/zen/go/v1}
-      OPENCODE_MODEL: ${OPENCODE_MODEL:-opencode-go/kimi-k2.6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
       HF_TOKEN: ${HF_TOKEN:-}
     depends_on:
       db:
