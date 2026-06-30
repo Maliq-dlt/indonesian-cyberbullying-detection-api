@@ -56,7 +56,28 @@ GEMINI_MODEL=gemini-1.5-flash
 
 ---
 
-## 🐳 3. Jalankan Database & Cache (Docker)
+## ⚡ 3. Opsi Peluncuran Cepat (Quick Start Runner)
+
+Jika Anda ingin langsung menjalankan Backend API dan Frontend Dashboard secara bersamaan tanpa perlu membuka banyak terminal atau menjalankan perintah secara manual satu per satu:
+
+* **Bagi Pengguna Windows (PowerShell/CMD):**
+  Klik ganda berkas `run_local.bat` di root direktori proyek, atau jalankan perintah:
+  ```cmd
+  run_local.bat
+  ```
+
+* **Bagi Pengguna Linux / macOS:**
+  Jalankan perintah berikut di terminal root proyek Anda:
+  ```bash
+  chmod +x run_local.sh
+  ./run_local.sh
+  ```
+
+*Script di atas akan memeriksa file `.env` secara otomatis, kemudian meluncurkan server uvicorn backend dan vite dev-server frontend secara paralel.*
+
+---
+
+## 🐳 4. Jalankan Database & Cache (Docker)
 
 Nyalakan PostgreSQL (dengan ekstensi `pgvector`) dan Redis di latar belakang menggunakan Docker Compose:
 
@@ -72,7 +93,7 @@ docker compose ps
 
 ---
 
-## ⚙️ 4. Setup Backend API
+## ⚙️ 5. Setup Backend API
 
 Buka direktori `cyberbullying_api` dan buat *virtual environment* Python khusus:
 
@@ -115,7 +136,7 @@ Server kini aktif di `http://localhost:8000`. Anda dapat mengakses dokumentasi A
 
 ---
 
-## 🖥️ 5. Setup Frontend Web Dashboard
+## 🖥️ 6. Setup Frontend Web Dashboard
 
 Buka terminal baru di root direktori proyek, lalu masuk ke folder `frontend`:
 
@@ -129,7 +150,7 @@ Dashboard frontend Anda kini dapat diakses melalui peramban (*browser*) di [http
 
 ---
 
-## 🧪 6. Pengujian & Penjaminan Mutu (Testing)
+## 🧪 7. Pengujian & Penjaminan Mutu (Testing)
 
 ### 🐍 Backend Unit Testing
 Pastikan *virtual environment* Anda telah aktif di terminal root proyek, kemudian jalankan:
@@ -147,7 +168,7 @@ npm run build
 
 ---
 
-## ❓ 7. Pemecahan Masalah (Troubleshooting)
+## ❓ 8. Pemecahan Masalah (Troubleshooting)
 
 ### ❌ Backend Tidak Bisa Connect ke PostgreSQL
 - Pastikan container PostgreSQL aktif. Jalankan `docker compose ps`.
