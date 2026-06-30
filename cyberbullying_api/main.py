@@ -135,9 +135,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="BullyGuard ID API",
-    description="API for Indonesian cyberbullying and hate-speech detection using lexicon, ML, Transformer, and optional LLM-assisted routing.",
+    title="🛡️ BullyGuard ID — Indonesian Cyberbullying Detection API",
+    description=(
+        "### BullyGuard ID API\n"
+        "Sistem deteksi perundungan siber (cyberbullying) dan ujaran kebencian (hate speech) "
+        "berbahasa Indonesia menggunakan arsitektur Hybrid Klasifikasi 3-Tier:\n\n"
+        "* **Tier 1 (Lexicon & Machine Learning)**: Analisis berbasis leksikon abusive dan model Logistic Regression + TF-IDF.\n"
+        "* **Tier 2 (Deep Learning)**: Model XLM-RoBERTa ONNX Quantized untuk pemahaman konteks semantik.\n"
+        "* **Tier 3 (Cloud LLM)**: Fallback dinamis menggunakan Gemini API dan pencarian RAG (Retrieval-Augmented Generation).\n\n"
+        "Dokumentasi API lengkap dengan penanganan Active Learning dan Social Media Scraper (TikTok + X/Twitter)."
+    ),
     version="1.1.0",
+    contact={
+        "name": "BullyGuard ID Team",
+        "url": "https://github.com/Maliq-dlt/indonesian-cyberbullying-detection-api",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
     lifespan=lifespan,
 )
 
