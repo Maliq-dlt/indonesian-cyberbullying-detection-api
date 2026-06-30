@@ -25,4 +25,6 @@ def __getattr__(name):
         return getattr(_llm, name)
     if name in ("BASE_DIR", "PREPARED_LEXICON", "ML_MODEL", "ML_VECTORIZER", "TRANSFORMER_SESSION", "TRANSFORMER_TOKENIZER", "TRANSFORMER_MODEL", "THRESHOLDS"):
         return getattr(_predictor, name)
+    if name in ("PG_POOL", "REDIS_CLIENT"):
+        return getattr(_database, name)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
