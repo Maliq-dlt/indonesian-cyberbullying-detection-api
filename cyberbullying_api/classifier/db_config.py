@@ -68,9 +68,38 @@ def decrypt_text(enc_text: str) -> str:
 PG_URL = os.getenv("PG_URL", "postgresql://cyber_user:cyber_password@127.0.0.1:5432/cyberbullying_db")
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
+class EventLoopSafeLock:
+    def __init__(self):
+        self._locks = {}
+
+    def _get_lock(self):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.Lock()
+        if loop not in self._locks:
+            self._locks[loop] = asyncio.Lock()
+        return self._locks[loop]
+
+    async def acquire(self):
+        return await self._get_lock().acquire()
+
+    def release(self):
+        self._get_lock().release()
+
+    def locked(self):
+        return self._get_lock().locked()
+
+    async def __aenter__(self):
+        await self._get_lock().acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self._get_lock().release()
+
 PG_POOL = None
 REDIS_CLIENT = None
-SQLITE_WRITE_LOCK = asyncio.Lock()
+SQLITE_WRITE_LOCK = EventLoopSafeLock()
 
 PG_FAILED_UNTIL = 0.0
 
