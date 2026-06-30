@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     tailwindcss()
   ],
-  // @ts-ignore
+  // @ts-expect-error - vitest types mismatch with vite 8
   test: {
     globals: true,
     environment: 'jsdom',
