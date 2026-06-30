@@ -32,7 +32,7 @@ elif os.path.exists("../.env"):
 else:
     load_dotenv()
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 import classifier
@@ -197,12 +197,39 @@ def read_root():
 
 
 @app.get("/health")
-def health_check():
-    return {
+async def health_check(response: Response):
+    health_status = {
         "status": "healthy",
         "message": "API is alive.",
         "environment": current_env(),
+        "database": "unconfigured",
+        "redis": "unconfigured"
     }
+
+    # Test PostgreSQL
+    pg_pool = await classifier.get_pg_pool()
+    if pg_pool:
+        try:
+            async with pg_pool.acquire() as conn:
+                await conn.execute("SELECT 1")
+            health_status["database"] = "connected"
+        except Exception as e:
+            health_status["database"] = f"error: {str(e)}"
+            health_status["status"] = "unhealthy"
+            response.status_code = 503
+    
+    # Test Redis
+    redis_client = await classifier.get_redis()
+    if redis_client:
+        try:
+            await redis_client.ping()
+            health_status["redis"] = "connected"
+        except Exception as e:
+            health_status["redis"] = f"error: {str(e)}"
+            health_status["status"] = "unhealthy"
+            response.status_code = 503
+
+    return health_status
 
 
 @app.get("/models/status", dependencies=[Depends(verify_api_key)])
