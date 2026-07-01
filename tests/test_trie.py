@@ -1,4 +1,4 @@
-from cyberbullying_api.normalizer import AbusiveTrie, get_close_match_abusive
+from cyberbullying_api.normalizer import AbusiveTrie
 import pytest
 
 def test_abusive_trie_search():
