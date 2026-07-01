@@ -28,7 +28,12 @@ GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 # Leetspeak substitution map used by perturb_text
 # ---------------------------------------------------------------------------
 PERTURB_LEET: dict[str, str] = {
-    'a': '4', 'i': '1', 'e': '3', 'o': '0', 's': '5', 'g': '9',
+    "a": "4",
+    "i": "1",
+    "e": "3",
+    "o": "0",
+    "s": "5",
+    "g": "9",
 }
 
 # ---------------------------------------------------------------------------
@@ -85,6 +90,7 @@ slang_praise_raw: list[str] = [
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
     """Use a local Gemini API instance to generate paraphrase variations.
 
@@ -96,10 +102,7 @@ def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
     if not GEMINI_API_KEY:
         return []
 
-    label_desc = (
-        "cyberbullying/perundungan" if is_bully
-        else "komentar aman/bukan perundungan"
-    )
+    label_desc = "cyberbullying/perundungan" if is_bully else "komentar aman/bukan perundungan"
     prompt = (
         f"Sebagai ahli bahasa Indonesia, berikan 2 variasi atau parafrase "
         f"alternatif untuk kalimat berikut.\n"
@@ -113,18 +116,13 @@ def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
     url = f"{GEMINI_BASE_URL.rstrip('/')}/chat/completions"
     payload = {
         "model": GEMINI_MODEL,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
+        "messages": [{"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
         "temperature": 0.5,
-        "stream": False
+        "stream": False,
     }
 
-    headers = {
-        "Authorization": f"Bearer {GEMINI_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
 
     try:
         with httpx.Client(timeout=15.0) as client:

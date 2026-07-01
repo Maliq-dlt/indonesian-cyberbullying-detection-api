@@ -1,0 +1,5 @@
+- The module consists of four independent React functional components located in `frontend/src/components/`.
+- `Navbar.tsx` and `Sidebar.tsx` serve as primary layout containers, managing global state props like `activeTab`, `theme`, and `apiStatus` via controlled interfaces.
+- `SkeletonLoader.tsx` exports multiple named skeleton components for consistent loading placeholders across different UI sections (comments, tables, stats).
+- `XAIHighlightText.tsx` implements a specialized text rendering logic for model interpretability, mapping word-level weights to visual highlights and tooltips.
+- Dependencies are limited to `react`, `lucide-react` for iconography, and `framer-motion` for animations in navigation elements.

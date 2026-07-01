@@ -71,7 +71,21 @@ def _resolve_columns(args: argparse.Namespace, df: pd.DataFrame) -> tuple[str, s
 
 
 def _to_binary(series: pd.Series) -> np.ndarray:
-    positive_values = {1, "1", "true", "True", "TRUE", "yes", "Ya", "ya", "toxic", "bully", "Bullying", "negative", "negatif"}
+    positive_values = {
+        1,
+        "1",
+        "true",
+        "True",
+        "TRUE",
+        "yes",
+        "Ya",
+        "ya",
+        "toxic",
+        "bully",
+        "Bullying",
+        "negative",
+        "negatif",
+    }
     return series.fillna(0).map(lambda x: 1 if x in positive_values else 0).astype(int).to_numpy()
 
 

@@ -11,6 +11,7 @@ def test_predict_lexicon_safe(client):
     assert data["risk_label"] == "aman/tidak terdeteksi"
     assert data["score"] == 0
 
+
 def test_predict_lexicon_toxic(client):
     """Menguji kata kasar terdeteksi oleh leksikon."""
     payload = {"text": "kamu goblok banget sih"}
@@ -20,6 +21,7 @@ def test_predict_lexicon_toxic(client):
     assert data["is_cyberbullying"] is True
     assert data["risk_label"] in ["sedang", "tinggi"]
     assert len(data["matches"]) > 0
+
 
 def test_predict_ml_safe(client):
     """Menguji ML mendeteksi kalimat positif sebagai non-toxic & non-bully."""
@@ -31,6 +33,7 @@ def test_predict_ml_safe(client):
     assert data["is_bully"] is False
     assert "Normal" in data["category"]
 
+
 def test_predict_ml_sarcasm(client):
     """Menguji ML mendeteksi sarkasme sebagai non-toxic tapi bully."""
     payload = {"text": "ganteng banget mukalu kaya spakbor mio"}
@@ -40,6 +43,7 @@ def test_predict_ml_sarcasm(client):
     assert data["is_toxic"] is False
     assert data["is_bully"] is True
     assert "Sarkasme" in data["category"]
+
 
 def test_predict_ml_slang_praise(client):
     """Menguji ML mendeteksi slang pujian sebagai toxic tapi non-bully."""
@@ -51,6 +55,7 @@ def test_predict_ml_slang_praise(client):
     assert data["is_bully"] is False
     assert "slang" in data["category"]
 
+
 def test_predict_ml_direct_bully(client):
     """Menguji ML mendeteksi serangan langsung sebagai toxic & bully."""
     payload = {"text": "Kamu bodoh banget sih, dasar tolol!"}
@@ -61,6 +66,7 @@ def test_predict_ml_direct_bully(client):
     assert data["is_bully"] is True
     assert "bully" in data["category"]
 
+
 def test_predict_ensemble_sarcasm(client):
     """Menguji Ensemble mendeteksi sarkasme halus ujian nol sebagai non-toxic & bully."""
     payload = {"text": "Wah pintar sekali kamu ya, sampai nilai ujianmu nol."}
@@ -70,6 +76,7 @@ def test_predict_ensemble_sarcasm(client):
     assert data["is_toxic"] is False
     assert data["is_bully"] is True
     assert "Sarkasme" in data["category"]
+
 
 def test_predict_hybrid_route_fast(client):
     """Menguji rute hybrid menyelesaikan kalimat mudah langsung di Tier 1."""
@@ -82,13 +89,14 @@ def test_predict_hybrid_route_fast(client):
     assert "Tier 1" in data["decision_source"]
     assert "Normal" in data["category"]
 
+
 def test_predict_batch_processing(client):
     """Menguji endpoint prediksi batch untuk daftar komentar."""
     payload = {
         "texts": [
             "Semangat belajarnya ya, jangan menyerah!",
             "Kamu bodoh banget sih, dasar tolol!",
-            "kamu hebat banget sih anjing"
+            "kamu hebat banget sih anjing",
         ]
     }
     response = client.post("/predict/batch", json=payload)
@@ -100,6 +108,7 @@ def test_predict_batch_processing(client):
     assert data["results"][1]["is_toxic"] is True
     assert data["results"][2]["is_toxic"] is True
 
+
 def test_predict_text_length_validation(client):
     """Menguji batas karakter input (max 500) dan min (1)."""
     response = client.post("/predict/lexicon", json={"text": ""})
@@ -108,6 +117,7 @@ def test_predict_text_length_validation(client):
     long_text = "anjing " * 100
     response = client.post("/predict/lexicon", json={"text": long_text})
     assert response.status_code == 422
+
 
 def test_predict_batch_constraints(client):
     """Menguji batasan pada input batch."""
@@ -123,9 +133,11 @@ def test_predict_batch_constraints(client):
     response = client.post("/predict/batch", json=payload)
     assert response.status_code == 422
 
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
 
 @pytest.mark.anyio
 async def test_sqlite_write_concurrency():
@@ -144,7 +156,7 @@ async def test_sqlite_write_concurrency():
             probability_bully=0.1,
             category="Aman",
             decision_source="Test",
-            reason="Testing SQLite concurrency"
+            reason="Testing SQLite concurrency",
         )
         for i in range(10)
     ]
@@ -155,6 +167,7 @@ async def test_sqlite_write_concurrency():
     retrieved = await get_classification_memory("Teks tes konkurensi SQLite ke-5")
     assert retrieved is not None
     assert retrieved.text == "Teks tes konkurensi SQLite ke-5"
+
 
 @pytest.mark.anyio
 async def test_semantic_caching():
@@ -181,7 +194,7 @@ async def test_semantic_caching():
         probability_bully=0.9,
         category="Bullying",
         decision_source="ManualTest",
-        reason="Komentar mengandung ujaran kebencian."
+        reason="Komentar mengandung ujaran kebencian.",
     )
     await save_classification_memory(res, emb_json)
 
@@ -191,6 +204,7 @@ async def test_semantic_caching():
     assert "Semantic Cache Match" in cached_res.decision_source
     assert cached_res.is_toxic is True
     assert cached_res.is_bully is True
+
 
 def test_word_importances_in_predictions(client):
     """Menguji bahwa key 'word_importances' dikembalikan dan terisi pada kalimat yang terdeteksi toxic/bully."""
@@ -209,6 +223,7 @@ def test_word_importances_in_predictions(client):
 
 def test_predict_hybrid_stream_lexicon_bypass(client):
     import json
+
     payload = {"text": "kamu goblok banget sih unikstreambypass"}
     response = client.post("/predict/hybrid/stream", json=payload)
     assert response.status_code == 200
@@ -223,4 +238,3 @@ def test_predict_hybrid_stream_lexicon_bypass(client):
                 break
     assert done_event is not None
     assert "Tier 1 (Lexicon Kamus)" in done_event["final_data"]["decision_source"]
-

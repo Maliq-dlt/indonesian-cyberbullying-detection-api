@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend/shared_ui
+title: Shared UI Components
+scope:
+    - frontend/src/components/Sidebar.tsx
+    - frontend/src/components/Navbar.tsx
+    - frontend/src/components/SkeletonLoader.tsx
+    - frontend/src/components/XAIHighlightText.tsx
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,6 @@
+- **Web Framework**: FastAPI with Uvicorn ASGI server.
+- **ML/AI**: Scikit-learn (Logistic Regression/TF-IDF), Hugging Face Transformers (XLM-RoBERTa), ONNX Runtime for quantized inference, Sentence-Transformers for embeddings, and Google Gemini API via httpx.
+- **Data Stores**: PostgreSQL with pgvector extension, Redis for caching and pub/sub, and SQLite for local fallback storage.
+- **Async Task Queue**: Celery with Redis broker/backend for background training and scraping tasks.
+- **Browser Automation**: Playwright for social media scraping with persistent browser profiles.
+- **Security**: PyJWT for authentication, Cryptography (Fernet) for data-at-rest encryption, and custom SSRF protection middleware.

@@ -19,8 +19,7 @@ def check_ssrf_url(url: str, allowed_domains: list[str]) -> str:
 
         # Periksa whitelist domain (harus berupa domain itu sendiri atau submainnya)
         domain_ok = any(
-            hostname.lower() == domain or hostname.lower().endswith('.' + domain)
-            for domain in allowed_domains
+            hostname.lower() == domain or hostname.lower().endswith("." + domain) for domain in allowed_domains
         )
         if not domain_ok:
             raise ValueError(f"Domain harus berupa atau subdomain dari: {', '.join(allowed_domains)}")
@@ -41,7 +40,7 @@ def check_ssrf_url(url: str, allowed_domains: list[str]) -> str:
                 r"^10\.",
                 r"^192\.168\.",
                 r"^172\.(1[6-9]|2[0-9]|3[0-1])\.",
-                r"^169\.254\."
+                r"^169\.254\.",
             ]
             for pattern in private_ip_patterns:
                 if re.match(pattern, hostname):
@@ -52,7 +51,12 @@ def check_ssrf_url(url: str, allowed_domains: list[str]) -> str:
                 addr_info = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
                 for addr in addr_info:
                     resolved_ip = ipaddress.ip_address(addr[4][0])
-                    if resolved_ip.is_loopback or resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved:
+                    if (
+                        resolved_ip.is_loopback
+                        or resolved_ip.is_private
+                        or resolved_ip.is_link_local
+                        or resolved_ip.is_reserved
+                    ):
                         raise ValueError("URL tidak boleh merujuk ke alamat IP lokal/privat (terdeteksi via DNS)")
             except socket.gaierror:
                 raise ValueError("Gagal melakukan resolusi DNS untuk hostname")
@@ -63,15 +67,18 @@ def check_ssrf_url(url: str, allowed_domains: list[str]) -> str:
 
     return url
 
+
 class TextRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=500)
     use_fuzzy: bool | None = False  # Dinonaktifkan secara default untuk performa maksimal
+
 
 class LexiconMatch(BaseModel):
     matched_phrase: str
     category: str
     severity: str
     method: str
+
 
 class LexiconResponse(BaseModel):
     text: str
@@ -83,10 +90,12 @@ class LexiconResponse(BaseModel):
     matches: list[LexiconMatch]
     execution_time: float | None = 0.0
 
+
 class WordImportance(BaseModel):
     word: str
     weight_toxic: float
     weight_bully: float
+
 
 class MLResponse(BaseModel):
     text: str
@@ -98,6 +107,7 @@ class MLResponse(BaseModel):
     word_importances: list[WordImportance] = []
     execution_time: float | None = 0.0
 
+
 class TransformerResponse(BaseModel):
     text: str
     is_toxic: bool
@@ -108,6 +118,7 @@ class TransformerResponse(BaseModel):
     word_importances: list[WordImportance] = []
     execution_time: float | None = 0.0
 
+
 class EnsembleResponse(BaseModel):
     text: str
     is_toxic: bool
@@ -117,6 +128,7 @@ class EnsembleResponse(BaseModel):
     category: str
     word_importances: list[WordImportance] = []
     execution_time: float | None = 0.0
+
 
 class HybridResponse(BaseModel):
     text: str
@@ -130,11 +142,12 @@ class HybridResponse(BaseModel):
     word_importances: list[WordImportance] = []
     execution_time: float | None = 0.0
 
+
 class BatchTextRequest(BaseModel):
     texts: list[str] = Field(..., min_length=1, max_length=50)
     model_name: str | None = "llama3.2:3b"
 
-    @field_validator('texts')
+    @field_validator("texts")
     @classmethod
     def validate_texts_length(cls, v: list[str]) -> list[str]:
         if len(v) > 50:
@@ -142,6 +155,7 @@ class BatchTextRequest(BaseModel):
         if len(v) < 1:
             raise ValueError("Minimal harus ada 1 teks dalam batch")
         return v
+
 
 class BatchItemResponse(BaseModel):
     text: str
@@ -154,8 +168,10 @@ class BatchItemResponse(BaseModel):
     reason: str
     word_importances: list[WordImportance] = []
 
+
 class BatchResponse(BaseModel):
     results: list[BatchItemResponse]
+
 
 def determine_category(is_toxic: bool, is_bully: bool) -> str:
     if is_toxic and is_bully:
@@ -172,20 +188,20 @@ class ScrapeTikTokRequest(BaseModel):
     url: str = Field(..., min_length=1, max_length=500)
     max_comments: int | None = Field(20, ge=1, le=100)
 
-    @field_validator('url')
+    @field_validator("url")
     @classmethod
     def validate_tiktok_url(cls, v: str) -> str:
-        return check_ssrf_url(v, ['tiktok.com'])
+        return check_ssrf_url(v, ["tiktok.com"])
 
 
 class ScrapeXRequest(BaseModel):
     url: str = Field(..., min_length=1, max_length=500)
     max_tweets: int | None = Field(20, ge=1, le=100)
 
-    @field_validator('url')
+    @field_validator("url")
     @classmethod
     def validate_x_url(cls, v: str) -> str:
-        return check_ssrf_url(v, ['x.com', 'twitter.com'])
+        return check_ssrf_url(v, ["x.com", "twitter.com"])
 
 
 class ScrapeResponse(BaseModel):
@@ -218,6 +234,3 @@ class BulkReallocateItem(BaseModel):
 
 class BulkReallocateRequest(BaseModel):
     items: list[BulkReallocateItem]
-
-
-

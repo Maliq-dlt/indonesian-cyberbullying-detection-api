@@ -11,6 +11,7 @@ import pandas as pd
 
 try:
     from playwright.async_api import async_playwright
+
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     async_playwright = None  # type: ignore
@@ -39,13 +40,10 @@ async def scrape_x_tweets_playwright(query: str, max_tweets: int = 20) -> list[s
     try:
         async with async_playwright() as p:
             proxy_server = os.getenv("PROXY_SERVER")
-            browser = await p.chromium.launch(
-                headless=True,
-                proxy={"server": proxy_server} if proxy_server else None
-            )
+            browser = await p.chromium.launch(headless=True, proxy={"server": proxy_server} if proxy_server else None)
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
 
             with open(COOKIES_X_PATH) as f:
@@ -90,13 +88,10 @@ async def scrape_x_replies_playwright(url: str, max_replies: int = 20) -> list[s
     try:
         async with async_playwright() as p:
             proxy_server = os.getenv("PROXY_SERVER")
-            browser = await p.chromium.launch(
-                headless=True,
-                proxy={"server": proxy_server} if proxy_server else None
-            )
+            browser = await p.chromium.launch(headless=True, proxy={"server": proxy_server} if proxy_server else None)
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             )
 
             with open(COOKIES_X_PATH) as f:
@@ -166,7 +161,7 @@ async def scrape_x_tweets(query: str, max_tweets: int = 20) -> tuple[list[str], 
             path = ""
 
         for instance in NITTER_INSTANCES:
-            inst = instance.rstrip('/')
+            inst = instance.rstrip("/")
             url = f"{inst}{path}"
             try:
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -179,14 +174,16 @@ async def scrape_x_tweets(query: str, max_tweets: int = 20) -> tuple[list[str], 
                         # Lewati tweet utama (indeks 0) jika ada matches
                         start_idx = 1 if len(matches) > 1 else 0
                         for m in matches[start_idx:]:
-                            clean_tweet = re.sub(r'<[^>]+>', '', m).strip()
+                            clean_tweet = re.sub(r"<[^>]+>", "", m).strip()
                             clean_tweet = html.unescape(clean_tweet)
                             if clean_tweet and clean_tweet not in tweets:
                                 tweets.append(clean_tweet)
                                 if len(tweets) >= max_tweets:
                                     break
                         if tweets:
-                            print(f"Sukses mendapatkan {len(tweets)} balasan tweet asli dari X via {instance} (Nitter)!")
+                            print(
+                                f"Sukses mendapatkan {len(tweets)} balasan tweet asli dari X via {instance} (Nitter)!"
+                            )
                             return tweets, True
             except Exception as e:
                 print(f"Warning: Gagal scraping X replies via {instance}: {e}")
@@ -203,7 +200,7 @@ async def scrape_x_tweets(query: str, max_tweets: int = 20) -> tuple[list[str], 
                         html_content = response.text
                         matches = re.findall(r'<div class="tweet-content[^>]*>(.*?)</div>', html_content, re.DOTALL)
                         for m in matches:
-                            clean_tweet = re.sub(r'<[^>]+>', '', m).strip()
+                            clean_tweet = re.sub(r"<[^>]+>", "", m).strip()
                             clean_tweet = html.unescape(clean_tweet)
                             if clean_tweet and clean_tweet not in tweets:
                                 tweets.append(clean_tweet)
@@ -222,5 +219,5 @@ async def scrape_x_tweets(query: str, max_tweets: int = 20) -> tuple[list[str], 
 def save_scraped_data_to_csv(data: list[dict[str, Any]], filepath: str) -> None:
     """Menyimpan data hasil scraping dan prediksi ke file CSV."""
     df = pd.DataFrame(data)
-    df.to_csv(filepath, index=False, encoding='utf-8')
+    df.to_csv(filepath, index=False, encoding="utf-8")
     print(f"Data berhasil disimpan ke {filepath}")

@@ -54,14 +54,12 @@ TRANSFORMER_TOKENIZER: Any = None
 TRANSFORMER_MODEL: Any = None
 EMBEDDING_MODEL: Any = None
 
-THRESHOLDS = {
-    "threshold_toxic": 0.5,
-    "threshold_bully": 0.5
-}
+THRESHOLDS = {"threshold_toxic": 0.5, "threshold_bully": 0.5}
 
 _MODEL_LOCK = threading.Lock()
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
+
 
 def load_thresholds():
     global THRESHOLDS
@@ -70,7 +68,10 @@ def load_thresholds():
         try:
             with open(thresholds_path) as f:
                 THRESHOLDS = json.load(f)
-            logger.info("Thresholds loaded", extra={"toxic": THRESHOLDS['threshold_toxic'], "bully": THRESHOLDS['threshold_bully']})
+            logger.info(
+                "Thresholds loaded",
+                extra={"toxic": THRESHOLDS["threshold_toxic"], "bully": THRESHOLDS["threshold_bully"]},
+            )
         except Exception as e:
             logger.warning("Failed to load thresholds.json, using default 0.5", extra={"error": str(e)})
 
@@ -78,15 +79,15 @@ def load_thresholds():
 def get_calibrated_weights() -> dict:
     try:
         from classifier.settings_store import get_settings_sync
+
         settings = get_settings_sync()
-        return settings.get("ensemble_weights", {
-            "ml_toxic": 0.5, "tr_toxic": 0.5, "ml_bully": 0.65, "tr_bully": 0.35
-        })
+        return settings.get("ensemble_weights", {"ml_toxic": 0.5, "tr_toxic": 0.5, "ml_bully": 0.65, "tr_bully": 0.35})
     except Exception:
         return {"ml_toxic": 0.5, "tr_toxic": 0.5, "ml_bully": 0.65, "tr_bully": 0.35}
 
 
 # ── Model Initialization ─────────────────────────────────────────────────────
+
 
 def init_models():
     with _MODEL_LOCK:
@@ -113,7 +114,7 @@ def _init_models_inner():
     try:
         abusive_path = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "abusive.csv")
         df_abusive = pd.read_csv(abusive_path)
-        abusive_words = df_abusive['ABUSIVE'].dropna().unique().tolist()
+        abusive_words = df_abusive["ABUSIVE"].dropna().unique().tolist()
 
         existing_phrases = {item["phrase"].lower() for item in BASE_CYBERBULLYING_LEXICON}
         new_terms = []
@@ -196,10 +197,13 @@ def _init_models_inner():
 
             if os.path.exists(legacy_onnx):
                 import shutil
+
                 shutil.move(legacy_onnx, onnx_path)
                 logger.info("ONNX model exported successfully", extra={"path": onnx_path})
             else:
-                raise FileNotFoundError("Berkas ekspor model_quantized.onnx tidak ditemukan setelah proses ekspor selesai.")
+                raise FileNotFoundError(
+                    "Berkas ekspor model_quantized.onnx tidak ditemukan setelah proses ekspor selesai."
+                )
         except Exception as e:
             logger.error("Auto ONNX export failed, falling back to PyTorch", extra={"error": str(e)})
     elif not os.path.exists(onnx_path):
@@ -245,6 +249,7 @@ def _init_models_inner():
 
 
 # ── Utility ───────────────────────────────────────────────────────────────────
+
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))

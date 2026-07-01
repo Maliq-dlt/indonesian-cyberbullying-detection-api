@@ -39,6 +39,7 @@ async def api_start_training(model_type: str = "both"):
         if r:
             try:
                 from tasks import celery_app
+
                 inspect = celery_app.control.inspect(timeout=0.5)
                 if inspect:
                     workers = inspect.ping()
@@ -63,13 +64,17 @@ async def api_start_training(model_type: str = "both"):
         if celery_active:
             try:
                 from tasks import run_retrain_task
+
                 if r:
                     try:
                         await r.set("training_status", "running")
                     except Exception as redis_err:
                         logger.warning("Failed to update training status in Redis", extra={"error": str(redis_err)})
                 run_retrain_task.delay(model_type)
-                return {"success": True, "message": f"Proses pelatihan ulang ({model_type.upper()}) berhasil dimulai di Celery worker di latar belakang."}
+                return {
+                    "success": True,
+                    "message": f"Proses pelatihan ulang ({model_type.upper()}) berhasil dimulai di Celery worker di latar belakang.",
+                }
             except Exception as e:
                 logger.error("Error starting Celery retrain, falling back to local", extra={"error": str(e)})
 
@@ -92,6 +97,7 @@ async def api_start_training(model_type: str = "both"):
 
         try:
             import subprocess
+
             if state.LOG_FILE_HANDLE is not None:
                 with contextlib.suppress(Exception):
                     state.LOG_FILE_HANDLE.close()
@@ -101,13 +107,13 @@ async def api_start_training(model_type: str = "both"):
                     try:
                         await r.set("training_status", "running")
                     except Exception as redis_err:
-                        logger.warning("Failed to update training status in Redis (start)", extra={"error": str(redis_err)})
+                        logger.warning(
+                            "Failed to update training status in Redis (start)", extra={"error": str(redis_err)}
+                        )
 
                 first_script = scripts_to_run[0]
                 state.TRAINING_PROCESS = subprocess.Popen(
-                    [sys.executable, "-u", first_script],
-                    stdout=state.LOG_FILE_HANDLE,
-                    stderr=subprocess.STDOUT
+                    [sys.executable, "-u", first_script], stdout=state.LOG_FILE_HANDLE, stderr=subprocess.STDOUT
                 )
 
                 async def monitor_training(proc, log_handle, remaining_scripts):
@@ -121,9 +127,7 @@ async def api_start_training(model_type: str = "both"):
                             with contextlib.suppress(Exception):
                                 log_handle.write(f"\n>>> Menjalankan {os.path.basename(next_script)}...\n")
                             next_proc = subprocess.Popen(
-                                [sys.executable, "-u", next_script],
-                                stdout=log_handle,
-                                stderr=subprocess.STDOUT
+                                [sys.executable, "-u", next_script], stdout=log_handle, stderr=subprocess.STDOUT
                             )
                             await monitor_training(next_proc, log_handle, remaining_scripts[1:])
                             return
@@ -140,11 +144,14 @@ async def api_start_training(model_type: str = "both"):
                                 else:
                                     await r_client.set("training_status", "failed")
                         except Exception as redis_err:
-                            logger.warning("Failed to update training status in Redis (completed)", extra={"error": str(redis_err)})
+                            logger.warning(
+                                "Failed to update training status in Redis (completed)", extra={"error": str(redis_err)}
+                            )
 
                         if proc.returncode == 0:
                             logger.info("Reloading models after training...")
                             from classifier.predictor import init_models
+
                             init_models()
                             logger.info("Model hot-reloaded successfully")
                     except Exception as ex:
@@ -154,7 +161,9 @@ async def api_start_training(model_type: str = "both"):
                             if r_client:
                                 await r_client.set("training_status", "failed")
                         except Exception as redis_err:
-                            logger.warning("Failed to update training status in Redis (error)", extra={"error": str(redis_err)})
+                            logger.warning(
+                                "Failed to update training status in Redis (error)", extra={"error": str(redis_err)}
+                            )
 
                 asyncio.create_task(monitor_training(state.TRAINING_PROCESS, state.LOG_FILE_HANDLE, scripts_to_run[1:]))
 
@@ -165,9 +174,14 @@ async def api_start_training(model_type: str = "both"):
                     try:
                         await r.set("training_status", "failed")
                     except Exception as redis_err:
-                        logger.warning("Failed to update training status in Redis (exception)", extra={"error": str(redis_err)})
+                        logger.warning(
+                            "Failed to update training status in Redis (exception)", extra={"error": str(redis_err)}
+                        )
                 raise
-            return {"success": True, "message": f"Proses pelatihan ulang ({model_type.upper()}) berhasil dimulai di latar belakang."}
+            return {
+                "success": True,
+                "message": f"Proses pelatihan ulang ({model_type.upper()}) berhasil dimulai di latar belakang.",
+            }
         except Exception as e:
             logger.error("Error starting retrain process", extra={"error": str(e)})
             raise HTTPException(status_code=500, detail="Gagal memulai proses pelatihan ulang model.")
@@ -177,6 +191,7 @@ async def api_start_training(model_type: str = "both"):
 async def api_reload_models():
     try:
         from classifier.predictor import init_models
+
         await asyncio.to_thread(init_models)
         return {"success": True, "message": "Model berhasil dimuat ulang secara manual."}
     except Exception as e:
@@ -192,7 +207,7 @@ async def api_stream_logs():
     if not os.path.exists(log_path):
         return StreamingResponse(
             (line for line in ["data: Berkas log belum tersedia. Memulai proses pelatihan untuk membuat log.\n"]),
-            media_type="text/event-stream"
+            media_type="text/event-stream",
         )
 
     async def log_generator():
@@ -214,12 +229,18 @@ async def api_stream_logs():
                             if status in ["completed", "failed"]:
                                 is_finished = True
                         except Exception as redis_err:
-                            logger.warning("Failed to read training_status from Redis (logs)", extra={"error": str(redis_err)})
+                            logger.warning(
+                                "Failed to read training_status from Redis (logs)", extra={"error": str(redis_err)}
+                            )
                             async with state.TRAINING_LOCK:
-                                is_finished = state.TRAINING_PROCESS is None or (state.TRAINING_PROCESS is not None and state.TRAINING_PROCESS.poll() is not None)
+                                is_finished = state.TRAINING_PROCESS is None or (
+                                    state.TRAINING_PROCESS is not None and state.TRAINING_PROCESS.poll() is not None
+                                )
                     else:
                         async with state.TRAINING_LOCK:
-                            is_finished = state.TRAINING_PROCESS is None or (state.TRAINING_PROCESS is not None and state.TRAINING_PROCESS.poll() is not None)
+                            is_finished = state.TRAINING_PROCESS is None or (
+                                state.TRAINING_PROCESS is not None and state.TRAINING_PROCESS.poll() is not None
+                            )
 
                     if is_finished:
                         line = f.readline()
@@ -234,12 +255,9 @@ async def api_stream_logs():
 
 
 @router.get("/train/history")
-async def api_get_training_history(
-    limit: int = 50,
-    offset: int = 0,
-    order: str = "asc"
-):
+async def api_get_training_history(limit: int = 50, offset: int = 0, order: str = "asc"):
     from classifier.database import get_retraining_history
+
     data = await get_retraining_history(limit=limit, offset=offset, order=order)
     return {
         "data": data,
@@ -248,6 +266,6 @@ async def api_get_training_history(
             "offset": offset,
             "total_fetched": len(data),
             "has_more": len(data) >= limit,
-            "order": order
-        }
+            "order": order,
+        },
     }

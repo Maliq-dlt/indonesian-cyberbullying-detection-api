@@ -206,13 +206,14 @@ def is_safe_webhook_url(url: str) -> bool:
     except Exception:
         return False
 
+
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/auth/token",
     scopes={
         "predict": "Akses untuk analisis dan prediksi cyberbullying (Core API).",
-        "admin": "Akses administratif untuk manajemen data HITL, scraper, dan retraining model."
+        "admin": "Akses administratif untuk manajemen data HITL, scraper, dan retraining model.",
     },
-    auto_error=False
+    auto_error=False,
 )
 
 JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
@@ -222,6 +223,7 @@ if not JWT_SECRET:
     if is_development_env():
         # Gunakan secret acak per-process di development (tidak persisten, tidak bisa ditebak)
         import secrets
+
         JWT_SECRET = secrets.token_hex(32)
         logger.warning(
             "JWT_SECRET dan API_KEY tidak diatur. Menggunakan secret acak per-process. "
@@ -234,10 +236,11 @@ if not JWT_SECRET:
         )
 ALGORITHM = "HS256"
 
+
 async def get_current_user(
     security_scopes: SecurityScopes,
     token: str | None = Depends(oauth2_scheme),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key")
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict:
     # 1. Dev mode bypass jika diizinkan dan token serta API Key kosong
     if is_development_env() and _bool_env("ALLOW_MISSING_API_KEY_IN_DEV", True) and not token and not x_api_key:

@@ -1,0 +1,4 @@
+- **Model Initialization**: Requires running `python export_onnx.py` or setting `AUTO_EXPORT_ONNX=true` to generate quantized ONNX models from Hugging Face transformers if not present.
+- **Dataset Dependencies**: Relies on external CSV datasets (`abusive.csv`, `new_kamusalay.csv`, `combined_dataset.csv`) located in a sibling `dataset/` directory for lexicon and slang normalization.
+- **Docker Build**: Uses a multi-stage Dockerfile with `uv` for dependency installation; Playwright browsers are optional and controlled by the `INSTALL_PLAYWRIGHT` build argument.
+- **Environment Configuration**: Requires `.env` file with `API_KEY`, `JWT_SECRET`, `PG_URL`, `REDIS_URL`, and optionally `GEMINI_API_KEY` for Tier 3 fallback.

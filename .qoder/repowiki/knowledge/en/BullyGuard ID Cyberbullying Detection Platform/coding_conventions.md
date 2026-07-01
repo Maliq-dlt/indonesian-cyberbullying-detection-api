@@ -1,0 +1,3 @@
+- Shared Response Normalization: Both frontend API clients and backend predictors normalize prediction outputs into a consistent HybridResponse structure containing toxicity/bullying probabilities and decision sources.
+- Graceful Degradation: The system implements a strict fallback hierarchy (PostgreSQL → SQLite → Local Fallback Logic) for both data persistence and model inference when primary services are unavailable.
+- Security-First Middleware: The backend enforces security headers, request size limits, and correlation ID tracing via custom Starlette middleware applied globally to all routes.

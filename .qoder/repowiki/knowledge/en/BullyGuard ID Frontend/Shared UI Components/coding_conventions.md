@@ -1,0 +1,3 @@
+- Components accept controlled state via props (e.g., `activeTab`, `theme`) rather than managing global state internally.
+- Dark mode support is implemented using Tailwind's `dark:` modifier classes for all interactive and static elements.
+- Interactive elements use `border-none bg-transparent cursor-pointer` with custom hover states for a unified button appearance.

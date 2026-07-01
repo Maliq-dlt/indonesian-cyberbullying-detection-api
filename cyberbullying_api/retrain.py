@@ -45,14 +45,15 @@ os.makedirs(log_dir, exist_ok=True)
 log_file_path = os.path.join(log_dir, "training.log")
 
 
-
 # 1. Konfigurasi Path dan Kamus Slang
 ALAY_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "new_kamusalay.csv")
 SINGKATAN_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_2", "kamus_singkatan.csv")
 ABUSIVE_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "abusive.csv")
 
 DATASET_TWITTER_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_1", "data.csv")
-DATASET_INSTAGRAM_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_instagram", "DATASET CYBERBULLYING INSTAGRAM - FINAL.xlsx")
+DATASET_INSTAGRAM_PATH = os.path.join(
+    BASE_DIR, "..", "dataset", "ds_instagram", "DATASET CYBERBULLYING INSTAGRAM - FINAL.xlsx"
+)
 DATASET_COMBINED_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_2", "combined_dataset.csv")
 DATASET_MENDELEY_DIR = os.path.join(BASE_DIR, "..", "dataset", "ds_mendeley")
 DATASET_TIKTOK_RHIOSUTOYO_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_tiktok_rhiosutoyo", "Dataset-Research.csv")
@@ -60,16 +61,20 @@ DATASET_TIKTOK_RHIOSUTOYO_PATH = os.path.join(BASE_DIR, "..", "dataset", "ds_tik
 # Inisialisasi kamus slang di normalizer secara global
 init_slang_map(ALAY_PATH, SINGKATAN_PATH)
 
+
 def clean_and_normalize(text: str) -> str:
     return normalize_text(text)["spaced"]
 
+
 # Muat Leksikon Abusive
 df_abusive = pd.read_csv(ABUSIVE_PATH)
-abusive_words = set(df_abusive['ABUSIVE'].dropna().str.strip().str.lower().unique().tolist())
+abusive_words = set(df_abusive["ABUSIVE"].dropna().str.strip().str.lower().unique().tolist())
+
 
 def check_toxic_by_lexicon(norm_text: str) -> bool:
     words = set(norm_text.split())
     return any(w in abusive_words for w in words)
+
 
 # 2. Ingest Data Baru dari Hasil Scraping & Database Memori
 new_records = []
@@ -113,7 +118,7 @@ if new_records:
                     "clean_text": clean_t,
                     "String": rec["String"],
                     "encoded_label": encoded_l,
-                    "is_toxic": is_toxic
+                    "is_toxic": is_toxic,
                 }
                 appended_list.append(new_row)
                 existing_strings.add(normalized_check)
@@ -127,13 +132,15 @@ if new_records:
                         var_norm = var.strip().lower()
                         if var_norm not in existing_strings:
                             var_clean = clean_and_normalize(var)
-                            appended_list.append({
-                                "Label": rec["Label"],
-                                "clean_text": var_clean,
-                                "String": var,
-                                "encoded_label": encoded_l,
-                                "is_toxic": is_toxic
-                            })
+                            appended_list.append(
+                                {
+                                    "Label": rec["Label"],
+                                    "clean_text": var_clean,
+                                    "String": var,
+                                    "encoded_label": encoded_l,
+                                    "is_toxic": is_toxic,
+                                }
+                            )
                             existing_strings.add(var_norm)
                             added_count += 1
 
@@ -190,7 +197,9 @@ if df_mendeley is not None:
     print("Berhasil memuat dataset Mendeley (Instagram, Twitter, Youtube).")
 
 # Load TikTok Rhiosutoyo Dataset
-df_tiktok_rhiosutoyo = load_tiktok_rhiosutoyo_dataset(DATASET_TIKTOK_RHIOSUTOYO_PATH, clean_and_normalize, check_toxic_by_lexicon)
+df_tiktok_rhiosutoyo = load_tiktok_rhiosutoyo_dataset(
+    DATASET_TIKTOK_RHIOSUTOYO_PATH, clean_and_normalize, check_toxic_by_lexicon
+)
 if df_tiktok_rhiosutoyo is not None:
     datasets_loaded.append(df_tiktok_rhiosutoyo)
     print("Berhasil memuat dataset TikTok Rhiosutoyo.")
@@ -203,17 +212,9 @@ if not datasets_loaded:
 augmented_records = []
 for _ in range(12):
     for s in sarcasm_raw:
-        augmented_records.append({
-            'text_clean': clean_and_normalize(s),
-            'is_toxic': False,
-            'is_bully': True
-        })
+        augmented_records.append({"text_clean": clean_and_normalize(s), "is_toxic": False, "is_bully": True})
     for s in slang_praise_raw:
-        augmented_records.append({
-            'text_clean': clean_and_normalize(s),
-            'is_toxic': True,
-            'is_bully': False
-        })
+        augmented_records.append({"text_clean": clean_and_normalize(s), "is_toxic": True, "is_bully": False})
 
 df_aug = pd.DataFrame(augmented_records)
 
@@ -221,41 +222,33 @@ df_aug = pd.DataFrame(augmented_records)
 base_df = pd.concat(datasets_loaded, ignore_index=True)
 
 base_df = base_df.dropna()
-base_df = base_df[base_df['text_clean'] != ""]
+base_df = base_df[base_df["text_clean"] != ""]
 print(f"Total data dasar asli: {len(base_df)} baris.")
 
 # 2. Stratified train_test_split berdasarkan kombinasi label joint
-stratify_key = base_df['is_toxic'].astype(str) + "_" + base_df['is_bully'].astype(str)
+stratify_key = base_df["is_toxic"].astype(str) + "_" + base_df["is_bully"].astype(str)
 min_class_count = stratify_key.value_counts().min()
 
 if min_class_count >= 2:
-    train_df, test_df = train_test_split(
-        base_df, test_size=0.15, random_state=42, stratify=stratify_key
-    )
+    train_df, test_df = train_test_split(base_df, test_size=0.15, random_state=42, stratify=stratify_key)
     print("Menggunakan stratified train_test_split berbasis kombinasi label joint.")
 else:
-    train_df, test_df = train_test_split(
-        base_df, test_size=0.15, random_state=42
-    )
+    train_df, test_df = train_test_split(base_df, test_size=0.15, random_state=42)
     print("Fallback ke standard train_test_split.")
 
 # Filter duplikat dari df_aug berdasarkan teks yang sudah ada di test_df sebelum menggabungkan untuk mencegah data leakage
-test_texts = set(test_df['text_clean'].dropna().unique())
-df_aug = df_aug[~df_aug['text_clean'].isin(test_texts)]
+test_texts = set(test_df["text_clean"].dropna().unique())
+df_aug = df_aug[~df_aug["text_clean"].isin(test_texts)]
 print(f"Jumlah data augmentasi setelah difilter untuk mencegah kebocoran: {len(df_aug)} baris.")
 
 # 3. Terapkan Perturbasi Slang/Typo acak HANYA pada train set yang mengandung unsur toxic
 print("Melakukan augmentasi perturbasi teks (typo/leet) secara dinamis pada train set...")
 perturbed_records = []
 for _idx, row in train_df.iterrows():
-    if row['is_toxic'] and random.random() < 0.3:
-        perturbed_text = perturb_text(row['text_clean'], abusive_words)
-        if perturbed_text and perturbed_text != row['text_clean']:
-            perturbed_records.append({
-                'text_clean': perturbed_text,
-                'is_toxic': True,
-                'is_bully': row['is_bully']
-            })
+    if row["is_toxic"] and random.random() < 0.3:
+        perturbed_text = perturb_text(row["text_clean"], abusive_words)
+        if perturbed_text and perturbed_text != row["text_clean"]:
+            perturbed_records.append({"text_clean": perturbed_text, "is_toxic": True, "is_bully": row["is_bully"]})
 
 # 3.5. Ambil data tervalidasi dari database PostgreSQL / SQLite (Active Learning Oversampling)
 validated_records = []
@@ -273,10 +266,12 @@ def run_async(coro):
 
     if loop and loop.is_running():
         from concurrent.futures import ThreadPoolExecutor
+
         with ThreadPoolExecutor(max_workers=1) as executor:
             return executor.submit(lambda: asyncio.run(coro)).result()
     else:
         return asyncio.run(coro)
+
 
 async def fetch_validated_db():
     recs = []
@@ -284,17 +279,22 @@ async def fetch_validated_db():
     if pool:
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch("SELECT encrypted_text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
+                rows = await conn.fetch(
+                    "SELECT encrypted_text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1"
+                )
                 for r in rows:
-                    decrypted = decrypt_text(r['encrypted_text'])
-                    recs.append({
-                        'text_clean': clean_and_normalize(decrypted),
-                        'is_toxic': bool(r['is_toxic']),
-                        'is_bully': bool(r['is_bully'])
-                    })
+                    decrypted = decrypt_text(r["encrypted_text"])
+                    recs.append(
+                        {
+                            "text_clean": clean_and_normalize(decrypted),
+                            "is_toxic": bool(r["is_toxic"]),
+                            "is_bully": bool(r["is_bully"]),
+                        }
+                    )
         except Exception as e:
             print("Warning: Gagal fetch validated dari PostgreSQL:", e)
     return recs
+
 
 try:
     validated_records = run_async(fetch_validated_db())
@@ -307,22 +307,24 @@ if not validated_records:
         if os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            cursor.execute("SELECT encrypted_text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1")
+            cursor.execute(
+                "SELECT encrypted_text, is_toxic, is_bully FROM classification_memory WHERE is_validated = 1"
+            )
             rows = cursor.fetchall()
             for r in rows:
                 decrypted = decrypt_text(r[0])
-                validated_records.append({
-                    'text_clean': clean_and_normalize(decrypted),
-                    'is_toxic': bool(r[1]),
-                    'is_bully': bool(r[2])
-                })
+                validated_records.append(
+                    {"text_clean": clean_and_normalize(decrypted), "is_toxic": bool(r[1]), "is_bully": bool(r[2])}
+                )
             conn.close()
     except Exception as e:
         print("Warning: Gagal fetch validated dari SQLite:", e)
 
 df_validated_oversampled = pd.DataFrame()
 if validated_records:
-    print(f"Ditemukan {len(validated_records)} sampel tervalidasi oleh manusia. Melakukan oversampling x5 untuk Active Learning...")
+    print(
+        f"Ditemukan {len(validated_records)} sampel tervalidasi oleh manusia. Melakukan oversampling x5 untuk Active Learning..."
+    )
     oversampled = []
     for _ in range(5):
         oversampled.extend(validated_records)
@@ -338,16 +340,16 @@ if not df_validated_oversampled.empty:
 
 final_train_df = pd.concat(concat_list, ignore_index=True)
 final_train_df = final_train_df.dropna()
-final_train_df = final_train_df[final_train_df['text_clean'] != ""]
+final_train_df = final_train_df[final_train_df["text_clean"] != ""]
 print(f"Total baris data retraining train set (+ augmented & perturbed & validated): {len(final_train_df)} baris.")
 print(f"Total baris data test set (bersih): {len(test_df)} baris.")
 
 # 5. Siapkan X dan y
-X_train = final_train_df['text_clean']
-y_train = final_train_df[['is_toxic', 'is_bully']].astype(int)
+X_train = final_train_df["text_clean"]
+y_train = final_train_df[["is_toxic", "is_bully"]].astype(int)
 
-X_test = test_df['text_clean']
-y_test = test_df[['is_toxic', 'is_bully']].astype(int)
+X_test = test_df["text_clean"]
+y_test = test_df[["is_toxic", "is_bully"]].astype(int)
 
 # 6. Vectorization
 vectorizer = TfidfVectorizer(max_features=8000, ngram_range=(1, 2), min_df=2)
@@ -358,9 +360,9 @@ X_test_tfidf = vectorizer.transform(X_test)
 print("Melatih ulang Multi-Label Classifier dengan Kalibrasi Probabilitas (Platt Scaling)...")
 from sklearn.calibration import CalibratedClassifierCV
 
-base_lr = LogisticRegression(max_iter=1500, class_weight='balanced', C=1.5, random_state=42)
+base_lr = LogisticRegression(max_iter=1500, class_weight="balanced", C=1.5, random_state=42)
 # Gunakan CalibratedClassifierCV untuk melakukan kalibrasi probabilitas via 5-fold cross-validation
-calibrated_lr = CalibratedClassifierCV(estimator=base_lr, method='sigmoid', cv=5)
+calibrated_lr = CalibratedClassifierCV(estimator=base_lr, method="sigmoid", cv=5)
 clf = MultiOutputClassifier(calibrated_lr)
 clf.fit(X_train_tfidf, y_train)
 
@@ -369,6 +371,7 @@ print("Mengevaluasi dan mengkalibrasi threshold optimal...")
 test_probs = clf.predict_proba(X_test_tfidf)
 probs_toxic = test_probs[0][:, 1]
 probs_bully = test_probs[1][:, 1]
+
 
 def calibrate_threshold(probs, y_true):
     best_thresh = 0.5
@@ -381,15 +384,16 @@ def calibrate_threshold(probs, y_true):
             best_thresh = float(thresh)
     return best_thresh
 
-best_thresh_toxic = calibrate_threshold(probs_toxic, y_test['is_toxic'])
-best_thresh_bully = calibrate_threshold(probs_bully, y_test['is_bully'])
+
+best_thresh_toxic = calibrate_threshold(probs_toxic, y_test["is_toxic"])
+best_thresh_bully = calibrate_threshold(probs_bully, y_test["is_bully"])
 print(f"Threshold Terkalibrasi -> Toxic: {best_thresh_toxic:.2f} | Bully: {best_thresh_bully:.2f}")
 
 # Evaluasi model baru
 preds_toxic = (probs_toxic >= best_thresh_toxic).astype(int)
 preds_bully = (probs_bully >= best_thresh_bully).astype(int)
-new_f1_toxic = f1_score(y_test['is_toxic'], preds_toxic, zero_division=0)
-new_f1_bully = f1_score(y_test['is_bully'], preds_bully, zero_division=0)
+new_f1_toxic = f1_score(y_test["is_toxic"], preds_toxic, zero_division=0)
+new_f1_bully = f1_score(y_test["is_bully"], preds_bully, zero_division=0)
 
 # 9. Mekanisme Rollback Otomatis
 old_model_path = os.path.join(BASE_DIR, "models", "model_lr.joblib")
@@ -403,7 +407,7 @@ if os.path.exists(old_model_path) and os.path.exists(old_vect_path):
         old_vect = joblib.load(old_vect_path)
         X_test_old_tfidf = old_vect.transform(X_test)
 
-        old_thresholds = { "threshold_toxic": 0.5, "threshold_bully": 0.5 }
+        old_thresholds = {"threshold_toxic": 0.5, "threshold_bully": 0.5}
         old_thresholds_path = os.path.join(BASE_DIR, "models", "thresholds.json")
         if os.path.exists(old_thresholds_path):
             with open(old_thresholds_path) as f:
@@ -416,8 +420,8 @@ if os.path.exists(old_model_path) and os.path.exists(old_vect_path):
         old_preds_toxic = (old_probs_toxic >= old_thresholds.get("threshold_toxic", 0.5)).astype(int)
         old_preds_bully = (old_probs_bully >= old_thresholds.get("threshold_bully", 0.5)).astype(int)
 
-        old_f1_toxic = f1_score(y_test['is_toxic'], old_preds_toxic, zero_division=0)
-        old_f1_bully = f1_score(y_test['is_bully'], old_preds_bully, zero_division=0)
+        old_f1_toxic = f1_score(y_test["is_toxic"], old_preds_toxic, zero_division=0)
+        old_f1_bully = f1_score(y_test["is_bully"], old_preds_bully, zero_division=0)
         print(f"Perbandingan F1-Score -> Model Lama Toxic: {old_f1_toxic:.4f} | Model Baru Toxic: {new_f1_toxic:.4f}")
         print(f"Perbandingan F1-Score -> Model Lama Bully: {old_f1_bully:.4f} | Model Baru Bully: {new_f1_bully:.4f}")
     except Exception as e:
@@ -453,10 +457,7 @@ joblib.dump(vectorizer, os.path.join(models_dir, "vectorizer.joblib"))
 
 # Simpan thresholds.json
 thresholds_path = os.path.join(models_dir, "thresholds.json")
-thresholds_data = {
-    "threshold_toxic": best_thresh_toxic,
-    "threshold_bully": best_thresh_bully
-}
+thresholds_data = {"threshold_toxic": best_thresh_toxic, "threshold_bully": best_thresh_bully}
 with open(thresholds_path, "w") as f:
     json.dump(thresholds_data, f)
 
@@ -470,34 +471,39 @@ version_metadata = {
     "f1_bully": float(new_f1_bully),
     "threshold_toxic": best_thresh_toxic,
     "threshold_bully": best_thresh_bully,
-    "updated_at": str(datetime.datetime.now())
+    "updated_at": str(datetime.datetime.now()),
 }
 with open(current_version_path, "w") as f:
     json.dump(version_metadata, f, indent=4)
 
 try:
     from classifier.database import save_retraining_history
-    asyncio.run(save_retraining_history(
-        f1_toxic=float(new_f1_toxic),
-        f1_bully=float(new_f1_bully),
-        threshold_toxic=float(best_thresh_toxic),
-        threshold_bully=float(best_thresh_bully),
-        active_version=timestamp
-    ))
+
+    asyncio.run(
+        save_retraining_history(
+            f1_toxic=float(new_f1_toxic),
+            f1_bully=float(new_f1_bully),
+            threshold_toxic=float(best_thresh_toxic),
+            threshold_bully=float(best_thresh_bully),
+            active_version=timestamp,
+        )
+    )
     print("[SUKSES] Berhasil menyimpan riwayat retraining ke database.")
 except Exception as db_err:
     print(f"Warning: Gagal menyimpan riwayat retraining ke database: {str(db_err)}")
 
 print("\n=== HASIL EVALUASI RETRAINING DENGAN AMBANG BATAS TERKALIBRASI ===")
 print("1. Target: TOXICITY (is_toxic)")
-print(classification_report(y_test['is_toxic'], preds_toxic))
+print(classification_report(y_test["is_toxic"], preds_toxic))
 print("2. Target: BULLYING (is_bully)")
-print(classification_report(y_test['is_bully'], preds_bully))
+print(classification_report(y_test["is_bully"], preds_bully))
 print(f"Proses retraining sukses! Berkas model terkompilasi dan metadata disimpan di: {current_version_path}")
+
 
 # Tutup connection pool PostgreSQL & Redis secara bersih sebelum keluar
 async def cleanup_resources():
     import classifier.database as db_mod
+
     if db_mod.PG_POOL is not None:
         try:
             await db_mod.PG_POOL.close()
@@ -511,6 +517,7 @@ async def cleanup_resources():
             print("Redis client connection berhasil ditutup secara bersih.")
         except Exception as e:
             print(f"Warning: Gagal menutup Redis client connection: {e}")
+
 
 try:
     run_async(cleanup_resources())

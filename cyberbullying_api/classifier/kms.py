@@ -4,6 +4,7 @@ import os
 
 logger = logging.getLogger("bullyguard")
 
+
 def get_encryption_key() -> bytes | None:
     """
     Mengambil kunci enkripsi dari KMS eksternal (AWS KMS atau HashiCorp Vault)
@@ -29,13 +30,14 @@ def get_encryption_key() -> bytes | None:
 
         try:
             import hvac
+
             client = hvac.Client(url=vault_addr, token=vault_token)
             try:
                 response = client.secrets.kv.v2.read_secret_version(path=secret_path)
-                key_data = response['data']['data'][secret_key]
+                key_data = response["data"]["data"][secret_key]
             except Exception:
                 response = client.read(secret_path)
-                key_data = response['data'][secret_key]
+                key_data = response["data"][secret_key]
 
             return key_data.encode("utf-8")
         except ImportError:
@@ -53,16 +55,17 @@ def get_encryption_key() -> bytes | None:
 
         try:
             import boto3
-            kms_client = boto3.client('kms')
+
+            kms_client = boto3.client("kms")
             encrypted_key_b64 = os.getenv("AWS_KMS_ENCRYPTED_KEY", "").strip()
             if not encrypted_key_b64:
                 # Generate a transient data key using GenerateDataKey
-                response = kms_client.generate_data_key(KeyId=key_id, KeySpec='AES_256')
-                return response['Plaintext']
+                response = kms_client.generate_data_key(KeyId=key_id, KeySpec="AES_256")
+                return response["Plaintext"]
 
             ciphertext = base64.b64decode(encrypted_key_b64)
             response = kms_client.decrypt(CiphertextBlob=ciphertext, KeyId=key_id)
-            return response['Plaintext']
+            return response["Plaintext"]
         except ImportError:
             logger.warning("boto3 library not installed, failed to load key from AWS KMS")
             raise ImportError("Pustaka 'boto3' diperlukan untuk integrasi AWS KMS.")

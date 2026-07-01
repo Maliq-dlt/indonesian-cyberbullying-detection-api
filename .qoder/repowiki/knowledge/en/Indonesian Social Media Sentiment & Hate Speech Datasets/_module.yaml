@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: dataset
+title: Indonesian Social Media Sentiment & Hate Speech Datasets
+scope:
+    - dataset/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_api

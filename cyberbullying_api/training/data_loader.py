@@ -28,10 +28,10 @@ except ImportError:
     asyncpg = None  # type: ignore[assignment]
 
 
-
 # ---------------------------------------------------------------------------
 # Dataset loaders – each returns a uniform 3-column DataFrame or None
 # ---------------------------------------------------------------------------
+
 
 def load_twitter_dataset(
     path: str,
@@ -97,9 +97,7 @@ def load_instagram_dataset(
         df = pd.read_excel(path)
         df = df.dropna(subset=["Komentar", "Kategori"])
         df["text_clean"] = df["Komentar"].apply(clean_fn)
-        df["is_bully"] = df["Kategori"].map(
-            {"Bullying": True, "Non-bullying": False}
-        )
+        df["is_bully"] = df["Kategori"].map({"Bullying": True, "Non-bullying": False})
         df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
         return df[["text_clean", "is_toxic", "is_bully"]]
     except Exception as e:
@@ -151,6 +149,7 @@ def load_combined_dataset(
 # Ingestion helpers – pull new labelled data from external sources
 # ---------------------------------------------------------------------------
 
+
 def ingest_scraped_csv(
     base_dir: str,
 ) -> tuple[list[dict], list[str]]:
@@ -187,15 +186,14 @@ def ingest_scraped_csv(
                     is_bully = row["Is_Bully"] == "Ya"
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({
-                            "String": raw_text,
-                            "Label": label_str,
-                        })
+                        new_records.append(
+                            {
+                                "String": raw_text,
+                                "Label": label_str,
+                            }
+                        )
             else:
-                print(
-                    f"Warning: Kolom tidak cocok di {file_path}. "
-                    "Memerlukan 'Teks' dan 'Is_Bully'."
-                )
+                print(f"Warning: Kolom tidak cocok di {file_path}. Memerlukan 'Teks' dan 'Is_Bully'.")
         except Exception as e:
             print(f"Error membaca {file_path}: {e}")
 
@@ -249,17 +247,14 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
             pg_rows = asyncio.run(_fetch_pg())
             if pg_rows is not None:
                 from classifier.database import decrypt_text
+
                 for row in pg_rows:
                     raw_text = str(decrypt_text(row["encrypted_text"])).strip()
                     is_toxic = bool(row["is_toxic"])
                     is_bully = bool(row["is_bully"])
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({
-                            "String": raw_text,
-                            "Label": label_str,
-                            "is_toxic": is_toxic
-                        })
+                        new_records.append({"String": raw_text, "Label": label_str, "is_toxic": is_toxic})
                 print(f"Berhasil memuat {len(pg_rows)} data dari PostgreSQL.")
                 pg_records_loaded = True
         except Exception as e:
@@ -280,20 +275,15 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
                 rows = cursor.fetchall()
                 conn.close()
                 from classifier.database import decrypt_text
+
                 for row in rows:
                     raw_text = str(decrypt_text(row[0])).strip()
                     is_toxic = bool(row[1])
                     is_bully = bool(row[2])
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({
-                            "String": raw_text,
-                            "Label": label_str,
-                            "is_toxic": is_toxic
-                        })
-                print(
-                    f"Berhasil memuat {len(rows)} data dari basis data memori SQLite."
-                )
+                        new_records.append({"String": raw_text, "Label": label_str, "is_toxic": is_toxic})
+                print(f"Berhasil memuat {len(rows)} data dari basis data memori SQLite.")
             else:
                 print("Basis data memori SQLite belum dibuat atau tidak ditemukan.")
         except Exception as e:
@@ -318,7 +308,7 @@ def load_mendeley_dataset(
     files = {
         "instagram": "DSPreprocessing_Instagram.csv",
         "twitter": "DSPreprocessing_Twitter.csv",
-        "youtube": "DSPreprocessing_Youtube_fix_.csv"
+        "youtube": "DSPreprocessing_Youtube_fix_.csv",
     }
 
     dfs = []
@@ -380,4 +370,3 @@ def load_tiktok_rhiosutoyo_dataset(
     except Exception as e:
         print(f"Warning: Gagal memuat dataset TikTok Rhiosutoyo ({path}): {e}")
         return None
-

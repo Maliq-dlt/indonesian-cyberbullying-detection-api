@@ -18,17 +18,18 @@ async def api_get_categorized_data(
     confidence_min: float | None = None,
     confidence_max: float | None = None,
     decision_source: str | None = None,
-    search: str | None = None
+    search: str | None = None,
 ):
     try:
         from classifier import get_categorized_memory
+
         data = await get_categorized_memory(
             limit=limit,
             offset=offset,
             confidence_min=confidence_min,
             confidence_max=confidence_max,
             decision_source=decision_source,
-            search=search
+            search=search,
         )
         # Tambah metadata pagination
         total_per_quadrant = {k: len(v) for k, v in data.items()}
@@ -40,8 +41,8 @@ async def api_get_categorized_data(
                 "offset": offset,
                 "total_fetched": total_all,
                 "per_quadrant": total_per_quadrant,
-                "has_more": any(len(v) >= limit for v in data.values())
-            }
+                "has_more": any(len(v) >= limit for v in data.values()),
+            },
         }
     except Exception as e:
         logger.error("Error fetching memory data", extra={"error": str(e)})
@@ -52,6 +53,7 @@ async def api_get_categorized_data(
 async def api_reallocate_data(req: ReallocateRequest):
     try:
         from classifier import update_validation_status
+
         success = await update_validation_status(req.text, req.new_is_toxic, req.new_is_bully, is_validated=1)
         if success:
             return ReallocateResponse(success=True, message="Data berhasil direlokasi dan divalidasi.")
@@ -66,6 +68,7 @@ async def api_reallocate_data(req: ReallocateRequest):
 async def api_reallocate_data_bulk(req: BulkReallocateRequest):
     try:
         from classifier import update_validation_status
+
         success_count = 0
         for item in req.items:
             success = await update_validation_status(item.text, item.new_is_toxic, item.new_is_bully, is_validated=1)
@@ -73,9 +76,14 @@ async def api_reallocate_data_bulk(req: BulkReallocateRequest):
                 success_count += 1
 
         if success_count == len(req.items):
-            return ReallocateResponse(success=True, message=f"Semua ({success_count}) data berhasil direlokasi dan divalidasi.")
+            return ReallocateResponse(
+                success=True, message=f"Semua ({success_count}) data berhasil direlokasi dan divalidasi."
+            )
         elif success_count > 0:
-            return ReallocateResponse(success=True, message=f"Sebagian ({success_count}/{len(req.items)}) data berhasil direlokasi dan divalidasi.")
+            return ReallocateResponse(
+                success=True,
+                message=f"Sebagian ({success_count}/{len(req.items)}) data berhasil direlokasi dan divalidasi.",
+            )
         else:
             return ReallocateResponse(success=False, message="Gagal merekam relokasi data massal ke basis data.")
     except Exception as e:

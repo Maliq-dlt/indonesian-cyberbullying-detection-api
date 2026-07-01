@@ -77,16 +77,25 @@ from classifier.predictor import (
 # Use __getattr__ to dynamically look up global variables from their defining modules
 def __getattr__(name):
     if name in (
-        "GEMINI_BASE_URL", "GEMINI_MODEL", "ABUSIVE_WORDS_SET",
-        "RAG_POOL_TEXTS", "RAG_POOL_VECTORS", "RAG_POOL_LABELS"
+        "GEMINI_BASE_URL",
+        "GEMINI_MODEL",
+        "ABUSIVE_WORDS_SET",
+        "RAG_POOL_TEXTS",
+        "RAG_POOL_VECTORS",
+        "RAG_POOL_LABELS",
     ):
         return getattr(_llm, name)
     if name in (
-        "BASE_DIR", "PREPARED_LEXICON", "ML_MODEL", "ML_VECTORIZER",
-        "TRANSFORMER_SESSION", "TRANSFORMER_TOKENIZER", "TRANSFORMER_MODEL", "THRESHOLDS"
+        "BASE_DIR",
+        "PREPARED_LEXICON",
+        "ML_MODEL",
+        "ML_VECTORIZER",
+        "TRANSFORMER_SESSION",
+        "TRANSFORMER_TOKENIZER",
+        "TRANSFORMER_MODEL",
+        "THRESHOLDS",
     ):
         return getattr(_predictor_base, name)
     if name in ("PG_POOL", "REDIS_CLIENT"):
         return getattr(_database, name)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-

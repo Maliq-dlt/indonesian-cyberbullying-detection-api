@@ -22,8 +22,10 @@ def derive_fernet_key(api_key: str) -> bytes:
     key_source = api_key.encode("utf-8")
     return base64.urlsafe_b64encode(hashlib.sha256(key_source).digest())
 
+
 def get_fernet_cipher(api_key: str) -> Fernet:
     return Fernet(derive_fernet_key(api_key))
+
 
 async def rotate_pg_database(old_key: str, new_key: str, pg_url: str):
     try:
@@ -69,8 +71,7 @@ async def rotate_pg_database(old_key: str, new_key: str, pg_url: str):
 
                 # Update ke database
                 await conn.execute(
-                    "UPDATE classification_memory SET encrypted_text = $1 WHERE text_hash = $2",
-                    new_enc_text, text_hash
+                    "UPDATE classification_memory SET encrypted_text = $1 WHERE text_hash = $2", new_enc_text, text_hash
                 )
                 success_count += 1
             except Exception as row_err:
@@ -82,6 +83,7 @@ async def rotate_pg_database(old_key: str, new_key: str, pg_url: str):
         print(f"[PG] Terjadi kesalahan selama rotasi PostgreSQL: {e}")
     finally:
         await conn.close()
+
 
 def rotate_sqlite_database(old_key: str, new_key: str, db_path: str):
     if not os.path.exists(db_path):
@@ -126,8 +128,7 @@ def rotate_sqlite_database(old_key: str, new_key: str, db_path: str):
 
                 # Update ke database
                 cursor.execute(
-                    "UPDATE classification_memory SET encrypted_text = ? WHERE text_hash = ?",
-                    (new_enc_text, text_hash)
+                    "UPDATE classification_memory SET encrypted_text = ? WHERE text_hash = ?", (new_enc_text, text_hash)
                 )
                 success_count += 1
             except Exception as row_err:
@@ -140,6 +141,7 @@ def rotate_sqlite_database(old_key: str, new_key: str, db_path: str):
         print(f"[SQLite] Terjadi kesalahan selama rotasi SQLite: {e}")
     finally:
         conn.close()
+
 
 async def clear_redis_cache(redis_url: str):
     try:
@@ -161,6 +163,7 @@ async def clear_redis_cache(redis_url: str):
         await r.close()
     except Exception as e:
         print(f"[Redis] Gagal membersihkan cache Redis: {e}")
+
 
 async def main():
     parser = argparse.ArgumentParser(description="Rotasi kunci enkripsi data komentar BullyGuard ID.")
@@ -188,7 +191,10 @@ async def main():
     await clear_redis_cache(redis_url)
 
     print("\n=== Proses Rotasi Kunci Selesai ===\n")
-    print("PENTING: Jangan lupa untuk mengubah nilai variabel lingkungan API_KEY pada file .env atau konfigurasi server Anda ke kunci yang baru.")
+    print(
+        "PENTING: Jangan lupa untuk mengubah nilai variabel lingkungan API_KEY pada file .env atau konfigurasi server Anda ke kunci yang baru."
+    )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

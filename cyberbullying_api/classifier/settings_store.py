@@ -12,13 +12,9 @@ SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 DEFAULT_SETTINGS = {
     "webhook_url": "",
     "webhook_enabled": False,
-    "ensemble_weights": {
-        "ml_toxic": 0.5,
-        "tr_toxic": 0.5,
-        "ml_bully": 0.65,
-        "tr_bully": 0.35
-    }
+    "ensemble_weights": {"ml_toxic": 0.5, "tr_toxic": 0.5, "ml_bully": 0.65, "tr_bully": 0.35},
 }
+
 
 def get_settings_sync():
     if not os.path.exists(SETTINGS_FILE):
@@ -31,6 +27,7 @@ def get_settings_sync():
             return settings
     except Exception:
         return DEFAULT_SETTINGS.copy()
+
 
 async def get_settings():
     # Try Redis first
@@ -48,6 +45,7 @@ async def get_settings():
         with contextlib.suppress(Exception):
             await r.set("system_settings", json.dumps(settings))
     return settings
+
 
 async def save_settings(settings: dict):
     final_settings = DEFAULT_SETTINGS.copy()

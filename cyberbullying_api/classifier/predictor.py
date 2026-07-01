@@ -73,6 +73,7 @@ except ImportError:
 
 # ── XAI Explainability ───────────────────────────────────────────────────────
 
+
 def explain_prediction(text: str) -> list[Any]:
     ml_model = _base.ML_MODEL
     ml_vectorizer = _base.ML_VECTORIZER
@@ -115,13 +116,17 @@ def explain_prediction(text: str) -> list[Any]:
                 impacts.append({"word": word, "weight_toxic": w_toxic, "weight_bully": w_bully})
 
         impacts.sort(key=lambda x: max(abs(x["weight_toxic"]), abs(x["weight_bully"])), reverse=True)
-        return [WordImportance(word=imp["word"], weight_toxic=imp["weight_toxic"], weight_bully=imp["weight_bully"]) for imp in impacts]
+        return [
+            WordImportance(word=imp["word"], weight_toxic=imp["weight_toxic"], weight_bully=imp["weight_bully"])
+            for imp in impacts
+        ]
     except Exception as e:
         logger.warning("Failed to compute XAI explain_prediction", extra={"error": str(e)})
         return []
 
 
 # ── Transformer Inference ────────────────────────────────────────────────────
+
 
 def predict_transformer_raw(text: str) -> dict[str, float]:
     transformer_tokenizer = _base.TRANSFORMER_TOKENIZER
@@ -134,7 +139,7 @@ def predict_transformer_raw(text: str) -> dict[str, float]:
             inputs = transformer_tokenizer(text, padding=True, truncation=True, return_tensors="np")
             ort_inputs = {
                 "input_ids": inputs["input_ids"].astype(np.int64),
-                "attention_mask": inputs["attention_mask"].astype(np.int64)
+                "attention_mask": inputs["attention_mask"].astype(np.int64),
             }
             ort_outputs: Any = transformer_session.run(None, ort_inputs)
             logits = ort_outputs[0][0]
@@ -168,6 +173,7 @@ def predict_transformer_raw(text: str) -> dict[str, float]:
 
 # ── Lexicon Prediction ───────────────────────────────────────────────────────
 
+
 def predict_lexicon(text: str, use_fuzzy: bool = True) -> LexiconResponse:
     start_time = time.perf_counter()
     norm = normalize_text(text)
@@ -195,10 +201,9 @@ def predict_lexicon(text: str, use_fuzzy: bool = True) -> LexiconResponse:
                 method = "fuzzy_compact_match"
 
         if method and phrase not in seen_phrases:
-            matches.append({
-                "matched_phrase": phrase, "category": item["category"],
-                "severity": item["severity"], "method": method
-            })
+            matches.append(
+                {"matched_phrase": phrase, "category": item["category"], "severity": item["severity"], "method": method}
+            )
             seen_phrases.add(phrase)
 
     severity_score = {"rendah": 1, "sedang": 2, "tinggi": 3}
@@ -216,20 +221,35 @@ def predict_lexicon(text: str, use_fuzzy: bool = True) -> LexiconResponse:
 
     elapsed = (time.perf_counter() - start_time) * 1000.0
     return LexiconResponse(
-        text=text, normalized_spaced=spaced_text, normalized_compact=compact_text,
-        is_cyberbullying=bool(matches), risk_label=risk_label, score=score,
-        matches=matches, execution_time=round(elapsed, 2)
+        text=text,
+        normalized_spaced=spaced_text,
+        normalized_compact=compact_text,
+        is_cyberbullying=bool(matches),
+        risk_label=risk_label,
+        score=score,
+        matches=matches,
+        execution_time=round(elapsed, 2),
     )
 
 
 # ── ML Prediction ────────────────────────────────────────────────────────────
+
 
 def predict_ml(text: str) -> MLResponse:
     start_time = time.perf_counter()
     ml_model = _base.ML_MODEL
     ml_vectorizer = _base.ML_VECTORIZER
     if ml_model is None or ml_vectorizer is None:
-        return MLResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Model ML belum termuat.", word_importances=[], execution_time=0.0)
+        return MLResponse(
+            text=text,
+            is_toxic=False,
+            is_bully=False,
+            probability_toxic=0.0,
+            probability_bully=0.0,
+            category="Model ML belum termuat.",
+            word_importances=[],
+            execution_time=0.0,
+        )
 
     norm = normalize_text(text)["spaced"]
     tfidf_text = ml_vectorizer.transform([norm])
@@ -242,14 +262,19 @@ def predict_ml(text: str) -> MLResponse:
 
     elapsed = (time.perf_counter() - start_time) * 1000.0
     return MLResponse(
-        text=text, is_toxic=is_toxic, is_bully=is_bully,
-        probability_toxic=prob_toxic, probability_bully=prob_bully,
+        text=text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=prob_toxic,
+        probability_bully=prob_bully,
         category=determine_category(is_toxic, is_bully),
-        word_importances=explain_prediction(text), execution_time=round(elapsed, 2)
+        word_importances=explain_prediction(text),
+        execution_time=round(elapsed, 2),
     )
 
 
 # ── Transformer Prediction ───────────────────────────────────────────────────
+
 
 def predict_transformers(text: str) -> TransformerResponse:
     start_time = time.perf_counter()
@@ -262,14 +287,19 @@ def predict_transformers(text: str) -> TransformerResponse:
 
     elapsed = (time.perf_counter() - start_time) * 1000.0
     return TransformerResponse(
-        text=text, is_toxic=is_toxic, is_bully=is_bully,
-        probability_toxic=prob_toxic, probability_bully=prob_bully,
+        text=text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=prob_toxic,
+        probability_bully=prob_bully,
         category=determine_category(is_toxic, is_bully),
-        word_importances=explain_prediction(text), execution_time=round(elapsed, 2)
+        word_importances=explain_prediction(text),
+        execution_time=round(elapsed, 2),
     )
 
 
 # ── Ensemble Prediction ──────────────────────────────────────────────────────
+
 
 def predict_ensemble(text: str) -> EnsembleResponse:
     start_time = time.perf_counter()
@@ -294,14 +324,19 @@ def predict_ensemble(text: str) -> EnsembleResponse:
 
     elapsed = (time.perf_counter() - start_time) * 1000.0
     return EnsembleResponse(
-        text=text, is_toxic=is_toxic, is_bully=is_bully,
-        probability_toxic=final_toxic, probability_bully=final_bully,
+        text=text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=final_toxic,
+        probability_bully=final_bully,
         category=determine_category(is_toxic, is_bully),
-        word_importances=explain_prediction(text), execution_time=round(elapsed, 2)
+        word_importances=explain_prediction(text),
+        execution_time=round(elapsed, 2),
     )
 
 
 # ── ML Inference Helper ──────────────────────────────────────────────────────
+
 
 def run_ml_inference_sync(text: str) -> tuple[float, float]:
     if _base.ML_VECTORIZER is None or _base.ML_MODEL is None:
@@ -313,6 +348,7 @@ def run_ml_inference_sync(text: str) -> tuple[float, float]:
 
 
 # ── Ensemble Helper (async) ──────────────────────────────────────────────────
+
 
 async def run_ensemble_inference_async(text: str, ml_toxic: float, ml_bully: float) -> tuple[float, float]:
     """Run transformer inference in a thread and combine with ML probabilities."""
@@ -328,12 +364,23 @@ async def run_ensemble_inference_async(text: str, ml_toxic: float, ml_bully: flo
 
 # ── Hybrid Prediction ────────────────────────────────────────────────────────
 
+
 async def _predict_hybrid_internal(text: str) -> HybridResponse:
     start_time = time.perf_counter()
     if _base.ML_MODEL is None or _base.ML_VECTORIZER is None:
         elapsed = time.perf_counter() - start_time
         INFERENCE_LATENCY.labels(tier="fallback").observe(elapsed)
-        return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.", word_importances=[])
+        return HybridResponse(
+            text=text,
+            is_toxic=False,
+            is_bully=False,
+            probability_toxic=0.0,
+            probability_bully=0.0,
+            category="Aman",
+            decision_source="Fallback",
+            reason="Model ML belum termuat.",
+            word_importances=[],
+        )
 
     t_t = get_threshold(_base.THRESHOLDS, "threshold_toxic", 0.5)
     t_b = get_threshold(_base.THRESHOLDS, "threshold_bully", 0.5)
@@ -349,13 +396,15 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             elapsed = time.perf_counter() - start_time
             INFERENCE_LATENCY.labels(tier="sarcasm_bypass").observe(elapsed)
             return HybridResponse(
-                text=text, is_toxic=is_toxic, is_bully=is_bully,
+                text=text,
+                is_toxic=is_toxic,
+                is_bully=is_bully,
                 probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                 probability_bully=llm_decision_to_probability(is_bully, t_b),
                 category=determine_category(is_toxic, is_bully),
                 decision_source="Tier 3 (Cloud LLM - Sarcasm Bypass)",
                 reason=f"[Sarcasm Bypass] {llm_res['reason']}",
-                word_importances=explain_prediction(text)
+                word_importances=explain_prediction(text),
             )
 
     # Lexicon bypass
@@ -365,12 +414,15 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         elapsed = time.perf_counter() - start_time
         INFERENCE_LATENCY.labels(tier="lexicon").observe(elapsed)
         return HybridResponse(
-            text=text, is_toxic=True, is_bully=True,
-            probability_toxic=0.85, probability_bully=0.85,
+            text=text,
+            is_toxic=True,
+            is_bully=True,
+            probability_toxic=0.85,
+            probability_bully=0.85,
             category=determine_category(True, True),
             decision_source="Tier 1 (Lexicon Kamus)",
             reason=f"Terdeteksi kata kasar/larangan di dalam teks: {', '.join(matched_words)}",
-            word_importances=explain_prediction(text)
+            word_importances=explain_prediction(text),
         )
 
     # Tier 1: ML
@@ -382,12 +434,15 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         elapsed = time.perf_counter() - start_time
         INFERENCE_LATENCY.labels(tier="ml").observe(elapsed)
         return HybridResponse(
-            text=text, is_toxic=is_toxic, is_bully=is_bully,
-            probability_toxic=ml_toxic, probability_bully=ml_bully,
+            text=text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=ml_toxic,
+            probability_bully=ml_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 1 (ML Klasik)",
             reason="Klasifikasi konfiden tinggi berdasarkan bobot kata kunci model statistik. " + ml_confidence.reason,
-            word_importances=explain_prediction(text)
+            word_importances=explain_prediction(text),
         )
 
     # Tier 2: Ensemble
@@ -399,12 +454,15 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         elapsed = time.perf_counter() - start_time
         INFERENCE_LATENCY.labels(tier="ensemble").observe(elapsed)
         return HybridResponse(
-            text=text, is_toxic=is_toxic, is_bully=is_bully,
-            probability_toxic=ens_toxic, probability_bully=ens_bully,
+            text=text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=ens_toxic,
+            probability_bully=ens_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 2 (Ensemble ML & Transformer)",
             reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer. " + ens_confidence.reason,
-            word_importances=explain_prediction(text)
+            word_importances=explain_prediction(text),
         )
 
     # Tier 3: Cloud LLM
@@ -417,13 +475,15 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
             elapsed = time.perf_counter() - start_time
             INFERENCE_LATENCY.labels(tier="cloud_llm").observe(elapsed)
             return HybridResponse(
-                text=text, is_toxic=is_toxic, is_bully=is_bully,
+                text=text,
+                is_toxic=is_toxic,
+                is_bully=is_bully,
                 probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                 probability_bully=llm_decision_to_probability(is_bully, t_b),
                 category=determine_category(is_toxic, is_bully),
                 decision_source="Tier 3 (Cloud LLM)",
                 reason=llm_res["reason"],
-                word_importances=explain_prediction(text)
+                word_importances=explain_prediction(text),
             )
 
     # Fallback
@@ -432,12 +492,15 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     elapsed = time.perf_counter() - start_time
     INFERENCE_LATENCY.labels(tier="fallback").observe(elapsed)
     return HybridResponse(
-        text=text, is_toxic=is_toxic, is_bully=is_bully,
-        probability_toxic=ens_toxic, probability_bully=ens_bully,
+        text=text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=ens_toxic,
+        probability_bully=ens_bully,
         category=determine_category(is_toxic, is_bully),
         decision_source="Fallback (Ensemble Terbatas)",
         reason="Cloud LLM tidak merespons, menggunakan keputusan cadangan dari model lokal.",
-        word_importances=explain_prediction(text)
+        word_importances=explain_prediction(text),
     )
 
 
@@ -464,6 +527,7 @@ async def predict_hybrid(text: str) -> HybridResponse:
 
 # ── Streaming Hybrid Prediction ──────────────────────────────────────────────
 
+
 async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], None]:
     ml_model = _base.ML_MODEL
     ml_vectorizer = _base.ML_VECTORIZER
@@ -477,7 +541,17 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], Non
         return
 
     if ml_model is None or ml_vectorizer is None:
-        res = HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.", word_importances=[])
+        res = HybridResponse(
+            text=text,
+            is_toxic=False,
+            is_bully=False,
+            probability_toxic=0.0,
+            probability_bully=0.0,
+            category="Aman",
+            decision_source="Fallback",
+            reason="Model ML belum termuat.",
+            word_importances=[],
+        )
         yield {"chunk": res.reason, "done": True, "final_data": res}
         return
 
@@ -489,12 +563,15 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], Non
     if lex_res.is_cyberbullying and lex_res.risk_label in ["sedang", "tinggi"]:
         matched_words = [m.matched_phrase for m in lex_res.matches]
         final_res = HybridResponse(
-            text=text, is_toxic=True, is_bully=True,
-            probability_toxic=0.85, probability_bully=0.85,
+            text=text,
+            is_toxic=True,
+            is_bully=True,
+            probability_toxic=0.85,
+            probability_bully=0.85,
             category=determine_category(True, True),
             decision_source="Tier 1 (Lexicon Kamus)",
             reason=f"Terdeteksi kata kasar/larangan di dalam teks: {', '.join(matched_words)}",
-            word_importances=explain_prediction(text)
+            word_importances=explain_prediction(text),
         )
         embedding_json = None
         if embedding_model is not None:
@@ -518,21 +595,27 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], Non
                     is_toxic = llm_res["is_toxic"]
                     is_bully = llm_res["is_bully"]
                     final_res = HybridResponse(
-                        text=text, is_toxic=is_toxic, is_bully=is_bully,
+                        text=text,
+                        is_toxic=is_toxic,
+                        is_bully=is_bully,
                         probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                         probability_bully=llm_decision_to_probability(is_bully, t_b),
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Tier 3 (Cloud LLM - Sarcasm Bypass)",
                         reason=f"[Sarcasm Bypass] {llm_res['reason']}",
-                        word_importances=explain_prediction(text)
+                        word_importances=explain_prediction(text),
                     )
                 else:
                     final_res = HybridResponse(
-                        text=text, is_toxic=False, is_bully=False,
-                        probability_toxic=0.0, probability_bully=0.0,
-                        category="Aman", decision_source="Fallback",
+                        text=text,
+                        is_toxic=False,
+                        is_bully=False,
+                        probability_toxic=0.0,
+                        probability_bully=0.0,
+                        category="Aman",
+                        decision_source="Fallback",
                         reason=llm_res["reason"],
-                        word_importances=explain_prediction(text)
+                        word_importances=explain_prediction(text),
                     )
                 embedding_json = None
                 if embedding_model is not None:
@@ -554,12 +637,15 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], Non
         is_toxic = ml_toxic >= t_t
         is_bully = ml_bully >= t_b
         res = HybridResponse(
-            text=text, is_toxic=is_toxic, is_bully=is_bully,
-            probability_toxic=ml_toxic, probability_bully=ml_bully,
+            text=text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=ml_toxic,
+            probability_bully=ml_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 1 (ML Klasik)",
             reason="Klasifikasi berbasis ambang batas probabilitas model statistik. " + ml_confidence.reason,
-            word_importances=explain_prediction(text)
+            word_importances=explain_prediction(text),
         )
         embedding_json = None
         if embedding_model is not None:
@@ -579,12 +665,15 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], Non
         is_toxic = ens_toxic >= t_t
         is_bully = ens_bully >= t_b
         res = HybridResponse(
-            text=text, is_toxic=is_toxic, is_bully=is_bully,
-            probability_toxic=ens_toxic, probability_bully=ens_bully,
+            text=text,
+            is_toxic=is_toxic,
+            is_bully=is_bully,
+            probability_toxic=ens_toxic,
+            probability_bully=ens_bully,
             category=determine_category(is_toxic, is_bully),
             decision_source="Tier 2 (Ensemble ML & Transformer)",
             reason="Klasifikasi berbasis gabungan model statistik dan semantik Transformer. " + ens_confidence.reason,
-            word_importances=explain_prediction(text)
+            word_importances=explain_prediction(text),
         )
         embedding_json = None
         if embedding_model is not None:
@@ -607,24 +696,29 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], Non
                     is_toxic = llm_res["is_toxic"]
                     is_bully = llm_res["is_bully"]
                     final_res = HybridResponse(
-                        text=text, is_toxic=is_toxic, is_bully=is_bully,
+                        text=text,
+                        is_toxic=is_toxic,
+                        is_bully=is_bully,
                         probability_toxic=llm_decision_to_probability(is_toxic, t_t),
                         probability_bully=llm_decision_to_probability(is_bully, t_b),
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Tier 3 (Cloud LLM)",
                         reason=llm_res["reason"],
-                        word_importances=explain_prediction(text)
+                        word_importances=explain_prediction(text),
                     )
                 else:
                     is_toxic = ens_toxic >= t_t
                     is_bully = ens_bully >= t_b
                     final_res = HybridResponse(
-                        text=text, is_toxic=is_toxic, is_bully=is_bully,
-                        probability_toxic=ens_toxic, probability_bully=ens_bully,
+                        text=text,
+                        is_toxic=is_toxic,
+                        is_bully=is_bully,
+                        probability_toxic=ens_toxic,
+                        probability_bully=ens_bully,
                         category=determine_category(is_toxic, is_bully),
                         decision_source="Fallback (Ensemble Terbatas)",
                         reason="Cloud LLM gagal merespons, menggunakan keputusan cadangan dari model lokal.",
-                        word_importances=explain_prediction(text)
+                        word_importances=explain_prediction(text),
                     )
                 embedding_json = None
                 if embedding_model is not None:
@@ -643,12 +737,15 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], Non
     is_toxic = ens_toxic >= t_t
     is_bully = ens_bully >= t_b
     res = HybridResponse(
-        text=text, is_toxic=is_toxic, is_bully=is_bully,
-        probability_toxic=ens_toxic, probability_bully=ens_bully,
+        text=text,
+        is_toxic=is_toxic,
+        is_bully=is_bully,
+        probability_toxic=ens_toxic,
+        probability_bully=ens_bully,
         category=determine_category(is_toxic, is_bully),
         decision_source="Fallback (Ensemble Terbatas)",
         reason="Cloud LLM tidak dikonfigurasi, menggunakan keputusan cadangan dari model lokal.",
-        word_importances=explain_prediction(text)
+        word_importances=explain_prediction(text),
     )
     embedding_json = None
     if embedding_model is not None:

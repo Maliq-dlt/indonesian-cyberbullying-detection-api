@@ -68,4 +68,3 @@ from classifier.db_memory import (
 from classifier.db_memory import (
     update_validation_status as update_validation_status,
 )
-

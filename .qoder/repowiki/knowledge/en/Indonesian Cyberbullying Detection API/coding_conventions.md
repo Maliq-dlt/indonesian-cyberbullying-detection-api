@@ -1,0 +1,5 @@
+- Heavy inference tasks (ML, Transformer, LLM) are offloaded to thread pools using `asyncio.to_thread` to prevent blocking the FastAPI event loop.
+- Database and cache connections (PostgreSQL, Redis) are initialized lazily via singleton accessor functions (`get_pg_pool`, `get_redis`) rather than at module import time.
+- Sensitive text data stored in databases is encrypted using Fernet symmetric encryption before persistence and decrypted upon retrieval.
+- Prediction endpoints return standardized Pydantic response models that include execution time, word importance scores (XAI), and the decision source tier.
+- Administrative and heavy-load endpoints (scraping, batch prediction) are protected by Redis-based rate limiting with configurable fail-open/closed behavior based on the environment.

@@ -24,6 +24,7 @@ celery_app.conf.update(
     result_expires=3600,
 )
 
+
 @celery_app.task
 def run_retrain_task(model_type: str = "both"):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -54,11 +55,7 @@ def run_retrain_task(model_type: str = "both"):
             with open(log_path, "a", encoding="utf-8", buffering=1) as log_file:
                 log_file.write(f"\n>>> Menjalankan {name}...\n")
                 # Jalankan script dengan mode unbuffered (-u)
-                proc = subprocess.Popen(
-                    [sys.executable, "-u", script_path],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT
-                )
+                proc = subprocess.Popen([sys.executable, "-u", script_path], stdout=log_file, stderr=subprocess.STDOUT)
                 try:
                     proc.wait(timeout=3600)  # Timeout 1 jam per script
                 except subprocess.TimeoutExpired:
@@ -82,14 +79,18 @@ def run_retrain_task(model_type: str = "both"):
             r.set("training_status", "failed")
         raise e
 
+
 @celery_app.task(name="tasks.scrape_tiktok_task")
 def scrape_tiktok_task(url: str, max_comments: int):
     from scraper.tiktok import scrape_tiktok_comments
+
     comments, success = scrape_tiktok_comments(url, max_comments)
     return {"comments": comments, "success": success}
+
 
 @celery_app.task(name="tasks.scrape_x_task")
 def scrape_x_task(name: str, max_tweets: int):
     from scraper.twitter import scrape_x_tweets
+
     tweets, success = scrape_x_tweets(name, max_tweets)
     return {"tweets": tweets, "success": success}

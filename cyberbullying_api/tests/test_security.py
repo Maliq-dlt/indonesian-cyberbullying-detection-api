@@ -26,10 +26,12 @@ def test_is_safe_webhook_url():
     assert is_safe_webhook_url("ftp://example.com/file") is False  # Invalid scheme
     assert is_safe_webhook_url("gopher://localhost") is False
 
+
 @pytest.mark.anyio
 async def test_rate_limit_cloud_llm_and_batch_new_key():
     # Test rate limiter when the key is new (first request)
     import hashlib
+
     mock_redis = MagicMock()
     mock_pipeline = MagicMock()
     mock_pipeline.execute = AsyncMock(return_value=[1, -1])
@@ -55,6 +57,7 @@ async def test_rate_limit_cloud_llm_and_batch_new_key():
         # Verify expire was called because val == 1 and ttl == -1
         mock_redis.expire.assert_called_once_with(expected_key, 60)
 
+
 @pytest.mark.anyio
 async def test_rate_limit_cloud_llm_and_batch_existing_key():
     # Test rate limiter when key already exists and has TTL (second request)
@@ -74,6 +77,7 @@ async def test_rate_limit_cloud_llm_and_batch_existing_key():
 
         # Verify expire was NOT called because val > 1 and ttl > 0
         mock_redis.expire.assert_not_called()
+
 
 @pytest.mark.anyio
 async def test_rate_limit_cloud_llm_and_batch_limit_exceeded():
@@ -108,6 +112,7 @@ def test_production_startup_without_api_key():
         # Reloading db_config should trigger the ValueError
         with pytest.raises(ValueError) as exc_info:
             import classifier.db_config
+
             importlib.reload(classifier.db_config)
 
         assert "CRITICAL: Variabel lingkungan API_KEY tidak diatur" in str(exc_info.value)

@@ -18,9 +18,9 @@ from contextlib import asynccontextmanager, suppress
 logging.basicConfig(
     level=logging.INFO,
     format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s"}',
-    datefmt='%Y-%m-%dT%H:%M:%S',
+    datefmt="%Y-%m-%dT%H:%M:%S",
     stream=sys.stdout,
-    force=True
+    force=True,
 )
 logger = logging.getLogger("bullyguard")
 
@@ -182,8 +182,10 @@ allowed_origins_raw = os.getenv(
 )
 allowed_origins = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
 
+
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
     """Menambahkan X-Request-ID unik ke setiap request untuk distributed tracing."""
+
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
@@ -210,9 +212,11 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
         return response
 
+
 # === Security Headers Middleware ===
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Menambahkan security headers standar ke setiap response."""
+
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -228,6 +232,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """Membatasi ukuran request body untuk mencegah DoS via payload besar."""
+
     def __init__(self, app, max_size_bytes: int = 10 * 1024 * 1024):  # 10MB default
         super().__init__(app)
         self.max_size = max_size_bytes
@@ -236,9 +241,10 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > self.max_size:
             from fastapi.responses import JSONResponse
+
             return JSONResponse(
                 status_code=413,
-                content={"detail": f"Request body terlalu besar. Maksimal {self.max_size // (1024*1024)}MB."}
+                content={"detail": f"Request body terlalu besar. Maksimal {self.max_size // (1024 * 1024)}MB."},
             )
         return await call_next(request)
 
@@ -265,8 +271,9 @@ v1_router.include_router(admin_router, tags=["Admin v1"])
 
 app.include_router(auth_router)
 app.include_router(predict_router)  # backward compatibility (deprecated)
-app.include_router(admin_router)    # backward compatibility (deprecated)
+app.include_router(admin_router)  # backward compatibility (deprecated)
 app.include_router(v1_router)
+
 
 @app.get("/metrics")
 def get_metrics():
@@ -289,7 +296,7 @@ async def health_check(response: Response):
         "message": "API is alive.",
         "environment": current_env(),
         "database": "unconfigured",
-        "redis": "unconfigured"
+        "redis": "unconfigured",
     }
 
     # Test PostgreSQL

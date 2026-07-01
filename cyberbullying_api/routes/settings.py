@@ -3,7 +3,9 @@
 import json
 import logging
 import os
+from urllib.parse import urlparse
 
+import httpx
 from classifier.settings_store import get_settings, save_settings
 from fastapi import APIRouter, HTTPException, Security
 from models import UpdateCookiesRequest
@@ -54,50 +56,45 @@ async def api_get_settings():
 async def api_save_settings(req: SettingsUpdate):
     if req.webhook_enabled and not is_safe_webhook_url(req.webhook_url):
         raise HTTPException(status_code=400, detail="URL Webhook tidak valid atau diblokir (SSRF Protection).")
-    return await save_settings({
-        "webhook_url": req.webhook_url,
-        "webhook_enabled": req.webhook_enabled
-    })
+    return await save_settings({"webhook_url": req.webhook_url, "webhook_enabled": req.webhook_enabled})
 
 
 @router.post("/settings/test-webhook")
 async def api_test_webhook(req: TestWebhookRequest):
-    from urllib.parse import urlparse
     parsed = urlparse(req.webhook_url)
-    if parsed.scheme not in {"http", "https"}:
-        raise HTTPException(status_code=400, detail="Skema URL harus http atau https.")
-    if not parsed.hostname:
-        raise HTTPException(status_code=400, detail="Hostname tidak valid.")
+    scheme = parsed.scheme
+    hostname = parsed.hostname or ""
+    port = parsed.port
+    path = parsed.path or "/"
+    query = parsed.query
 
+    if scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Skema URL harus http atau https.")
+    if not hostname:
+        raise HTTPException(status_code=400, detail="Hostname tidak valid.")
     if not is_safe_webhook_url(req.webhook_url):
         raise HTTPException(status_code=400, detail="URL Webhook tidak valid atau diblokir (SSRF Protection).")
 
-    clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-    if parsed.query:
-        clean_url += f"?{parsed.query}"
+    # Build a fully sanitised URL from trusted-parsed components only (SSRF mitigation)
+    netloc = f"{hostname}:{port}" if port else hostname
+    safe_url = f"{scheme}://{netloc}{path}"
+    if query:
+        safe_url = f"{safe_url}?{query}"
 
-    import httpx
     payload = {
         "event": "webhook_test",
         "timestamp": "2026-06-05T00:00:00Z",
         "message": "Ini adalah payload uji coba integrasi webhook BullyGuard ID.",
-        "sample_data": {
-            "text": "kamu sangat hebat sekali",
-            "is_toxic": False,
-            "is_bully": False,
-            "category": "Aman"
-        }
+        "sample_data": {"text": "kamu sangat hebat sekali", "is_toxic": False, "is_bully": False, "category": "Aman"},
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(clean_url, json=payload)
-            return {
-                "success": True,
-                "status_code": res.status_code,
-                "response": res.text[:200]
-            }
+            res = await client.post(safe_url, json=payload)
+            return {"success": True, "status_code": res.status_code, "response": res.text[:200]}
     except Exception:
-        raise HTTPException(status_code=400, detail="Gagal menghubungi webhook. Periksa URL dan pastikan server webhook aktif.")
+        raise HTTPException(
+            status_code=400, detail="Gagal menghubungi webhook. Periksa URL dan pastikan server webhook aktif."
+        )
 
 
 @router.post("/settings/recalibrate")
@@ -120,11 +117,13 @@ async def api_recalibrate_ensemble():
                         WHERE is_validated = 1
                     """)
                     for r in rows:
-                        records.append({
-                            "text": decrypt_text(r["encrypted_text"]),
-                            "is_toxic": int(r["is_toxic"]),
-                            "is_bully": int(r["is_bully"])
-                        })
+                        records.append(
+                            {
+                                "text": decrypt_text(r["encrypted_text"]),
+                                "is_toxic": int(r["is_toxic"]),
+                                "is_bully": int(r["is_bully"]),
+                            }
+                        )
             except Exception as pg_err:
                 logger.error("Error fetching validation data from PostgreSQL", extra={"error": str(pg_err)})
 
@@ -143,22 +142,19 @@ async def api_recalibrate_ensemble():
                     """)
                     rows = cursor.fetchall()
                     for r in rows:
-                        records.append({
-                            "text": decrypt_text(r["encrypted_text"]),
-                            "is_toxic": int(r["is_toxic"]),
-                            "is_bully": int(r["is_bully"])
-                        })
+                        records.append(
+                            {
+                                "text": decrypt_text(r["encrypted_text"]),
+                                "is_toxic": int(r["is_toxic"]),
+                                "is_bully": int(r["is_bully"]),
+                            }
+                        )
                     conn.close()
             except Exception as sq_err:
                 logger.error("Error fetching validation data from SQLite", extra={"error": str(sq_err)})
 
         if len(records) < 5:
-            default_w = {
-                "ml_toxic": 0.5,
-                "tr_toxic": 0.5,
-                "ml_bully": 0.65,
-                "tr_bully": 0.35
-            }
+            default_w = {"ml_toxic": 0.5, "tr_toxic": 0.5, "ml_bully": 0.65, "tr_bully": 0.35}
             settings = await get_settings()
             settings["ensemble_weights"] = default_w
             await save_settings(settings)
@@ -166,7 +162,7 @@ async def api_recalibrate_ensemble():
                 "success": True,
                 "calibrated": False,
                 "message": f"Jumlah data tervalidasi ({len(records)}) terlalu sedikit (minimal 5). Menggunakan bobot default.",
-                "weights": default_w
+                "weights": default_w,
             }
 
         y_toxic, y_bully = [], []
@@ -185,19 +181,23 @@ async def api_recalibrate_ensemble():
             tr_toxic_probs.append(tr_res["toxic_prob"])
             tr_bully_probs.append(tr_res["bully_prob"])
 
-        best_w_toxic, min_mse_toxic = 0.5, float('inf')
-        best_w_bully, min_mse_bully = 0.65, float('inf')
+        best_w_toxic, min_mse_toxic = 0.5, float("inf")
+        best_w_bully, min_mse_bully = 0.65, float("inf")
 
         grid = np.linspace(0.15, 0.85, 71)
 
         for w in grid:
-            se_toxic = [(w * ml_toxic_probs[i] + (1 - w) * tr_toxic_probs[i] - y_toxic[i]) ** 2 for i in range(len(records))]
+            se_toxic = [
+                (w * ml_toxic_probs[i] + (1 - w) * tr_toxic_probs[i] - y_toxic[i]) ** 2 for i in range(len(records))
+            ]
             mse_t = sum(se_toxic) / len(records)
             if mse_t < min_mse_toxic:
                 min_mse_toxic = mse_t
                 best_w_toxic = float(w)
 
-            se_bully = [(w * ml_bully_probs[i] + (1 - w) * tr_bully_probs[i] - y_bully[i]) ** 2 for i in range(len(records))]
+            se_bully = [
+                (w * ml_bully_probs[i] + (1 - w) * tr_bully_probs[i] - y_bully[i]) ** 2 for i in range(len(records))
+            ]
             mse_b = sum(se_bully) / len(records)
             if mse_b < min_mse_bully:
                 min_mse_bully = mse_b
@@ -208,12 +208,7 @@ async def api_recalibrate_ensemble():
         w_ml_bully = round(best_w_bully, 2)
         w_tr_bully = round(1.0 - w_ml_bully, 2)
 
-        new_w = {
-            "ml_toxic": w_ml_toxic,
-            "tr_toxic": w_tr_toxic,
-            "ml_bully": w_ml_bully,
-            "tr_bully": w_tr_bully
-        }
+        new_w = {"ml_toxic": w_ml_toxic, "tr_toxic": w_tr_toxic, "ml_bully": w_ml_bully, "tr_bully": w_tr_bully}
 
         settings = await get_settings()
         settings["ensemble_weights"] = new_w
@@ -224,7 +219,7 @@ async def api_recalibrate_ensemble():
             "calibrated": True,
             "sample_size": len(records),
             "message": f"Optimal weights calibrated successfully using {len(records)} validated samples.",
-            "weights": new_w
+            "weights": new_w,
         }
     except Exception as e:
         logger.error("Error during recalibration", extra={"error": str(e)})

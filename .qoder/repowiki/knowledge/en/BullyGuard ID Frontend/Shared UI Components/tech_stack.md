@@ -1,0 +1,1 @@
+Uses `framer-motion` for layout animations (e.g., `layoutId` in Navbar/Sidebar) and `lucide-react` for consistent iconography.

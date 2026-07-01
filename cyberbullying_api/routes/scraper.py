@@ -29,6 +29,7 @@ async def api_scrape_tiktok(req: ScrapeTikTokRequest):
     celery_active = False
     try:
         from tasks import celery_app
+
         inspect = celery_app.control.inspect(timeout=0.5)
         if inspect and inspect.active():
             celery_active = True
@@ -38,6 +39,7 @@ async def api_scrape_tiktok(req: ScrapeTikTokRequest):
     if celery_active:
         try:
             from tasks import scrape_tiktok_task
+
             task = scrape_tiktok_task.delay(req.url, max_comments)
             res = task.get(timeout=60.0)
             if not res["success"]:
@@ -51,7 +53,10 @@ async def api_scrape_tiktok(req: ScrapeTikTokRequest):
 
     try:
         from scraper.tiktok import scrape_tiktok_comments
-        comments, success = await asyncio.to_thread(run_async_in_new_loop, scrape_tiktok_comments, req.url, max_comments)
+
+        comments, success = await asyncio.to_thread(
+            run_async_in_new_loop, scrape_tiktok_comments, req.url, max_comments
+        )
         if not success:
             raise HTTPException(status_code=502, detail="Gagal mengikis data dari TikTok secara lokal.")
         return ScrapeResponse(success=success, count=len(comments), data=comments)
@@ -69,6 +74,7 @@ async def api_scrape_x(req: ScrapeXRequest):
     celery_active = False
     try:
         from tasks import celery_app
+
         inspect = celery_app.control.inspect(timeout=0.5)
         if inspect and inspect.active():
             celery_active = True
@@ -78,6 +84,7 @@ async def api_scrape_x(req: ScrapeXRequest):
     if celery_active:
         try:
             from tasks import scrape_x_task
+
             task = scrape_x_task.delay(req.url, max_tweets)
             res = task.get(timeout=60.0)
             if not res["success"]:
@@ -91,6 +98,7 @@ async def api_scrape_x(req: ScrapeXRequest):
 
     try:
         from scraper.twitter import scrape_x_tweets
+
         tweets, success = await asyncio.to_thread(run_async_in_new_loop, scrape_x_tweets, req.url, max_tweets)
         if not success:
             raise HTTPException(status_code=502, detail="Gagal mengikis data dari X secara lokal.")

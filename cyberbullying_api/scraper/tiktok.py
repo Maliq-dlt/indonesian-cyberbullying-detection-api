@@ -6,6 +6,7 @@ from datetime import datetime
 
 try:
     from playwright.async_api import async_playwright
+
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     async_playwright = None  # type: ignore
@@ -19,7 +20,7 @@ BROWSER_PROFILE_DIR = os.path.join(BASE_DIR, os.pardir, "tiktok_browser_profile"
 
 def extract_tiktok_id(url: str) -> str:
     """Mengekstrak ID video dari URL TikTok."""
-    match = re.search(r'/video/(\d+)', url)
+    match = re.search(r"/video/(\d+)", url)
     if match:
         return match.group(1)
     return ""
@@ -49,9 +50,16 @@ def looks_like_comment(item: dict) -> bool:
         return False
 
     comment_signals = [
-        "cid", "comment_id", "id", "user", "author",
-        "digg_count", "like_count", "reply_comment_total",
-        "reply_count", "create_time",
+        "cid",
+        "comment_id",
+        "id",
+        "user",
+        "author",
+        "digg_count",
+        "like_count",
+        "reply_comment_total",
+        "reply_count",
+        "create_time",
     ]
     return any(key in item for key in comment_signals)
 
@@ -78,14 +86,8 @@ def normalize_comment(raw: dict, video_url: str, video_id: str) -> dict:
     comment_id = raw.get("cid") or raw.get("comment_id") or raw.get("id") or ""
     text = get_first_str(raw, ["text", "comment", "content", "comment_text"])
 
-    username = (
-        user.get("unique_id") or user.get("uniqueId")
-        or user.get("username") or raw.get("unique_id") or ""
-    )
-    nickname = (
-        user.get("nickname") or user.get("nickName")
-        or raw.get("nickname") or ""
-    )
+    username = user.get("unique_id") or user.get("uniqueId") or user.get("username") or raw.get("unique_id") or ""
+    nickname = user.get("nickname") or user.get("nickName") or raw.get("nickname") or ""
 
     username = clean_text(str(username))
     nickname = clean_text(str(nickname))
@@ -324,10 +326,8 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
             def handle_response(response):
                 """Intercept network responses yang berisi data komentar."""
                 resp_url = response.url.lower()
-                is_comment_response = (
-                    "comment" in resp_url
-                    and ("list" in resp_url or "reply" in resp_url
-                         or "item" in resp_url or "detail" in resp_url)
+                is_comment_response = "comment" in resp_url and (
+                    "list" in resp_url or "reply" in resp_url or "item" in resp_url or "detail" in resp_url
                 )
                 if not is_comment_response:
                     return
@@ -353,13 +353,13 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
                         if not text:
                             continue
 
-                        key = comment_id if comment_id else f'{normalized["username"]}|{text}'
+                        key = comment_id if comment_id else f"{normalized['username']}|{text}"
                         if key in seen:
                             continue
 
                         seen.add(key)
                         comments.append(text)
-                        print(f'  [Komentar #{len(comments)}] {normalized["username"]}: {text[:80]}')
+                        print(f"  [Komentar #{len(comments)}] {normalized['username']}: {text[:80]}")
 
                 pending_tasks.append(asyncio.ensure_future(process_response()))
 
@@ -411,6 +411,7 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
 
     except Exception as e:
         import traceback
+
         error_msg = f"Error scraping TikTok via Playwright: {e}\n{traceback.format_exc()}"
         print(error_msg)
         try:

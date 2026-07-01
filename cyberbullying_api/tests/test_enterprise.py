@@ -6,11 +6,7 @@ import pytest
 @pytest.mark.anyio
 async def test_auth_token_success(client):
     # Test valid credentials
-    payload = {
-        "username": "admin",
-        "password": "admin",
-        "scope": "predict admin"
-    }
+    payload = {"username": "admin", "password": "admin", "scope": "predict admin"}
     response = client.post("/api/auth/token", data=payload)
     assert response.status_code == 200
     data = response.json()
@@ -19,17 +15,14 @@ async def test_auth_token_success(client):
     assert "predict" in data["scopes"]
     assert "admin" in data["scopes"]
 
+
 @pytest.mark.anyio
 async def test_auth_token_apikey_exchange(client):
     # Set API_KEY temporarily
     orig_key = os.environ.get("API_KEY")
     os.environ["API_KEY"] = "super-secret-key"
     try:
-        payload = {
-            "username": "apikey",
-            "password": "super-secret-key",
-            "scope": "predict"
-        }
+        payload = {"username": "apikey", "password": "super-secret-key", "scope": "predict"}
         response = client.post("/api/auth/token", data=payload)
         assert response.status_code == 200
         data = response.json()
@@ -41,14 +34,13 @@ async def test_auth_token_apikey_exchange(client):
         else:
             os.environ.pop("API_KEY", None)
 
+
 @pytest.mark.anyio
 async def test_auth_token_failure(client):
-    payload = {
-        "username": "wrong_user",
-        "password": "wrong_password"
-    }
+    payload = {"username": "wrong_user", "password": "wrong_password"}
     response = client.post("/api/auth/token", data=payload)
     assert response.status_code == 401
+
 
 @pytest.mark.anyio
 async def test_rbac_token_scopes(client):
@@ -58,11 +50,7 @@ async def test_rbac_token_scopes(client):
 
     try:
         # 1. Get token with ONLY predict scope
-        payload = {
-            "username": "guest",
-            "password": "guest",
-            "scope": "predict"
-        }
+        payload = {"username": "guest", "password": "guest", "scope": "predict"}
         resp = client.post("/api/auth/token", data=payload)
         assert resp.status_code == 200
         token = resp.json()["access_token"]
@@ -86,6 +74,7 @@ async def test_rbac_token_scopes(client):
         else:
             os.environ.pop("ALLOW_MISSING_API_KEY_IN_DEV", None)
 
+
 @pytest.mark.anyio
 async def test_prometheus_metrics_endpoint(client):
     # Trigger a request first to ensure requests_total counter is populated
@@ -96,15 +85,18 @@ async def test_prometheus_metrics_endpoint(client):
     assert "cyberbullying_requests_total" in response.text
     assert "# HELP cyberbullying_requests_total" in response.text
 
+
 def test_kms_mock_integration():
     # Set mock provider
     os.environ["KMS_PROVIDER"] = "mock"
     try:
         from classifier.kms import get_encryption_key
+
         key = get_encryption_key()
         assert key == b"mock-vault-secret-key-value-12345"
     finally:
         os.environ.pop("KMS_PROVIDER", None)
+
 
 def test_onnx_gpu_provider_config():
     try:

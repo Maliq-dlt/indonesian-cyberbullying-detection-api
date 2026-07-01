@@ -28,6 +28,7 @@ RAG_POOL_LABELS = []
 
 CLOUD_LLM_SEM = asyncio.Semaphore(3)
 
+
 async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
     """Mengambil contoh relevan menggunakan pencarian vektor (pgvector) jika tersedia,
     atau fallback ke TF-IDF di memori."""
@@ -44,20 +45,24 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
 
             # Cari 3 terdekat di PostgreSQL
             async with pool.acquire() as conn:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(
+                    """
                     SELECT encrypted_text, is_toxic, is_bully
                     FROM classification_memory
                     WHERE embedding IS NOT NULL
                     ORDER BY embedding <-> $1::vector LIMIT $2
-                """, str(query_embedding_list), top_k)
+                """,
+                    str(query_embedding_list),
+                    top_k,
+                )
 
                 if rows:
                     examples_str = "\n--- Contoh Kontekstual Relevan (Vector Search) ---\n"
                     for i, r in enumerate(rows):
-                        decrypted_text = decrypt_text(r['encrypted_text'])
+                        decrypted_text = decrypt_text(r["encrypted_text"])
                         examples_str += (
-                            f"Contoh {i+1}:\n"
-                            f"Teks: \"{decrypted_text}\"\n"
+                            f"Contoh {i + 1}:\n"
+                            f'Teks: "{decrypted_text}"\n'
                             f"Hasil: is_toxic={'true' if r['is_toxic'] else 'false'}, is_bully={'true' if r['is_bully'] else 'false'}\n"
                         )
                     return examples_str
@@ -70,7 +75,9 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
     if pool:
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch("SELECT encrypted_text, is_bully FROM classification_memory ORDER BY timestamp DESC LIMIT 200")
+                rows = await conn.fetch(
+                    "SELECT encrypted_text, is_bully FROM classification_memory ORDER BY timestamp DESC LIMIT 200"
+                )
                 for r in rows:
                     memory_texts.append(decrypt_text(r["encrypted_text"]))
                     memory_labels.append("Bullying" if r["is_bully"] else "Non-bullying")
@@ -100,15 +107,12 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
             toxic_str = "true" if is_toxic else "false"
             bully_str = "true" if is_bully else "false"
 
-            examples_str += (
-                f"Contoh {i+1}:\n"
-                f"Teks: \"{orig_text}\"\n"
-                f"Hasil: is_toxic={toxic_str}, is_bully={bully_str}\n"
-            )
+            examples_str += f'Contoh {i + 1}:\nTeks: "{orig_text}"\nHasil: is_toxic={toxic_str}, is_bully={bully_str}\n'
         return examples_str
     except Exception as e:
         logger.warning("Failed to perform RAG retrieval", extra={"error": str(e)})
         return ""
+
 
 async def query_cloud_llm_async(text: str, model_name: str | None = None) -> dict[str, Any]:
     # Cek cache terlebih dahulu
@@ -120,15 +124,11 @@ async def query_cloud_llm_async(text: str, model_name: str | None = None) -> dic
     async with CLOUD_LLM_SEM:
         return await _query_cloud_llm_async_raw(text, model_name)
 
+
 async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -> dict[str, Any]:
 
     if not GEMINI_API_KEY:
-        return {
-            "is_toxic": False,
-            "is_bully": False,
-            "reason": "Gemini API Key tidak dikonfigurasi.",
-            "success": False
-        }
+        return {"is_toxic": False, "is_bully": False, "reason": "Gemini API Key tidak dikonfigurasi.", "success": False}
 
     url = f"{GEMINI_BASE_URL.rstrip('/')}/chat/completions"
 
@@ -142,9 +142,9 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
             "reasoning": {"type": "string"},
             "is_toxic": {"type": "boolean"},
             "is_bully": {"type": "boolean"},
-            "reason": {"type": "string"}
+            "reason": {"type": "string"},
         },
-        "required": ["reasoning", "is_toxic", "is_bully", "reason"]
+        "required": ["reasoning", "is_toxic", "is_bully", "reason"],
     }
 
     # Ambil contoh kontekstual dinamis menggunakan Few-Shot RAG (Opsi 3)
@@ -167,9 +167,7 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
         "PENTING: Lakukan penalaran/analisis nuansa kata di bidang 'reasoning' terlebih dahulu sebelum mengisi 'is_toxic', 'is_bully', dan 'reason' (ringkasan penjelasan)."
     )
 
-    user_payload = {
-        "text_to_analyze": text
-    }
+    user_payload = {"text_to_analyze": text}
 
     prompt = f"""
     Gunakan format JSON yang valid mengikuti skema ini secara ketat (isi field 'reasoning' terlebih dahulu untuk melakukan Chain-of-Thought):
@@ -182,19 +180,13 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
     # Payload OpenAI-compatible format
     payload = {
         "model": model_name,
-        "messages": [
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": prompt}
-        ],
+        "messages": [{"role": "system", "content": system_instruction}, {"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
         "temperature": 0.0,
-        "stream": False
+        "stream": False,
     }
 
-    headers = {
-        "Authorization": f"Bearer {GEMINI_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
 
     try:
         # Timeout 15 detik cukup untuk API cloud
@@ -208,31 +200,33 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
                 # Menggabungkan reasoning dan summary untuk visualisasi penjelasan yang kaya di UI
                 reasoning = content.get("reasoning", "").strip()
                 summary_reason = content.get("reason", "").strip()
-                combined_reason = f"Analisis: {reasoning} - Kesimpulan: {summary_reason}" if reasoning else summary_reason
+                combined_reason = (
+                    f"Analisis: {reasoning} - Kesimpulan: {summary_reason}" if reasoning else summary_reason
+                )
 
                 result = {
                     "is_toxic": bool(content.get("is_toxic", False)),
                     "is_bully": bool(content.get("is_bully", False)),
                     "reason": combined_reason,
-                    "success": True
+                    "success": True,
                 }
                 await save_cached_response(text, result)
                 return result
             else:
                 GEMINI_FAILURES_TOTAL.inc()
-                logger.warning("Cloud LLM API error", extra={"status_code": response.status_code, "response": response.text[:200]})
+                logger.warning(
+                    "Cloud LLM API error", extra={"status_code": response.status_code, "response": response.text[:200]}
+                )
     except Exception as e:
         GEMINI_FAILURES_TOTAL.inc()
         logger.warning("Failed to contact Cloud LLM", extra={"error": str(e)})
 
-    return {
-        "is_toxic": False,
-        "is_bully": False,
-        "reason": "Gagal terhubung ke Cloud LLM.",
-        "success": False
-    }
+    return {"is_toxic": False, "is_bully": False, "reason": "Gagal terhubung ke Cloud LLM.", "success": False}
 
-async def query_cloud_llm_stream_async(text: str, model_name: str | None = None) -> AsyncGenerator[dict[str, Any], None]:
+
+async def query_cloud_llm_stream_async(
+    text: str, model_name: str | None = None
+) -> AsyncGenerator[dict[str, Any], None]:
     # Cek cache terlebih dahulu
     cached = await get_cached_response(text)
     if cached:
@@ -245,13 +239,21 @@ async def query_cloud_llm_stream_async(text: str, model_name: str | None = None)
         async for chunk in _query_cloud_llm_stream_async_raw(text, model_name):
             yield chunk
 
-async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = None) -> AsyncGenerator[dict[str, Any], None]:
+
+async def _query_cloud_llm_stream_async_raw(
+    text: str, model_name: str | None = None
+) -> AsyncGenerator[dict[str, Any], None]:
 
     if not GEMINI_API_KEY:
         yield {
             "chunk": "Gemini API Key tidak dikonfigurasi.",
             "done": True,
-            "final_data": {"is_toxic": False, "is_bully": False, "reason": "Gemini API Key tidak dikonfigurasi.", "success": False}
+            "final_data": {
+                "is_toxic": False,
+                "is_bully": False,
+                "reason": "Gemini API Key tidak dikonfigurasi.",
+                "success": False,
+            },
         }
         return
 
@@ -266,9 +268,9 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
             "reasoning": {"type": "string"},
             "is_toxic": {"type": "boolean"},
             "is_bully": {"type": "boolean"},
-            "reason": {"type": "string"}
+            "reason": {"type": "string"},
         },
-        "required": ["reasoning", "is_toxic", "is_bully", "reason"]
+        "required": ["reasoning", "is_toxic", "is_bully", "reason"],
     }
 
     dynamic_examples = await retrieve_relevant_examples(text, top_k=3)
@@ -299,28 +301,31 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
 
     payload = {
         "model": model_name,
-        "messages": [
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": prompt}
-        ],
+        "messages": [{"role": "system", "content": system_instruction}, {"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
         "temperature": 0.0,
-        "stream": True
+        "stream": True,
     }
 
-    headers = {
-        "Authorization": f"Bearer {GEMINI_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
 
     full_response = ""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as response:
                 if response.status_code != 200:
-                     GEMINI_FAILURES_TOTAL.inc()
-                     yield {"chunk": f"Error: {response.status_code}", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": f"Gagal terhubung ke Cloud LLM: {response.status_code}", "success": False}}
-                     return
+                    GEMINI_FAILURES_TOTAL.inc()
+                    yield {
+                        "chunk": f"Error: {response.status_code}",
+                        "done": True,
+                        "final_data": {
+                            "is_toxic": False,
+                            "is_bully": False,
+                            "reason": f"Gagal terhubung ke Cloud LLM: {response.status_code}",
+                            "success": False,
+                        },
+                    }
+                    return
 
                 async for line in response.aiter_lines():
                     line = line.strip()
@@ -348,19 +353,30 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
                     content = json.loads(full_response)
                     reasoning = content.get("reasoning", "").strip()
                     summary_reason = content.get("reason", "").strip()
-                    combined_reason = f"Analisis: {reasoning} - Kesimpulan: {summary_reason}" if reasoning else summary_reason
+                    combined_reason = (
+                        f"Analisis: {reasoning} - Kesimpulan: {summary_reason}" if reasoning else summary_reason
+                    )
 
                     result = {
                         "is_toxic": bool(content.get("is_toxic", False)),
                         "is_bully": bool(content.get("is_bully", False)),
                         "reason": combined_reason,
-                        "success": True
+                        "success": True,
                     }
                     await save_cached_response(text, result)
                     yield {"chunk": "", "done": True, "final_data": result}
                 except json.JSONDecodeError:
                     GEMINI_FAILURES_TOTAL.inc()
-                    yield {"chunk": "", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": "Gagal memparsing JSON balasan dari Cloud LLM.", "success": False}}
+                    yield {
+                        "chunk": "",
+                        "done": True,
+                        "final_data": {
+                            "is_toxic": False,
+                            "is_bully": False,
+                            "reason": "Gagal memparsing JSON balasan dari Cloud LLM.",
+                            "success": False,
+                        },
+                    }
 
     except Exception as e:
         GEMINI_FAILURES_TOTAL.inc()
@@ -368,5 +384,10 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
         yield {
             "chunk": "",
             "done": True,
-            "final_data": {"is_toxic": False, "is_bully": False, "reason": "Terjadi kesalahan internal saat menghubungi Cloud LLM secara streaming.", "success": False}
+            "final_data": {
+                "is_toxic": False,
+                "is_bully": False,
+                "reason": "Terjadi kesalahan internal saat menghubungi Cloud LLM secara streaming.",
+                "success": False,
+            },
         }

@@ -73,13 +73,14 @@ async def main():
                 os.remove(lock_file)
 
         import subprocess
+
         # Jalankan Chrome secara independen dengan profil persisten
         cmd = [
             chrome_path,
             f"--user-data-dir={BROWSER_PROFILE_DIR}",
             "--no-first-run",
             "--no-default-browser-check",
-            "https://www.tiktok.com/login"
+            "https://www.tiktok.com/login",
         ]
 
         # Jalankan proses
@@ -101,7 +102,7 @@ async def main():
                     executable_path=chrome_path,
                 )
                 cookies = await browser_context.cookies()
-                has_session = any(c['name'] in ('sessionid', 'sessionid_ss') for c in cookies)
+                has_session = any(c["name"] in ("sessionid", "sessionid_ss") for c in cookies)
                 await browser_context.close()
 
                 if has_session:
@@ -160,7 +161,7 @@ async def main():
                 cookies = await browser_context.cookies()
 
                 # Cari cookie 'sessionid' atau 'sessionid_ss' yang menandakan login sukses
-                has_session = any(c['name'] in ('sessionid', 'sessionid_ss') for c in cookies)
+                has_session = any(c["name"] in ("sessionid", "sessionid_ss") for c in cookies)
 
                 # Alternatif: cek jika elemen profil sudah muncul di halaman
                 profile_visible = False
