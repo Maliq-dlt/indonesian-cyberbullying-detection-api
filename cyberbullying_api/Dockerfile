@@ -17,7 +17,7 @@ RUN /bin/uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy and install runtime requirements using uv and cache mounts to speed up consecutive builds.
-# The full requirements.txt keeps training/export/dev dependencies for local use.
+# Build context is the repo root, so paths are relative to repo root.
 COPY cyberbullying_api/requirements.docker.txt /app/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
     /bin/uv pip install -r /app/requirements.txt

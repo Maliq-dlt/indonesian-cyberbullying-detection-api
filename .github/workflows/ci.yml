@@ -85,7 +85,7 @@ jobs:
 
     - name: Build Docker image
       run: |
-        docker build -f cyberbullying_api/Dockerfile -t bullyguard-id:test cyberbullying_api/
+        docker build -f cyberbullying_api/Dockerfile -t bullyguard-id:test .
 
     - name: Run container and health check
       env:
