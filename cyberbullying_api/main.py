@@ -32,14 +32,17 @@ elif os.path.exists("../.env"):
 else:
     load_dotenv()
 
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
-
+from starlette.middleware.base import BaseHTTPMiddleware
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+import time
 import classifier
 import routes.state as state
-from routes.admin import router as admin_router
+from routes.admin import router as admin_router, public_router as auth_router
 from routes.deps import verify_api_key
 from routes.predict import router as predict_router
+from monitoring import REQUESTS_TOTAL, REQUESTS_LATENCY
 
 
 NON_PRODUCTION_ENVS = {"local", "dev", "development", "test", "testing"}
@@ -74,6 +77,11 @@ def validate_runtime_config() -> None:
 
 
 async def listen_model_reload() -> None:
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        logger.info("[Redis Pub/Sub] REDIS_URL is not defined or empty. Model reload listener disabled.")
+        return
+
     from classifier import get_redis
 
     await asyncio.sleep(2.0)
@@ -175,6 +183,26 @@ allowed_origins_raw = os.getenv(
 )
 allowed_origins = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
 
+class PrometheusMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/metrics":
+            return await call_next(request)
+            
+        start_time = time.perf_counter()
+        response = await call_next(request)
+        process_time = time.perf_counter() - start_time
+        
+        path = request.url.path
+        method = request.method
+        status = str(response.status_code)
+        
+        REQUESTS_TOTAL.labels(method=method, endpoint=path, status=status).inc()
+        REQUESTS_LATENCY.labels(endpoint=path).observe(process_time)
+        
+        return response
+
+app.add_middleware(PrometheusMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -183,8 +211,13 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-API-Key", "Authorization"],
 )
 
+app.include_router(auth_router)
 app.include_router(predict_router)
 app.include_router(admin_router)
+
+@app.get("/metrics")
+def get_metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/")

@@ -7,6 +7,7 @@ from typing import List, Dict, Any, AsyncGenerator
 
 from classifier.database import get_cached_response, save_cached_response, get_pg_pool, decrypt_text
 from normalizer import normalize_text
+from monitoring import GEMINI_FAILURES_TOTAL
 
 # Konfigurasi Gemini API dinamis dari environment variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -212,8 +213,10 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
                 await save_cached_response(text, result)
                 return result
             else:
+                GEMINI_FAILURES_TOTAL.inc()
                 print(f"Warning: Cloud LLM API Error: {response.status_code} - {response.text}")
     except Exception as e:
+        GEMINI_FAILURES_TOTAL.inc()
         print("Warning: Gagal menghubungi Cloud LLM:", e)
         
     return {
@@ -309,6 +312,7 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
         async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as response:
                 if response.status_code != 200:
+                     GEMINI_FAILURES_TOTAL.inc()
                      yield {"chunk": f"Error: {response.status_code}", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": f"Gagal terhubung ke Cloud LLM: {response.status_code}", "success": False}}
                      return
 
@@ -349,9 +353,11 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
                     await save_cached_response(text, result)
                     yield {"chunk": "", "done": True, "final_data": result}
                 except json.JSONDecodeError:
+                    GEMINI_FAILURES_TOTAL.inc()
                     yield {"chunk": "", "done": True, "final_data": {"is_toxic": False, "is_bully": False, "reason": "Gagal memparsing JSON balasan dari Cloud LLM.", "success": False}}
 
     except Exception as e:
+        GEMINI_FAILURES_TOTAL.inc()
         print("Warning: Gagal menghubungi Cloud LLM secara streaming:", e)
         yield {
             "chunk": "", 

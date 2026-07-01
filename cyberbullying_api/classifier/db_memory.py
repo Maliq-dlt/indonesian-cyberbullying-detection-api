@@ -7,8 +7,9 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from models import HybridResponse, determine_category
 from classifier.db_config import (
-    get_pg_pool, get_redis, encrypt_text, decrypt_text, SQLITE_WRITE_LOCK
+    get_pg_pool, get_redis, encrypt_text, decrypt_text, SQLITE_WRITE_LOCK, get_sqlite_db_path
 )
+from monitoring import CACHE_HITS_TOTAL, CACHE_LOOKUPS_TOTAL
 
 async def save_classification_memory(res: HybridResponse, embedding_json: str | None = None):
     # Validasi bahwa embedding adalah daftar angka finite yang valid
@@ -78,8 +79,7 @@ async def save_classification_memory(res: HybridResponse, embedding_json: str | 
 
     # Fallback to SQLite
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+        db_path = get_sqlite_db_path()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
         def write_sqlite():
@@ -130,6 +130,8 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                 is_toxic = data["is_toxic"]
                 is_bully = data["is_bully"]
                 base_source = re.sub(r'\s*\((Redis Cache|PG Database)\)$', '', data["decision_source"])
+                CACHE_HITS_TOTAL.labels(cache_type="redis").inc()
+                CACHE_LOOKUPS_TOTAL.labels(cache_type="redis", status="hit").inc()
                 return HybridResponse(
                     text=text,
                     is_toxic=is_toxic,
@@ -140,6 +142,8 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                     decision_source=base_source + " (Redis Cache)",
                     reason=data["reason"]
                 )
+            else:
+                CACHE_LOOKUPS_TOTAL.labels(cache_type="redis", status="miss").inc()
         except Exception as e:
             print(f"Warning: Redis error saat membaca memori: {e}")
             
@@ -153,6 +157,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                     WHERE text_hash = $1
                 """, text_hash)
                 if row:
+                    CACHE_LOOKUPS_TOTAL.labels(cache_type="postgres", status="hit").inc()
                     is_toxic = bool(row["is_toxic"])
                     is_bully = bool(row["is_bully"])
                     prob_toxic = row["probability_toxic"] if row["probability_toxic"] is not None else (row["confidence"] if is_toxic else 0.0)
@@ -171,6 +176,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                         await r.set(f"mem:{text_hash}", json.dumps(mem_data), ex=2592000)
                         
                     base_source = re.sub(r'\s*\((Redis Cache|PG Database)\)$', '', row["decision_source"])
+                    CACHE_HITS_TOTAL.labels(cache_type="postgres").inc()
                     return HybridResponse(
                         text=text,
                         is_toxic=is_toxic,
@@ -181,13 +187,14 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                         decision_source=base_source + " (PG Database)",
                         reason=row["reason"]
                     )
+                else:
+                    CACHE_LOOKUPS_TOTAL.labels(cache_type="postgres", status="miss").inc()
         except Exception as e:
             print(f"Warning: PostgreSQL error saat membaca memori: {e}")
             
     # SQLite fallback read
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+        db_path = get_sqlite_db_path()
         if os.path.exists(db_path):
             def read_sqlite():
                 conn = sqlite3.connect(db_path, timeout=10.0)
@@ -204,12 +211,13 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
 
             row = await asyncio.to_thread(read_sqlite)
             if row:
+                CACHE_LOOKUPS_TOTAL.labels(cache_type="sqlite", status="hit").inc()
                 is_toxic = bool(row["is_toxic"])
                 is_bully = bool(row["is_bully"])
                 prob_toxic = row["probability_toxic"] if row["probability_toxic"] is not None else (row["confidence"] if is_toxic else 0.0)
                 prob_bully = row["probability_bully"] if row["probability_bully"] is not None else (row["confidence"] if is_bully else 0.0)
                 base_source = re.sub(r'\s*\((Redis Cache|PG Database|SQLite Database)\)$', '', row["decision_source"])
-                
+                CACHE_HITS_TOTAL.labels(cache_type="sqlite").inc()
                 if r:
                     try:
                         mem_data = {
@@ -235,6 +243,8 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                     decision_source=base_source + " (SQLite Database)",
                     reason=row["reason"]
                 )
+            else:
+                CACHE_LOOKUPS_TOTAL.labels(cache_type="sqlite", status="miss").inc()
     except Exception as sq_err:
         print(f"Warning: SQLite error pada get_classification_memory fallback: {sq_err}")
         
@@ -263,7 +273,10 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                             prob_toxic = row["probability_toxic"] if row["probability_toxic"] is not None else (row["confidence"] if is_toxic else 0.0)
                             prob_bully = row["probability_bully"] if row["probability_bully"] is not None else (row["confidence"] if is_bully else 0.0)
                             
-                            decrypted_text = decrypt_text(row["encrypted_text"])
+                            try:
+                                decrypted_text = decrypt_text(row["encrypted_text"])
+                            except ValueError:
+                                return None
                             similarity_pct = round((1.0 - row["distance"]) * 100, 1)
                             
                             # Simpan kecocokan eksak di Redis agar pemanggilan identik berikutnya lebih cepat
@@ -298,8 +311,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
             # Fallback pencarian semantik di SQLite menggunakan Python numpy
             try:
                 import numpy as np
-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+                db_path = get_sqlite_db_path()
                 if os.path.exists(db_path):
                     def run_sqlite_semantic():
                         conn = sqlite3.connect(db_path, timeout=10.0)
@@ -345,7 +357,10 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                             prob_toxic = best_row[7] if best_row[7] is not None else (best_row[6] if is_toxic else 0.0)
                             prob_bully = best_row[8] if best_row[8] is not None else (best_row[6] if is_bully else 0.0)
                             
-                            decrypted_text = decrypt_text(best_row[1])
+                            try:
+                                decrypted_text = decrypt_text(best_row[1])
+                            except ValueError:
+                                return None
                             similarity_pct = round(best_sim * 100, 1)
                             
                             if r:
@@ -396,12 +411,11 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
                 for r in rows:
                     row_dict = dict(r)
                     enc_text = row_dict.pop("encrypted_text", "")
-                    decrypted = decrypt_text(enc_text)
-                    # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
-                    if decrypted == enc_text and enc_text.startswith("gAAAAA"):
-                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
-                    else:
+                    try:
+                        decrypted = decrypt_text(enc_text)
                         row_dict["text"] = decrypted
+                    except ValueError:
+                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
                     results.append(row_dict)
             return results
         except Exception as e:
@@ -409,8 +423,7 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
 
     # SQLite fallback
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+        db_path = get_sqlite_db_path()
         if os.path.exists(db_path):
             def read_sqlite_unvalidated():
                 conn = sqlite3.connect(db_path, timeout=10.0)
@@ -431,12 +444,11 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
             rows = await asyncio.to_thread(read_sqlite_unvalidated)
             for row_dict in rows:
                 enc_text = row_dict.pop("encrypted_text", "")
-                decrypted = decrypt_text(enc_text)
-                # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
-                if decrypted == enc_text and enc_text.startswith("gAAAAA"):
-                    row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
-                else:
+                try:
+                    decrypted = decrypt_text(enc_text)
                     row_dict["text"] = decrypted
+                except ValueError:
+                    row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
                 results.append(row_dict)
     except Exception as e:
         print(f"Warning: SQLite error pada get_unvalidated_memory: {e}")
@@ -475,20 +487,18 @@ async def get_categorized_memory(
                 for r in rows:
                     row_dict = dict(r)
                     enc_text = row_dict.pop("encrypted_text", "")
-                    decrypted = decrypt_text(enc_text)
-                    # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
-                    if decrypted == enc_text and enc_text.startswith("gAAAAA"):
-                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
-                    else:
+                    try:
+                        decrypted = decrypt_text(enc_text)
                         row_dict["text"] = decrypted
+                    except ValueError:
+                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
                     records.append(row_dict)
         except Exception as e:
             print(f"Warning: PostgreSQL error pada get_categorized_memory: {e}")
             
     if not records:
         try:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+            db_path = get_sqlite_db_path()
             if os.path.exists(db_path):
                 def read_sqlite_categorized():
                     conn = sqlite3.connect(db_path, timeout=10.0)
@@ -508,12 +518,11 @@ async def get_categorized_memory(
                 rows = await asyncio.to_thread(read_sqlite_categorized)
                 for row_dict in rows:
                     enc_text = row_dict.pop("encrypted_text", "")
-                    decrypted = decrypt_text(enc_text)
-                    # Jika dekripsi gagal, decrypt_text mengembalikan ciphertext mentah — filter agar tidak terekspos
-                    if decrypted == enc_text and enc_text.startswith("gAAAAA"):
-                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
-                    else:
+                    try:
+                        decrypted = decrypt_text(enc_text)
                         row_dict["text"] = decrypted
+                    except ValueError:
+                        row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
                     records.append(row_dict)
         except Exception as e:
             print(f"Warning: SQLite error pada get_categorized_memory: {e}")
@@ -627,8 +636,8 @@ async def update_validation_status(text: str, is_toxic: bool, is_bully: bool, is
 
     # SQLite fallback
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+        db_path = get_sqlite_db_path()
+        print("DEBUG save_classification_memory db_path:", db_path)
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
         def write_validation_sqlite():
@@ -674,8 +683,7 @@ async def save_retraining_history(f1_toxic: float, f1_bully: float, threshold_to
             print(f"Warning: PostgreSQL error pada save_retraining_history: {e}")
 
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+        db_path = get_sqlite_db_path()
         
         def save_history_sqlite():
             conn = sqlite3.connect(db_path, timeout=30.0)
@@ -708,8 +716,7 @@ async def get_retraining_history(limit: int = 50) -> List[Dict[str, Any]]:
             print(f"Warning: PostgreSQL error pada get_retraining_history: {e}")
 
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+        db_path = get_sqlite_db_path()
         
         def read_history_sqlite():
             conn = sqlite3.connect(db_path, timeout=30.0)

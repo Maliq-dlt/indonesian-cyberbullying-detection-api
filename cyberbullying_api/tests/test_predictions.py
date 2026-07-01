@@ -202,3 +202,22 @@ def test_word_importances_in_predictions(client):
         assert "word" in first_imp
         assert "weight_toxic" in first_imp
         assert "weight_bully" in first_imp
+
+
+def test_predict_hybrid_stream_lexicon_bypass(client):
+    import json
+    payload = {"text": "kamu goblok banget sih unikstreambypass"}
+    response = client.post("/predict/hybrid/stream", json=payload)
+    assert response.status_code == 200
+    text_content = response.text
+    assert "data: " in text_content
+    done_event = None
+    for line in text_content.strip().split("\n"):
+        if line.startswith("data: "):
+            evt = json.loads(line[6:])
+            if evt.get("done"):
+                done_event = evt
+                break
+    assert done_event is not None
+    assert "Tier 1 (Lexicon Kamus)" in done_event["final_data"]["decision_source"]
+
