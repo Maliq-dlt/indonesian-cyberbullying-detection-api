@@ -182,7 +182,7 @@ def _init_models_inner():
     onnx_path = os.path.join(BASE_DIR, "models", onnx_filename)
 
     if not os.path.exists(onnx_path) and os.getenv("AUTO_EXPORT_ONNX", "false").lower() in {"1", "true", "yes"}:
-        logger.info("ONNX file not found, running auto-export", extra={"filename": onnx_filename})
+        logger.info("ONNX file not found, running auto-export", extra={"onnx_file": onnx_filename})
         try:
             export_script = os.path.join(BASE_DIR, "export_onnx.py")
             legacy_onnx = os.path.join(BASE_DIR, "models", "model_quantized.onnx")
@@ -207,7 +207,7 @@ def _init_models_inner():
         except Exception as e:
             logger.error("Auto ONNX export failed, falling back to PyTorch", extra={"error": str(e)})
     elif not os.path.exists(onnx_path):
-        logger.info("ONNX file not found, auto-export disabled", extra={"filename": onnx_filename})
+        logger.info("ONNX file not found, auto-export disabled", extra={"onnx_file": onnx_filename})
 
     if os.path.exists(onnx_path) and ort is not None:
         try:
