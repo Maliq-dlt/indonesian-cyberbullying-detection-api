@@ -362,5 +362,5 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
         yield {
             "chunk": "", 
             "done": True, 
-            "final_data": {"is_toxic": False, "is_bully": False, "reason": f"Error streaming LLM: {str(e)}", "success": False}
+            "final_data": {"is_toxic": False, "is_bully": False, "reason": "Terjadi kesalahan internal saat menghubungi Cloud LLM secara streaming.", "success": False}
         }

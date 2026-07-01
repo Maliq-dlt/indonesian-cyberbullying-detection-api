@@ -155,7 +155,8 @@ async def predict_hybrid_stream_endpoint(req: TextRequest):
                     }
                 yield f"data: {json.dumps(data_dict)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+            print(f"Warning: Gagal melakukan streaming prediksi hybrid: {e}")
+            yield f"data: {json.dumps({'error': 'Terjadi kesalahan internal saat memproses stream.', 'done': True})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

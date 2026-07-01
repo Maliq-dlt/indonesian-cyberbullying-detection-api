@@ -78,10 +78,10 @@ def verify_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-
             detail="API key is required. Send it using the X-API-Key header.",
         )
 
-    expected_hash = hashlib.sha256(expected_key.encode("utf-8")).digest()
-    provided_hash = hashlib.sha256(x_api_key.encode("utf-8")).digest()
+    expected_bytes = expected_key.encode("utf-8")
+    provided_bytes = x_api_key.encode("utf-8")
 
-    if not hmac.compare_digest(provided_hash, expected_hash):
+    if not hmac.compare_digest(provided_bytes, expected_bytes):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key.",
@@ -231,9 +231,9 @@ async def get_current_user(
     if not token and x_api_key:
         expected_key = os.getenv("API_KEY", "").strip()
         if expected_key:
-            expected_hash = hashlib.sha256(expected_key.encode("utf-8")).digest()
-            provided_hash = hashlib.sha256(x_api_key.encode("utf-8")).digest()
-            if hmac.compare_digest(provided_hash, expected_hash):
+            expected_bytes = expected_key.encode("utf-8")
+            provided_bytes = x_api_key.encode("utf-8")
+            if hmac.compare_digest(provided_bytes, expected_bytes):
                 return {"username": "apikey_user", "scopes": ["predict", "admin"]}
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
