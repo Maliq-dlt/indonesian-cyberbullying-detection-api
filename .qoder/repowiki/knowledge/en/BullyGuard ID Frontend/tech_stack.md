@@ -1,0 +1,1 @@
+React 19, Vite 8, TypeScript 6, Zustand 5, Tailwind CSS 4, Framer Motion 12

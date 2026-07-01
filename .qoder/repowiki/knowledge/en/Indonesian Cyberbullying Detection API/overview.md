@@ -1,0 +1,1 @@
+A FastAPI-based microservice providing hybrid cyberbullying and hate speech detection for Indonesian text using a three-tier classification architecture.

@@ -13,16 +13,17 @@ from __future__ import annotations
 import hashlib
 import hmac
 import ipaddress
+import logging
 import os
 import socket
-from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import Header, HTTPException, Request, status, Depends
-from fastapi.security import OAuth2PasswordBearer, SecurityScopes
-import jwt
-import classifier
+logger = logging.getLogger("bullyguard")
 
+import classifier
+import jwt
+from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 
 NON_PRODUCTION_ENVS = {"local", "dev", "development", "test", "testing"}
 
@@ -52,7 +53,7 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def verify_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> None:
+def verify_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
     """Validate the X-API-Key header for protected endpoints.
 
     Local development may allow an empty API_KEY only when
@@ -152,7 +153,7 @@ async def rate_limit_cloud_llm_and_batch(request: Request) -> None:
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"Warning: failed to evaluate Redis rate limit: {exc}")
+        logger.warning("Failed to evaluate Redis rate limit", extra={"error": str(exc)})
         if fail_open:
             return
         raise HTTPException(
@@ -205,22 +206,41 @@ def is_safe_webhook_url(url: str) -> bool:
     except Exception:
         return False
 
+
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/auth/token",
     scopes={
         "predict": "Akses untuk analisis dan prediksi cyberbullying (Core API).",
-        "admin": "Akses administratif untuk manajemen data HITL, scraper, dan retraining model."
+        "admin": "Akses administratif untuk manajemen data HITL, scraper, dan retraining model.",
     },
-    auto_error=False
+    auto_error=False,
 )
 
-JWT_SECRET = os.getenv("JWT_SECRET", os.getenv("API_KEY", "bullyguard_id_dev_insecure_key_source")).strip()
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
+if not JWT_SECRET:
+    JWT_SECRET = os.getenv("API_KEY", "").strip()
+if not JWT_SECRET:
+    if is_development_env():
+        # Gunakan secret acak per-process di development (tidak persisten, tidak bisa ditebak)
+        import secrets
+
+        JWT_SECRET = secrets.token_hex(32)
+        logger.warning(
+            "JWT_SECRET dan API_KEY tidak diatur. Menggunakan secret acak per-process. "
+            "Token JWT tidak akan bertahan setelah restart server."
+        )
+    else:
+        raise RuntimeError(
+            "CRITICAL: JWT_SECRET atau API_KEY harus diatur di environment non-development. "
+            "Server menolak startup demi keamanan."
+        )
 ALGORITHM = "HS256"
+
 
 async def get_current_user(
     security_scopes: SecurityScopes,
-    token: Optional[str] = Depends(oauth2_scheme),
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")
+    token: str | None = Depends(oauth2_scheme),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict:
     # 1. Dev mode bypass jika diizinkan dan token serta API Key kosong
     if is_development_env() and _bool_env("ALLOW_MISSING_API_KEY_IN_DEV", True) and not token and not x_api_key:

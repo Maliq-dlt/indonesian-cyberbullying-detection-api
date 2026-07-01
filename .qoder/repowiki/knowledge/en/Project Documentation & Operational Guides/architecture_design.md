@@ -1,0 +1,4 @@
+- Organized into thematic guides: local setup (`LOCAL_SETUP.md`), security protocols (`SECURITY_HARDENING.md`), ML confidence calibration (`ML_CONFIDENCE_GUIDE.md`), and frontend refactoring (`FRONTEND_REFACTOR_GUIDE.md`).
+- Establishes operational boundaries through acceptance criteria (`ACCEPTANCE_CRITERIA.md`) and production readiness checklists (`PRODUCTION_CHECKLIST.md`).
+- Defines a staged patch application order (`APPLY_PATCH_ORDER.md`) to manage integration risks across documentation, backend security, ML logic, and frontend modules.
+- Includes rollback procedures (`ROLLBACK_PLAN.md`) and error analysis frameworks (`ERROR_ANALYSIS_GUIDE.md`) to support maintenance and model iteration.

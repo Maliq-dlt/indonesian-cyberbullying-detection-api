@@ -1,0 +1,3 @@
+- Datasets are primarily stored in CSV format with consistent column structures for text and labels.
+- Text preprocessing artifacts such as slang dictionaries and stopword lists are provided as separate CSV files alongside the main data.
+- README files consistently include academic citations and licensing information for research usage.

@@ -74,13 +74,15 @@ graph TD
 
 ```text
 .
-├── .github/                         # Alur integrasi CI/CD
+├── .github/                         # Alur integrasi CI/CD (Actions, PR template, CodeQL)
 ├── cyberbullying_api/               # Backend API berbasis FastAPI
 │   ├── cache/                       # Lokasi penyimpanan log dan cache model
-│   ├── classifier/                  # Core logic, database, confidence, & predictor
+│   ├── classifier/                  # Core logic, database, confidence, predictor, & KMS
 │   ├── models/                      # Artefak model (joblib, ONNX) & thresholds.json
-│   ├── routes/                      # Route endpoint FastAPI (predict, admin)
+│   ├── routes/                      # Route endpoint FastAPI (predict, auth, settings, training, hitl, scraper)
+│   ├── scraper/                     # Scraper media sosial (TikTok, X/Twitter)
 │   ├── tests/                       # Unit test internal backend
+│   ├── training/                    # Modul pelatihan dan retraining model
 │   └── main.py                      # Berkas entrypoint backend utama
 ├── dataset/                         # Dataset latih, kamus slang/alay, & kata abusive
 ├── docs/                            # Dokumentasi teknis terperinci
@@ -89,10 +91,14 @@ graph TD
 │   ├── ML_CONFIDENCE_GUIDE.md       # Teori dan kalibrasi skor confidence
 │   ├── SECURITY_HARDENING.md        # Laporan hardening keamanan
 │   └── ERROR_ANALYSIS_GUIDE.md      # Panduan analisis false positive/negative
-├── frontend/                        # Dashboard web berbasis React + Vite
+├── frontend/                        # Dashboard web berbasis React + Vite + Zustand
+│   └── src/
+│       ├── components/              # Komponen UI (Detector/, Home/, ActiveLearning, dll.)
+│       └── store/                   # Zustand state management
 ├── scripts/                         # Skrip otomatisasi (smoke test, verifikasi patch)
+├── tests/                           # Unit test backend tingkat root (confidence, normalizer, monitoring)
 ├── docker-compose.yml               # Konfigurasi orkestrasi container dev
-├── MODEL_EVALUATION.md              # Template pencatatan performa model
+├── docs/MODEL_EVALUATION.md         # Template pencatatan performa model
 └── README.md                        # Dokumentasi utama proyek
 ```
 
@@ -340,11 +346,18 @@ curl -X POST "http://localhost:8000/predict/hybrid" \
 
 ## 🧪 Testing & Penjaminan Mutu
 
-### Unit Test Backend
-Untuk memverifikasi logika kehandalan fitur klasifikasi dan validasi confidence:
+Proyek ini memiliki **146 total test** (101 backend + 45 frontend) yang mencakup klasifikasi, confidence, normalizer, monitoring, dan semua modul route.
+
+### Unit Test Backend (101 tests)
 ```bash
 $env:ENV="development"; $env:PYTHONPATH=".;cyberbullying_api"; pytest tests/ -q
 $env:ENV="development"; $env:PYTHONPATH=".;cyberbullying_api"; pytest cyberbullying_api/tests/ -q
+```
+
+### Unit Test Frontend (45 tests)
+```bash
+cd frontend
+npx vitest run
 ```
 
 ### Verifikasi Patch Otomatis
@@ -363,7 +376,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke_test_api.ps1
 
 ## 📈 Evaluasi Model & Benchmark
 
-Sebelum merilis perubahan model ke server production, model harus lolos tahap validasi empiris di berkas [`MODEL_EVALUATION.md`](MODEL_EVALUATION.md). 
+Sebelum merilis perubahan model ke server production, model harus lolos tahap validasi empiris di berkas [`docs/MODEL_EVALUATION.md`](docs/MODEL_EVALUATION.md). 
 Anda juga dapat menggunakan evaluator threshold bawaan kami untuk mencari parameter terbaik berdasarkan data validasi riil:
 ```bash
 python -m cyberbullying_api.classifier.evaluate_thresholds --csv dataset/eval.csv
@@ -400,6 +413,16 @@ python -m cyberbullying_api.classifier.evaluate_thresholds --csv dataset/eval.cs
 - [x] Refactor kode besar frontend `Detector.tsx` menjadi modular.
 - [x] Implementasi kalibrasi probabilitas dan penanganan confidence margin.
 - [x] Hardening baseline API security & Rate Limiting.
+- [x] Structured JSON logging & Correlation ID middleware.
+- [x] API Versioning (`/api/v1/`) dengan backward compatibility.
+- [x] Security Headers Middleware (HSTS, X-Frame-Options, dll).
+- [x] JWT Secret hardening & Request Size Limit.
+- [x] Zustand state management (menggantikan prop drilling).
+- [x] Home.tsx God Object dipecah menjadi 3 sub-komponen.
+- [x] Async endpoints untuk semua endpoint prediksi.
+- [x] Pagination pada endpoint list (HITL & training history).
+- [x] Admin module decomposition (auth, settings, training, hitl, scraper).
+- [x] 101 backend tests + 45 frontend tests.
 - [ ] Integrasi visualisasi metrik performa model real-time di admin panel.
 - [ ] Pengujian beban terarah (*load testing*) menggunakan k6 atau Locust.
 

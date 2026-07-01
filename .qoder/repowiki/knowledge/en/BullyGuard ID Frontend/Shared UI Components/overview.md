@@ -1,0 +1,1 @@
+Provides core layout and utility components including navigation, loading states, and explainable AI text highlighting.

@@ -1,0 +1,4 @@
+- Centralized state management via a single `useAppStore` (Zustand) instance that handles navigation tabs, theme persistence, API configuration, and connection health polling.
+- Conditional rendering in `App.tsx` drives the main layout, switching between a landing page and a dashboard view with a persistent sidebar based on the active tab state.
+- Shared UI components (Sidebar, Navbar utilities) are consumed by feature modules (Detector, ActiveLearning, etc.) which receive API context props derived from the global store.
+- Vite serves as the build orchestrator, integrating React plugin, Tailwind CSS v4, and Vitest for a unified development and testing workflow.

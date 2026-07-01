@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AnimatePresence, useReducedMotion, MotionConfig, LazyMotion, domAnimation } from 'framer-motion';
-import { Toaster, toast } from 'sonner';
+import { Toaster } from 'sonner';
 
-
+import { useAppStore } from './store/useAppStore';
 import Sidebar from './components/Sidebar';
 import Home from './components/Home';
 import Detector from './components/Detector';
@@ -12,17 +12,21 @@ import ActiveLearning from './components/ActiveLearning';
 import Settings from './components/Settings';
 
 export default function App() {
-  const shouldReduceMotion = useReducedMotion();
-  const [activeTab, setActiveTab] = useState<'home' | 'detector' | 'social' | 'batch' | 'active-learning' | 'settings'>('home');
-  
-  // Dark mode state
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const saved = localStorage.getItem('bg_theme');
-    return (saved === 'light' || saved === 'dark') ? saved : 'dark';
-  });
+  useReducedMotion();
+  const apiStatusRef = useRef(useAppStore.getState().apiStatus);
 
-  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  const {
+    activeTab, theme, apiUrl, apiKey, apiStatus, modelStatus,
+    toggleTheme, setActiveTab, setApiUrl, setApiKey,
+    checkConnection, handleExportCSV,
+  } = useAppStore();
 
+  // Sync apiStatus → ref for polling delay calculation
+  useEffect(() => {
+    apiStatusRef.current = apiStatus;
+  }, [apiStatus]);
+
+  // Apply theme to DOM
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'dark') {
@@ -30,85 +34,9 @@ export default function App() {
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('bg_theme', theme);
   }, [theme]);
 
-  // Settings states
-  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('bg_api_url') || 'http://localhost:8000');
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('bg_api_key') || '');
-  const [apiStatus, setApiStatus] = useState<'unchecked' | 'online' | 'offline'>('unchecked');
-  const [modelStatus, setModelStatus] = useState<any>(null);
-
-  // Keep ref of status to avoid useEffect triggers on polling delay calculation
-  const apiStatusRef = useRef(apiStatus);
-  useEffect(() => {
-    apiStatusRef.current = apiStatus;
-  }, [apiStatus]);
-
-  // Save settings when changed
-  useEffect(() => {
-    localStorage.setItem('bg_api_url', apiUrl);
-    localStorage.setItem('bg_api_key', apiKey);
-  }, [apiUrl, apiKey]);
-
-  const checkingRef = useRef(false);
-
-  // Test connection to backend
-  const checkConnection = useCallback(async (silent = false) => {
-    if (checkingRef.current) return false;
-    checkingRef.current = true;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2s timeout for connection check
-
-    try {
-      if (!silent) setApiStatus('unchecked');
-      const headers: Record<string, string> = {};
-      if (apiKey) headers['x-api-key'] = apiKey;
-
-      const healthRes = await fetch(`${apiUrl}/health?_t=${Date.now()}`, { 
-        headers,
-        signal: controller.signal,
-        cache: 'no-store'
-      });
-      clearTimeout(timeoutId);
-      
-      if (!healthRes.ok) throw new Error('Health check failed');
-      
-      // Fetch models status if health check succeeds
-      const statusController = new AbortController();
-      const statusTimeoutId = setTimeout(() => statusController.abort(), 2000);
-      try {
-        const statusRes = await fetch(`${apiUrl}/models/status?_t=${Date.now()}`, { 
-          headers,
-          signal: statusController.signal,
-          cache: 'no-store'
-        });
-        clearTimeout(statusTimeoutId);
-        if (statusRes.ok) {
-          const statusData = await statusRes.json();
-          setModelStatus(statusData);
-        }
-      } catch (statusErr) {
-        clearTimeout(statusTimeoutId);
-        console.warn('Gagal mengambil status model:', statusErr);
-      }
-
-      setApiStatus('online');
-      if (!silent) toast.success('Berhasil terhubung ke FastAPI backend!');
-      checkingRef.current = false;
-      return true;
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      setApiStatus('offline');
-      setModelStatus(null);
-      if (!silent) toast.error('Gagal terhubung ke backend. Menjalankan simulasi sandbox offline.');
-      checkingRef.current = false;
-      return false;
-    }
-  }, [apiUrl, apiKey]);
-
-  // Perform dynamic polling checks
+  // Dynamic polling for backend connection
   useEffect(() => {
     let timerId: any;
 
@@ -119,33 +47,8 @@ export default function App() {
     };
 
     timerId = setTimeout(runCheck, 100);
-
     return () => clearTimeout(timerId);
-  }, [checkConnection]);
-
-  // Export Results to CSV
-  const handleExportCSV = (data: any[]) => {
-    if (data.length === 0) return;
-    
-    let csvContent = 'Text,Is Toxic,Is Bully,Category,Reason\n';
-    
-    data.forEach(item => {
-      const escapedText = item.text.replace(/"/g, '""').replace(/\n/g, ' ');
-      const escapedReason = (item.reason || '').replace(/"/g, '""').replace(/\n/g, ' ');
-      csvContent += `"${escapedText}",${item.is_toxic},${item.is_bully},"${item.category}","${escapedReason}"\n`;
-    });
-    
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `bullyguard_report_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success('Laporan CSV berhasil diunduh!');
-  };
+  }, [apiUrl, apiKey, checkConnection]);
 
   return (
     <MotionConfig reducedMotion="user">

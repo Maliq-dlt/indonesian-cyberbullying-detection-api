@@ -1,0 +1,3 @@
+- Organized into thematic sub-directories (ds_1, ds_hate_speech, ds_instagram, etc.) each containing raw CSV/JSON data files and associated metadata.
+- Includes auxiliary linguistic resources like slang dictionaries (kamusalay), stopword lists, and abusive lexicons to support text normalization and feature extraction.
+- Documentation via README.md files provides citation guidelines, license information, and preprocessing details for each specific dataset subset.

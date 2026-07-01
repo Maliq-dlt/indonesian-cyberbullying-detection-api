@@ -1,0 +1,1 @@
+A collection of curated Indonesian-language datasets for hate speech, cyberbullying, and sentiment analysis across Twitter, Instagram, TikTok, and YouTube.

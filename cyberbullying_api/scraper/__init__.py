@@ -1,3 +1,4 @@
-from scraper.templates import generate_dynamic_comments
-from scraper.tiktok import scrape_tiktok_comments
-from scraper.twitter import scrape_x_tweets, save_scraped_data_to_csv
+from scraper.templates import generate_dynamic_comments as generate_dynamic_comments
+from scraper.tiktok import scrape_tiktok_comments as scrape_tiktok_comments
+from scraper.twitter import save_scraped_data_to_csv as save_scraped_data_to_csv
+from scraper.twitter import scrape_x_tweets as scrape_x_tweets

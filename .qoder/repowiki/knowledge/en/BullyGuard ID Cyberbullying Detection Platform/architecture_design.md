@@ -1,0 +1,4 @@
+- **Hybrid Tiered Inference**: The backend routes text through a 3-tier classifier (Lexicon → ML/Transformer Ensemble → Cloud LLM) based on confidence thresholds and sarcasm detection.
+- **Human-in-the-Loop (HITL) Feedback Loop**: The frontend provides a quadrant-based UI for manual label correction, which updates the classification memory database and triggers model retraining via Celery tasks.
+- **Asynchronous Task Orchestration**: Heavy operations like social media scraping and model retraining are offloaded to Celery workers, with status synchronization via Redis Pub/Sub for real-time log streaming and hot-reloading of models.
+- **Multi-Layer Caching & Persistence**: Prediction results are cached in Redis and persisted in PostgreSQL (with SQLite fallback), utilizing vector embeddings for semantic cache lookups to reduce redundant inference costs.

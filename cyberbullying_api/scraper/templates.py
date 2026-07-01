@@ -1,17 +1,24 @@
 import random
-from typing import List
 
 # Daftar instance Nitter publik untuk guest X scraping tanpa API Key
-NITTER_INSTANCES = [
-    "https://nitter.privacydev.net",
-    "https://nitter.poast.org",
-    "https://nitter.net"
-]
+NITTER_INSTANCES = ["https://nitter.privacydev.net", "https://nitter.poast.org", "https://nitter.net"]
 
 USERNAMES = [
-    "malik_dlt", "cyber_fighter", "budi_santoso", "siti_nur", "andi_pratama", 
-    "dina_amelia", "rizky_ramadhan", "ayu_lestari", "eko_prasetyo", "mega_putri",
-    "fajar_subekti", "wulan_sari", "gilang_dirga", "nanda_saputra", "putra_bangsa"
+    "malik_dlt",
+    "cyber_fighter",
+    "budi_santoso",
+    "siti_nur",
+    "andi_pratama",
+    "dina_amelia",
+    "rizky_ramadhan",
+    "ayu_lestari",
+    "eko_prasetyo",
+    "mega_putri",
+    "fajar_subekti",
+    "wulan_sari",
+    "gilang_dirga",
+    "nanda_saputra",
+    "putra_bangsa",
 ]
 
 SAFE_TEMPLATES = [
@@ -22,7 +29,7 @@ SAFE_TEMPLATES = [
     "sukses terus usahanya ya gan, laris manis",
     "Semoga hari ini menyenangkan untuk kita semua, jangan lupa sarapan!",
     "makasih ya infonya, ngebantu banget buat tugas kuliah",
-    "Keren banget kak, sukses selalu untuk karirnya ya!"
+    "Keren banget kak, sukses selalu untuk karirnya ya!",
 ]
 
 SLANG_PRAISE_TEMPLATES = [
@@ -33,7 +40,7 @@ SLANG_PRAISE_TEMPLATES = [
     "gokil parah lu bro, respect anjing!",
     "anjing keren gila lu bro, congrats atas prestasinya!",
     "gila ini makanan enak banget asu, nagih parah",
-    "gila lu bro, aseli keren banget anjing!"
+    "gila lu bro, aseli keren banget anjing!",
 ]
 
 SARCASM_TEMPLATES = [
@@ -49,7 +56,7 @@ SARCASM_TEMPLATES = [
     "rajin sekali pemerintah kita, bikin aturan aneh pas tengah malam.",
     "ganteng banget cowok itu, mirip monyet kebanjiran wkwk",
     "suci sekali dirimu, padahal aslinya kelakuan minus semua.",
-    "desain lu bagus banget, bikin rusak estetika aja wkwk"
+    "desain lu bagus banget, bikin rusak estetika aja wkwk",
 ]
 
 TOXIC_BULLYING_TEMPLATES = [
@@ -60,37 +67,38 @@ TOXIC_BULLYING_TEMPLATES = [
     "kamu bodoh sekali sih bangsat, gampang dibohongin buzzer",
     "muka lu kayak panci gosong ga usah belagu dah",
     "mati aja lo begal sampah masyarakat!",
-    "dasar manusia sampah ga ada gunanya hidup di dunia ini"
+    "dasar manusia sampah ga ada gunanya hidup di dunia ini",
 ]
 
-def generate_dynamic_comments(query_or_url: str, max_items: int = 20) -> List[str]:
+
+def generate_dynamic_comments(query_or_url: str, max_items: int = 20) -> list[str]:
     """Menghasilkan teks komentar/tweet tiruan yang sangat dinamis untuk simulasi scraper."""
     print(f"Generating dynamic template-based fallback comments/tweets for query: {query_or_url}")
     results = []
-    
+
     # Distribusi kategori yang seimbang
     categories = [
         ("safe", SAFE_TEMPLATES),
         ("slang", SLANG_PRAISE_TEMPLATES),
         ("sarcasm", SARCASM_TEMPLATES),
-        ("toxic", TOXIC_BULLYING_TEMPLATES)
+        ("toxic", TOXIC_BULLYING_TEMPLATES),
     ]
-    
+
     attempts = 0
     while len(results) < max_items and attempts < 100:
         attempts += 1
         cat_name, templates = random.choice(categories)
         template = random.choice(templates)
-        
+
         # Tambahkan variasi username secara acak
         if random.random() < 0.4:
             username = random.choice(USERNAMES)
             comment = f"@{username} {template}"
         else:
             comment = template
-            
+
         if comment not in results:
             results.append(comment)
-            
+
     random.shuffle(results)
     return results[:max_items]

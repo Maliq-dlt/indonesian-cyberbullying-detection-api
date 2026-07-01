@@ -1,0 +1,4 @@
+- Local development requires copying `.env.example` to `.env` and launching services via `docker compose up -d db redis`.
+- Backend API is started with `uvicorn main:app --reload`, while the frontend uses `npm run dev`.
+- A unified startup script (`run_local.bat` or `run_local.sh`) is provided for parallel execution of backend and frontend services.
+- Model threshold tuning is performed via `python -m cyberbullying_api.classifier.evaluate_thresholds --csv dataset/eval.csv`.

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 import sys
 
@@ -21,7 +22,7 @@ def get_chrome_path():
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
         paths.append(os.path.join(local_app_data, "Google", "Chrome", "Application", "chrome.exe"))
-    
+
     for p in paths:
         if os.path.exists(p):
             return p
@@ -40,7 +41,7 @@ async def main():
     os.makedirs(BROWSER_PROFILE_DIR, exist_ok=True)
 
     chrome_path = get_chrome_path()
-    
+
     print("Pilih Metode Login:")
     if chrome_path:
         print("1. Chrome Mode Normal (Direkomendasikan - Bypass Blokir Google Login)")
@@ -55,7 +56,7 @@ async def main():
         print("Google Chrome tidak terdeteksi di lokasi standar Windows.")
         print("Menggunakan Playwright Mode secara default...")
         choice = "2"
-    
+
     print("-" * 60)
 
     if choice == "1" and chrome_path:
@@ -68,31 +69,30 @@ async def main():
         # Hapus file SingletonLock jika ada dari sesi sebelumnya agar Chrome tidak bentrok
         lock_file = os.path.join(BROWSER_PROFILE_DIR, "SingletonLock")
         if os.path.exists(lock_file):
-            try:
+            with contextlib.suppress(Exception):
                 os.remove(lock_file)
-            except Exception:
-                pass
 
         import subprocess
+
         # Jalankan Chrome secara independen dengan profil persisten
         cmd = [
             chrome_path,
             f"--user-data-dir={BROWSER_PROFILE_DIR}",
             "--no-first-run",
             "--no-default-browser-check",
-            "https://www.tiktok.com/login"
+            "https://www.tiktok.com/login",
         ]
-        
+
         # Jalankan proses
         p_chrome = subprocess.Popen(cmd)
         print("Menunggu jendela Chrome ditutup oleh Anda...")
-        
+
         # Tunggu hingga selesai
         while p_chrome.poll() is None:
             await asyncio.sleep(1)
-            
+
         print("\nGoogle Chrome ditutup. Memverifikasi status login dengan Playwright...")
-        
+
         # Verifikasi cookie dengan Playwright secara headless
         async with async_playwright() as p:
             try:
@@ -102,9 +102,9 @@ async def main():
                     executable_path=chrome_path,
                 )
                 cookies = await browser_context.cookies()
-                has_session = any(c['name'] in ('sessionid', 'sessionid_ss') for c in cookies)
+                has_session = any(c["name"] in ("sessionid", "sessionid_ss") for c in cookies)
                 await browser_context.close()
-                
+
                 if has_session:
                     print("\n[SUKSES] Login berhasil dideteksi!")
                     print(f"[INFO] Sesi login tersimpan otomatis di: {BROWSER_PROFILE_DIR}")
@@ -161,7 +161,7 @@ async def main():
                 cookies = await browser_context.cookies()
 
                 # Cari cookie 'sessionid' atau 'sessionid_ss' yang menandakan login sukses
-                has_session = any(c['name'] in ('sessionid', 'sessionid_ss') for c in cookies)
+                has_session = any(c["name"] in ("sessionid", "sessionid_ss") for c in cookies)
 
                 # Alternatif: cek jika elemen profil sudah muncul di halaman
                 profile_visible = False

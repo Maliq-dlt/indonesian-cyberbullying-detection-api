@@ -2,36 +2,42 @@ import os
 import sys
 
 # Konfigurasikan encoding output konsol ke UTF-8 di Windows agar tidak crash saat mencetak karakter Unicode
-if sys.platform.startswith('win'):
+if sys.platform.startswith("win"):
     try:
-        if hasattr(sys.stdout, 'reconfigure'):
-            getattr(sys.stdout, 'reconfigure')(encoding='utf-8')
-        if hasattr(sys.stderr, 'reconfigure'):
-            getattr(sys.stderr, 'reconfigure')(encoding='utf-8')
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
-import torch
-import warnings
 import shutil
+import warnings
+
 import onnx
 import onnx.shape_inference
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from onnxruntime.quantization import quantize_dynamic, QuantType
+import torch
+from onnxruntime.quantization import QuantType, quantize_dynamic
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 warnings.filterwarnings("ignore")
 
 # Wrapper robust untuk menangani error shape inference bawaan ONNX di Windows
 original_infer_shapes_path = onnx.shape_inference.infer_shapes_path
 
+
 def robust_infer_shapes_path(model_path, output_path, *args, **kwargs):
     try:
         original_infer_shapes_path(model_path, output_path, *args, **kwargs)
     except Exception as e:
-        print(f"[ONNX Warning] Shape inference gagal ({e}). Fallback bypass shape inference: {model_path} -> {output_path}")
+        print(
+            f"[ONNX Warning] Shape inference gagal ({e}). Fallback bypass shape inference: {model_path} -> {output_path}"
+        )
         shutil.copyfile(model_path, output_path)
 
+
 onnx.shape_inference.infer_shapes_path = robust_infer_shapes_path
+
 
 def export_to_onnx():
     model_name = os.getenv("TRANSFORMER_MODEL_PATH", "nahiar/hatespeech-abusive-xlm-roberta-v1")
@@ -42,7 +48,7 @@ def export_to_onnx():
     quantized_path = os.path.join(models_dir, "model_quantized.onnx")
 
     print(f"=== Menyiapkan Ekspor ONNX untuk model: {model_name} ===")
-    
+
     # 1. Unduh/Muat model PyTorch
     print("Memuat model PyTorch dari Hugging Face...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -52,7 +58,7 @@ def export_to_onnx():
     # 2. Siapkan input dummy
     dummy_text = "Semangat belajarnya ya, jangan menyerah!"
     inputs = tokenizer(dummy_text, return_tensors="pt")
-    
+
     input_ids = inputs["input_ids"]
     attention_mask = inputs["attention_mask"]
 
@@ -67,9 +73,9 @@ def export_to_onnx():
         dynamic_axes={
             "input_ids": {0: "batch_size", 1: "sequence_length"},
             "attention_mask": {0: "batch_size", 1: "sequence_length"},
-            "logits": {0: "batch_size"}
+            "logits": {0: "batch_size"},
         },
-        opset_version=14
+        opset_version=14,
     )
     print(f"Model berhasil diekspor ke: {onnx_path}")
 
@@ -79,14 +85,15 @@ def export_to_onnx():
         model_input=onnx_path,
         model_output=quantized_path,
         weight_type=QuantType.QUInt8,
-        extra_options={"DefaultTensorType": onnx.TensorProto.FLOAT}
+        extra_options={"DefaultTensorType": onnx.TensorProto.FLOAT},
     )
     print(f"Kuantisasi selesai! Model terkuantisasi disimpan di: {quantized_path}")
-    
+
     # Bersihkan file model.onnx mentah untuk menghemat ruang
     if os.path.exists(onnx_path):
         os.remove(onnx_path)
         print("Membersihkan berkas ONNX mentah yang tidak terkompresi.")
+
 
 if __name__ == "__main__":
     export_to_onnx()

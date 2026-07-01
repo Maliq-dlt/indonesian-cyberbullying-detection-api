@@ -1,0 +1,1 @@
+Orchestrates a React-based single-page application for AI-driven content moderation, managing global state, routing, and backend connectivity.

@@ -14,11 +14,11 @@ an automatic SQLite fallback).
 
 from __future__ import annotations
 
-import os
-import glob
-import sqlite3
 import asyncio
-from typing import Callable, Optional
+import glob
+import os
+import sqlite3
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -27,17 +27,16 @@ try:
 except ImportError:
     asyncpg = None  # type: ignore[assignment]
 
-from normalizer import init_slang_map, normalize_text
-
 
 # ---------------------------------------------------------------------------
 # Dataset loaders – each returns a uniform 3-column DataFrame or None
 # ---------------------------------------------------------------------------
 
+
 def load_twitter_dataset(
     path: str,
     clean_fn: Callable[[str], str],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the Twitter hate-speech CSV (``data.csv``).
 
     Expected columns in the source file: ``Tweet``, ``Abusive``, ``HS``.
@@ -70,7 +69,7 @@ def load_instagram_dataset(
     path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the Instagram cyberbullying XLSX dataset.
 
     Expected columns: ``Komentar``, ``Kategori`` (``Bullying`` /
@@ -98,9 +97,7 @@ def load_instagram_dataset(
         df = pd.read_excel(path)
         df = df.dropna(subset=["Komentar", "Kategori"])
         df["text_clean"] = df["Komentar"].apply(clean_fn)
-        df["is_bully"] = df["Kategori"].map(
-            {"Bullying": True, "Non-bullying": False}
-        )
+        df["is_bully"] = df["Kategori"].map({"Bullying": True, "Non-bullying": False})
         df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
         return df[["text_clean", "is_toxic", "is_bully"]]
     except Exception as e:
@@ -112,7 +109,7 @@ def load_combined_dataset(
     path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the combined / merged CSV dataset.
 
     Expected columns: ``String``, ``Label`` (e.g. ``Bullying``,
@@ -152,6 +149,7 @@ def load_combined_dataset(
 # Ingestion helpers – pull new labelled data from external sources
 # ---------------------------------------------------------------------------
 
+
 def ingest_scraped_csv(
     base_dir: str,
 ) -> tuple[list[dict], list[str]]:
@@ -188,15 +186,14 @@ def ingest_scraped_csv(
                     is_bully = row["Is_Bully"] == "Ya"
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({
-                            "String": raw_text,
-                            "Label": label_str,
-                        })
+                        new_records.append(
+                            {
+                                "String": raw_text,
+                                "Label": label_str,
+                            }
+                        )
             else:
-                print(
-                    f"Warning: Kolom tidak cocok di {file_path}. "
-                    "Memerlukan 'Teks' dan 'Is_Bully'."
-                )
+                print(f"Warning: Kolom tidak cocok di {file_path}. Memerlukan 'Teks' dan 'Is_Bully'.")
         except Exception as e:
             print(f"Error membaca {file_path}: {e}")
 
@@ -250,17 +247,14 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
             pg_rows = asyncio.run(_fetch_pg())
             if pg_rows is not None:
                 from classifier.database import decrypt_text
+
                 for row in pg_rows:
                     raw_text = str(decrypt_text(row["encrypted_text"])).strip()
                     is_toxic = bool(row["is_toxic"])
                     is_bully = bool(row["is_bully"])
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({
-                            "String": raw_text,
-                            "Label": label_str,
-                            "is_toxic": is_toxic
-                        })
+                        new_records.append({"String": raw_text, "Label": label_str, "is_toxic": is_toxic})
                 print(f"Berhasil memuat {len(pg_rows)} data dari PostgreSQL.")
                 pg_records_loaded = True
         except Exception as e:
@@ -281,20 +275,15 @@ def ingest_database_memory(base_dir: str) -> list[dict]:
                 rows = cursor.fetchall()
                 conn.close()
                 from classifier.database import decrypt_text
+
                 for row in rows:
                     raw_text = str(decrypt_text(row[0])).strip()
                     is_toxic = bool(row[1])
                     is_bully = bool(row[2])
                     label_str = "Bullying" if is_bully else "Non-bullying"
                     if raw_text:
-                        new_records.append({
-                            "String": raw_text,
-                            "Label": label_str,
-                            "is_toxic": is_toxic
-                        })
-                print(
-                    f"Berhasil memuat {len(rows)} data dari basis data memori SQLite."
-                )
+                        new_records.append({"String": raw_text, "Label": label_str, "is_toxic": is_toxic})
+                print(f"Berhasil memuat {len(rows)} data dari basis data memori SQLite.")
             else:
                 print("Basis data memori SQLite belum dibuat atau tidak ditemukan.")
         except Exception as e:
@@ -307,7 +296,7 @@ def load_mendeley_dataset(
     folder_path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the Mendeley cyberbullying dataset (Instagram, Twitter, Youtube).
 
     Downsamples the Youtube dataset (non-bullying) to match a reasonable ratio.
@@ -319,7 +308,7 @@ def load_mendeley_dataset(
     files = {
         "instagram": "DSPreprocessing_Instagram.csv",
         "twitter": "DSPreprocessing_Twitter.csv",
-        "youtube": "DSPreprocessing_Youtube_fix_.csv"
+        "youtube": "DSPreprocessing_Youtube_fix_.csv",
     }
 
     dfs = []
@@ -332,23 +321,23 @@ def load_mendeley_dataset(
         try:
             df = pd.read_csv(file_path)
             df = df.dropna(subset=["Text", "Label"])
-            
+
             # YouTube downsampling
             if platform == "youtube":
                 df_bully = df[df["Label"] == 1]
                 df_non_bully = df[df["Label"] == 0]
-                
+
                 # downsample non-bully to max 10000
                 if len(df_non_bully) > 10000:
                     df_non_bully = df_non_bully.sample(n=10000, random_state=42)
-                
+
                 df = pd.concat([df_bully, df_non_bully], ignore_index=True)
                 print(f"Youtube Mendeley downsampled: {len(df_bully)} bullying, {len(df_non_bully)} non-bullying.")
 
             df["text_clean"] = df["Text"].apply(clean_fn)
             df["is_bully"] = df["Label"] == 1
             df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
-            
+
             dfs.append(df[["text_clean", "is_toxic", "is_bully"]])
             print(f"Berhasil memuat dataset Mendeley {platform} ({len(df)} baris).")
         except Exception as e:
@@ -363,7 +352,7 @@ def load_tiktok_rhiosutoyo_dataset(
     path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the TikTok cyberbullying dataset (Dataset-Research.csv).
 
     Expected columns: 'comment', 'sentiment'
@@ -381,4 +370,3 @@ def load_tiktok_rhiosutoyo_dataset(
     except Exception as e:
         print(f"Warning: Gagal memuat dataset TikTok Rhiosutoyo ({path}): {e}")
         return None
-

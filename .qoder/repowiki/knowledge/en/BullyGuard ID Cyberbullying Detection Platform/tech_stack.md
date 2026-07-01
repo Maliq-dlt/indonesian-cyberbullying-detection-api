@@ -1,0 +1,1 @@
+FastAPI (Backend), React + TypeScript (Frontend), Celery + Redis (Async Tasks & Cache), PostgreSQL + pgvector (Primary Data & Vector Store), Prometheus (Observability)

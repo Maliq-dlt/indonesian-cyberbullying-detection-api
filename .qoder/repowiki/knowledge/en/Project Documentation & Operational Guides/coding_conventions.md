@@ -1,0 +1,3 @@
+- Documentation consistently distinguishes between 'Advanced MVP' capabilities and 'Enterprise-grade' claims to prevent overstatement of system readiness.
+- Security configurations enforce fail-closed policies for rate limiting and API key authentication in production environments.
+- Frontend refactoring follows a separation of concerns pattern, breaking monolithic components into modular units like `InputPanel.tsx` and `ResultCard.tsx`.

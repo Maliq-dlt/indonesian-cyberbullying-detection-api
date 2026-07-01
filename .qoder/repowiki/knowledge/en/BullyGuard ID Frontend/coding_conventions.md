@@ -1,0 +1,2 @@
+- Feature modules are organized into dedicated directories under `src/components/` (e.g., `Detector/`, `ActiveLearning/`) containing co-located logic, types, and tests.
+- Global state access is standardized through a single `useAppStore` hook, avoiding prop drilling for cross-cutting concerns like API status and theme.

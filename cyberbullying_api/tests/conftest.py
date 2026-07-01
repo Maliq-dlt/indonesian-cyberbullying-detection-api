@@ -1,7 +1,9 @@
+import contextlib
+import os
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
-import sys
-import os
 
 # Menambahkan folder parent ke path agar main.py bisa diimpor
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,6 +19,7 @@ os.environ["API_KEY"] = "test-key"
 
 from main import app
 
+
 @pytest.fixture(scope="session")
 def client():
     """Fixture tunggal tingkat sesi (session-scoped) untuk membuat TestClient FastAPI.
@@ -28,11 +31,8 @@ def client():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     test_db = os.path.join(base_dir, "cache", "test_cloud_llm_cache.db")
     if os.path.exists(test_db):
-        try:
+        with contextlib.suppress(Exception):
             os.remove(test_db)
-        except Exception:
-            # Mengabaikan kegagalan jika berkas sedang dikunci atau sudah dihapus
-            pass
 
     with TestClient(app, headers={"X-API-Key": "test-key"}) as c:
         yield c

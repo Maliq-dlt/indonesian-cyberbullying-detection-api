@@ -1,0 +1,2 @@
+- **Unified Startup**: The backend initializes models in a background thread during FastAPI lifespan startup to avoid blocking the event loop.
+- **Hot-Reloading**: Models are hot-reloaded via a Redis Pub/Sub channel triggered after successful Celery retraining tasks, allowing zero-downtime model updates.
