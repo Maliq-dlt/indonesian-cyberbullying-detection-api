@@ -17,12 +17,18 @@ except ImportError:
 
 from cryptography.fernet import Fernet
 
+from classifier.kms import get_encryption_key
+
 # === Konfigurasi Kriptografi ===
 api_key = os.getenv("API_KEY", "")
 env = os.getenv("ENV", "production").lower()
 
-if not api_key:
-    if env != "development":
+kms_key = get_encryption_key()
+
+if kms_key is not None:
+    key_source = kms_key
+elif not api_key:
+    if env != "development" and env != "test":
         raise ValueError(
             "CRITICAL: Variabel lingkungan API_KEY tidak diatur di lingkungan non-development! "
             "Server menolak startup demi perlindungan data (Kunci enkripsi tidak boleh menggunakan nilai bawaan)."
@@ -60,7 +66,10 @@ def decrypt_text(enc_text: str) -> str:
         return ""
     try:
         return CIPHER_SUITE.decrypt(enc_text.encode("utf-8")).decode("utf-8")
-    except Exception:
+    except Exception as e:
+        # Jika teks diawali 'gAAAA' (ciri khas ciphertext Fernet), kegagalan dekripsi berarti kunci salah
+        if enc_text.startswith("gAAAA"):
+            raise ValueError("Integrity error: Gagal mendekripsi data terenkripsi (kunci Fernet tidak cocok).") from e
         # Fallback jika data belum terenkripsi (dukungan kompatibilitas backward)
         return enc_text
 
@@ -324,14 +333,20 @@ def init_sqlite_db(db_path: str):
         conn.commit()
     conn.close()
 
+def get_sqlite_db_path() -> str:
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = os.getenv("ENV", "development").lower()
+    if env == "test":
+        return os.path.join(base_dir, "cache", "test_cloud_llm_cache.db")
+    return os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+
 def init_cache_db():
     masked_pg = re.sub(r'(://[^:]*:)([^@/]+)(@)', r'\1***\3', PG_URL)
     masked_redis = re.sub(r'(://[^:]*:)([^@/]+)(@)', r'\1***\3', REDIS_URL)
     print(f"Sistem Infrastruktur siap menggunakan PostgreSQL ({masked_pg}) dan Redis ({masked_redis}) secara lazy.")
     
     try:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "cache", "cloud_llm_cache.db")
+        db_path = get_sqlite_db_path()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         init_sqlite_db(db_path)
     except Exception as e:

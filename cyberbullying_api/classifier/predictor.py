@@ -8,6 +8,8 @@ import asyncio
 import subprocess
 import threading
 import sys
+import time
+from monitoring import INFERENCE_LATENCY
 from typing import List, Dict, Any, AsyncGenerator
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -223,8 +225,16 @@ def _init_models_inner():
 
     if os.path.exists(onnx_path) and ort is not None:
         try:
-            TRANSFORMER_SESSION = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
-            print("Model ONNX terkuantisasi INT8 berhasil dimuat!")
+            available_providers = ort.get_available_providers()
+            providers_to_use = []
+            if "TensorrtExecutionProvider" in available_providers:
+                providers_to_use.append("TensorrtExecutionProvider")
+            if "CUDAExecutionProvider" in available_providers:
+                providers_to_use.append("CUDAExecutionProvider")
+            providers_to_use.append("CPUExecutionProvider")
+            
+            TRANSFORMER_SESSION = ort.InferenceSession(onnx_path, providers=providers_to_use)
+            print(f"Model ONNX terkuantisasi INT8 berhasil dimuat dengan provider: {TRANSFORMER_SESSION.get_providers()}")
         except Exception as e:
             print("Warning: Gagal memuat session ONNX runtime, fallback ke PyTorch:", e)
             TRANSFORMER_SESSION = None
@@ -234,8 +244,9 @@ def _init_models_inner():
             print("Warning: PyTorch tidak terinstal. Fallback PyTorch dinonaktifkan.")
         else:
             try:
-                TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name)
-                print("Model PyTorch berhasil dimuat (ONNX Fallback)!")
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
+                print(f"Model PyTorch berhasil dimuat (ONNX Fallback) di perangkat: {device}!")
             except Exception as e:
                 print("Warning: Gagal memuat model PyTorch:", e)
 
@@ -342,14 +353,17 @@ def predict_transformer_raw(text: str) -> Dict[str, float]:
         try:
             model_name = os.getenv("TRANSFORMER_MODEL_PATH", "nahiar/hatespeech-abusive-xlm-roberta-v1")
             print(f"Memuat model PyTorch secara dinamis untuk fallback: {model_name}...")
-            TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name)
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            TRANSFORMER_MODEL = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
             transformer_model = TRANSFORMER_MODEL
-            print("Model PyTorch berhasil dimuat secara dinamis!")
+            print(f"Model PyTorch berhasil dimuat secara dinamis di perangkat: {device}!")
         except Exception as load_err:
             print("Error: Gagal memuat model PyTorch secara dinamis:", load_err)
 
     if transformer_model is not None and torch is not None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         inputs = transformer_tokenizer(text, padding=True, truncation=True, return_tensors="pt")
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
             logits = transformer_model(**inputs).logits[0]
         probs = torch.sigmoid(logits).tolist()
@@ -524,7 +538,10 @@ def run_ml_inference_sync(text: str) -> tuple[float, float]:
     return ml_toxic, ml_bully
 
 async def _predict_hybrid_internal(text: str) -> HybridResponse:
+    start_time = time.perf_counter()
     if ML_MODEL is None or ML_VECTORIZER is None:
+        elapsed = time.perf_counter() - start_time
+        INFERENCE_LATENCY.labels(tier="fallback").observe(elapsed)
         return HybridResponse(text=text, is_toxic=False, is_bully=False, probability_toxic=0.0, probability_bully=0.0, category="Aman", decision_source="Fallback", reason="Model ML belum termuat.", word_importances=[])
 
     t_t = get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
@@ -538,6 +555,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         if llm_res["success"]:
             is_toxic = llm_res["is_toxic"]
             is_bully = llm_res["is_bully"]
+            elapsed = time.perf_counter() - start_time
+            INFERENCE_LATENCY.labels(tier="sarcasm_bypass").observe(elapsed)
             return HybridResponse(
                 text=text,
                 is_toxic=is_toxic,
@@ -554,6 +573,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     lex_res = predict_lexicon(text, use_fuzzy=True)
     if lex_res.is_cyberbullying and lex_res.risk_label in ["sedang", "tinggi"]:
         matched_words = [m.matched_phrase for m in lex_res.matches]
+        elapsed = time.perf_counter() - start_time
+        INFERENCE_LATENCY.labels(tier="lexicon").observe(elapsed)
         return HybridResponse(
             text=text,
             is_toxic=True,
@@ -574,6 +595,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     if ml_confidence.is_confident:
         is_toxic = ml_toxic >= t_t
         is_bully = ml_bully >= t_b
+        elapsed = time.perf_counter() - start_time
+        INFERENCE_LATENCY.labels(tier="ml").observe(elapsed)
         return HybridResponse(
             text=text,
             is_toxic=is_toxic,
@@ -604,6 +627,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     if ens_confidence.is_confident:
         is_toxic = ens_toxic >= t_t
         is_bully = ens_bully >= t_b
+        elapsed = time.perf_counter() - start_time
+        INFERENCE_LATENCY.labels(tier="ensemble").observe(elapsed)
         return HybridResponse(
             text=text,
             is_toxic=is_toxic,
@@ -623,6 +648,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
         if llm_res["success"]:
             is_toxic = llm_res["is_toxic"]
             is_bully = llm_res["is_bully"]
+            elapsed = time.perf_counter() - start_time
+            INFERENCE_LATENCY.labels(tier="cloud_llm").observe(elapsed)
             return HybridResponse(
                 text=text,
                 is_toxic=is_toxic,
@@ -638,6 +665,8 @@ async def _predict_hybrid_internal(text: str) -> HybridResponse:
     # Fallback
     is_toxic = ens_toxic >= t_t
     is_bully = ens_bully >= t_b
+    elapsed = time.perf_counter() - start_time
+    INFERENCE_LATENCY.labels(tier="fallback").observe(elapsed)
     return HybridResponse(
         text=text,
         is_toxic=is_toxic,
@@ -668,7 +697,8 @@ async def predict_hybrid(text: str) -> HybridResponse:
         try:
             emb = embedding_model.encode([text])[0]
             embedding_json = str(emb.tolist())
-        except Exception:
+        except Exception as e:
+            # Gagal membuat embedding bukan kegagalan fatal, abaikan untuk penyimpanan
             pass
     await save_classification_memory(res, embedding_json)
     return res
@@ -696,6 +726,33 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
     
     t_t = get_threshold(THRESHOLDS, "threshold_toxic", 0.5)
     t_b = get_threshold(THRESHOLDS, "threshold_bully", 0.5)
+
+    # 0.5 Pra-penyaringan Lexicon (Bypass jika terdeteksi sangat kasar / masuk kamus blacklist)
+    lex_res = predict_lexicon(text, use_fuzzy=True)
+    if lex_res.is_cyberbullying and lex_res.risk_label in ["sedang", "tinggi"]:
+        matched_words = [m.matched_phrase for m in lex_res.matches]
+        final_res = HybridResponse(
+            text=text,
+            is_toxic=True,
+            is_bully=True,
+            probability_toxic=0.85,
+            probability_bully=0.85,
+            category=determine_category(True, True),
+            decision_source="Tier 1 (Lexicon Kamus)",
+            reason=f"Terdeteksi kata kasar/larangan di dalam teks: {', '.join(matched_words)}",
+            word_importances=explain_prediction(text)
+        )
+        embedding_json = None
+        if embedding_model is not None:
+            try:
+                emb = embedding_model.encode([text])[0]
+                embedding_json = str(emb.tolist())
+            except Exception as e:
+                # Gagal membuat embedding bukan kegagalan fatal, abaikan untuk penyimpanan
+                pass
+        await save_classification_memory(final_res, embedding_json)
+        yield {"chunk": final_res.reason, "done": True, "final_data": final_res}
+        return
 
     # 0. Pra-penyaringan Kontras Sentimen
     is_sarcasm_candidate = detect_sentiment_contrast(text)

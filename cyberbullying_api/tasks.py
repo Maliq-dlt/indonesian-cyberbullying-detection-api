@@ -77,3 +77,15 @@ def run_retrain_task(model_type: str = "both"):
         if r is not None:
             r.set("training_status", "failed")
         raise e
+
+@celery_app.task(name="tasks.scrape_tiktok_task")
+def scrape_tiktok_task(url: str, max_comments: int):
+    from scraper.tiktok import scrape_tiktok_comments
+    comments, success = scrape_tiktok_comments(url, max_comments)
+    return {"comments": comments, "success": success}
+
+@celery_app.task(name="tasks.scrape_x_task")
+def scrape_x_task(name: str, max_tweets: int):
+    from scraper.twitter import scrape_x_tweets
+    tweets, success = scrape_x_tweets(name, max_tweets)
+    return {"tweets": tweets, "success": success}

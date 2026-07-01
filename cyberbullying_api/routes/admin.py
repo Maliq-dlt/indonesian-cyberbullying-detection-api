@@ -1,67 +1,168 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Security
 from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordRequestForm
 import asyncio
 import os
+import jwt
+from datetime import datetime, timedelta, timezone
 import classifier
 from models import (
     ScrapeTikTokRequest, ScrapeXRequest, ScrapeResponse, ReallocateRequest, ReallocateResponse,
     UpdateCookiesRequest, BulkReallocateRequest
 )
-from routes.deps import verify_api_key, rate_limit_cloud_llm_and_batch
+from routes.deps import rate_limit_cloud_llm_and_batch, get_current_user, JWT_SECRET, ALGORITHM
 import routes.state as state
 
 import sys
 
 def run_async_in_new_loop(coro_func, *args):
-    """Helper to run an async function in a new thread with ProactorEventLoop on Windows.
+    """Helper to run an async function in a new thread.
     This resolves the NotImplementedError when launching subprocesses in SelectorEventLoop under Uvicorn.
     """
-    if sys.platform == 'win32':
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(coro_func(*args))
     finally:
         loop.close()
 
-router = APIRouter(prefix="/api", tags=["admin"])
+public_router = APIRouter(prefix="/api", tags=["auth"])
 
-@router.post("/scrape/tiktok", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
+@public_router.post("/auth/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    expected_username = os.getenv("ADMIN_USERNAME", "admin").strip()
+    expected_password = os.getenv("ADMIN_PASSWORD", "admin").strip()
+    expected_api_key = os.getenv("API_KEY", "").strip()
+
+    authenticated = False
+    scopes = []
+
+    if form_data.username == expected_username and form_data.password == expected_password:
+        authenticated = True
+        scopes = ["predict", "admin"]
+    elif form_data.username == "apikey" and expected_api_key and form_data.password == expected_api_key:
+        authenticated = True
+        scopes = ["predict", "admin"]
+    elif form_data.username == "guest" and form_data.password == "guest":
+        authenticated = True
+        scopes = ["predict"]
+
+    if not authenticated:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Username, password, atau API key tidak cocok.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token_scopes = []
+    for scope in form_data.scopes:
+        if scope in scopes:
+            token_scopes.append(scope)
+    
+    if not token_scopes:
+        token_scopes = scopes
+
+    expire = datetime.now(timezone.utc) + timedelta(minutes=60)
+    to_encode = {
+        "sub": form_data.username,
+        "scopes": token_scopes,
+        "exp": expire
+    }
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
+
+    return {
+        "access_token": encoded_jwt,
+        "token_type": "bearer",
+        "expires_in": 3600,
+        "scopes": token_scopes
+    }
+
+router = APIRouter(prefix="/api", tags=["admin"], dependencies=[Security(get_current_user, scopes=["admin"])])
+
+@router.post("/scrape/tiktok", response_model=ScrapeResponse, dependencies=[Depends(rate_limit_cloud_llm_and_batch)])
 async def api_scrape_tiktok(req: ScrapeTikTokRequest):
+    max_comments = req.max_comments if req.max_comments is not None else 20
+    
+    # Cek apakah Celery worker aktif
+    celery_active = False
+    try:
+        from tasks import celery_app
+        inspect = celery_app.control.inspect(timeout=0.5)
+        if inspect and inspect.active():
+            celery_active = True
+    except Exception as e:
+        print(f"Warning: Gagal memeriksa status Celery worker di scrape_tiktok: {e}")
+        
+    if celery_active:
+        try:
+            from tasks import scrape_tiktok_task
+            task = scrape_tiktok_task.delay(req.url, max_comments)
+            res = task.get(timeout=60.0)
+            if not res["success"]:
+                raise HTTPException(status_code=502, detail="Gagal mengikis data dari TikTok via Celery worker.")
+            return ScrapeResponse(success=True, count=len(res["comments"]), data=res["comments"])
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"Error scraping TikTok via Celery: {e}")
+            raise HTTPException(status_code=500, detail="Gagal mengikis data TikTok via antrean Celery.")
+            
+    # Fallback ke thread lokal
     try:
         from scraper.tiktok import scrape_tiktok_comments
-        max_comments = req.max_comments if req.max_comments is not None else 20
-        # Run scraper in a separate thread with a clean ProactorEventLoop
         comments, success = await asyncio.to_thread(run_async_in_new_loop, scrape_tiktok_comments, req.url, max_comments)
         if not success:
-            raise HTTPException(status_code=502, detail="Gagal mengikis data dari TikTok. Server tujuan tidak merespons atau memblokir scraping.")
+            raise HTTPException(status_code=502, detail="Gagal mengikis data dari TikTok secara lokal.")
         return ScrapeResponse(success=success, count=len(comments), data=comments)
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error scraping TikTok: {e}")
-        raise HTTPException(status_code=500, detail="Gagal mengikis data komentar TikTok. Silakan coba lagi nanti.")
+        print(f"Error scraping TikTok secara lokal: {e}")
+        raise HTTPException(status_code=500, detail="Gagal mengikis data komentar TikTok secara lokal.")
 
 
-@router.post("/scrape/x", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
+@router.post("/scrape/x", response_model=ScrapeResponse, dependencies=[Depends(rate_limit_cloud_llm_and_batch)])
 async def api_scrape_x(req: ScrapeXRequest):
+    max_tweets = req.max_tweets if req.max_tweets is not None else 20
+    
+    # Cek apakah Celery worker aktif
+    celery_active = False
+    try:
+        from tasks import celery_app
+        inspect = celery_app.control.inspect(timeout=0.5)
+        if inspect and inspect.active():
+            celery_active = True
+    except Exception as e:
+        print(f"Warning: Gagal memeriksa status Celery worker di scrape_x: {e}")
+        
+    if celery_active:
+        try:
+            from tasks import scrape_x_task
+            task = scrape_x_task.delay(req.url, max_tweets)
+            res = task.get(timeout=60.0)
+            if not res["success"]:
+                raise HTTPException(status_code=502, detail="Gagal mengikis data dari X via Celery worker.")
+            return ScrapeResponse(success=True, count=len(res["tweets"]), data=res["tweets"])
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"Error scraping X via Celery: {e}")
+            raise HTTPException(status_code=500, detail="Gagal mengikis data X via antrean Celery.")
+            
+    # Fallback ke thread lokal
     try:
         from scraper.twitter import scrape_x_tweets
-        max_tweets = req.max_tweets if req.max_tweets is not None else 20
-        # Run scraper in a separate thread with a clean ProactorEventLoop
         tweets, success = await asyncio.to_thread(run_async_in_new_loop, scrape_x_tweets, req.url, max_tweets)
         if not success:
-            raise HTTPException(status_code=502, detail="Gagal mengikis data dari X. Server tujuan tidak merespons atau memblokir scraping.")
+            raise HTTPException(status_code=502, detail="Gagal mengikis data dari X secara lokal.")
         return ScrapeResponse(success=success, count=len(tweets), data=tweets)
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error scraping X: {e}")
-        raise HTTPException(status_code=500, detail="Gagal mengikis data replies X/Twitter. Silakan coba lagi nanti.")
+        print(f"Error scraping X secara lokal: {e}")
+        raise HTTPException(status_code=500, detail="Gagal mengikis data replies X/Twitter secara lokal.")
 
 
-@router.get("/data/categorized", dependencies=[Depends(verify_api_key)])
+@router.get("/data/categorized")
 async def api_get_categorized_data(
     limit: int = 500,
     confidence_min: float | None = None,
@@ -84,7 +185,7 @@ async def api_get_categorized_data(
         raise HTTPException(status_code=500, detail="Gagal mengambil memori data klasifikasi dari basis data.")
 
 
-@router.post("/data/reallocate", response_model=ReallocateResponse, dependencies=[Depends(verify_api_key)])
+@router.post("/data/reallocate", response_model=ReallocateResponse)
 async def api_reallocate_data(req: ReallocateRequest):
     try:
         from classifier import update_validation_status
@@ -98,7 +199,7 @@ async def api_reallocate_data(req: ReallocateRequest):
         raise HTTPException(status_code=500, detail="Gagal memperbarui alokasi kategori data di database.")
 
 
-@router.post("/data/reallocate/bulk", response_model=ReallocateResponse, dependencies=[Depends(verify_api_key)])
+@router.post("/data/reallocate/bulk", response_model=ReallocateResponse)
 async def api_reallocate_data_bulk(req: BulkReallocateRequest):
     try:
         from classifier import update_validation_status
@@ -119,7 +220,7 @@ async def api_reallocate_data_bulk(req: BulkReallocateRequest):
         raise HTTPException(status_code=500, detail="Gagal memperbarui alokasi kategori data massal di database.")
 
 
-@router.post("/train/start", dependencies=[Depends(verify_api_key)])
+@router.post("/train/start")
 async def api_start_training(model_type: str = "both"):
     if model_type not in ["ml", "transformer", "both"]:
         raise HTTPException(status_code=400, detail="model_type harus berupa 'ml', 'transformer', atau 'both'")
@@ -280,7 +381,7 @@ async def api_start_training(model_type: str = "both"):
             raise HTTPException(status_code=500, detail="Gagal memulai proses pelatihan ulang model.")
 
 
-@router.post("/train/reload", dependencies=[Depends(verify_api_key)])
+@router.post("/train/reload")
 async def api_reload_models():
     try:
         from classifier.predictor import init_models
@@ -291,7 +392,7 @@ async def api_reload_models():
         raise HTTPException(status_code=500, detail="Gagal memuat ulang model dari disk.")
 
 
-@router.get("/train/logs", dependencies=[Depends(verify_api_key)])
+@router.get("/train/logs")
 async def api_stream_logs():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     log_path = os.path.join(base_dir, "cache", "training.log")
@@ -343,7 +444,7 @@ async def api_stream_logs():
     return StreamingResponse(log_generator(), media_type="text/event-stream")
 
 
-@router.post("/settings/cookies", dependencies=[Depends(verify_api_key)])
+@router.post("/settings/cookies")
 async def api_update_cookies(req: UpdateCookiesRequest):
     import json
     
@@ -374,11 +475,11 @@ class SettingsUpdate(BaseModel):
     webhook_url: str
     webhook_enabled: bool
 
-@router.get("/settings", dependencies=[Depends(verify_api_key)])
+@router.get("/settings")
 async def api_get_settings():
     return await get_settings()
 
-@router.post("/settings", dependencies=[Depends(verify_api_key)])
+@router.post("/settings")
 async def api_save_settings(req: SettingsUpdate):
     if req.webhook_enabled:
         from routes.deps import is_safe_webhook_url
@@ -389,7 +490,7 @@ async def api_save_settings(req: SettingsUpdate):
         "webhook_enabled": req.webhook_enabled
     })
 
-@router.get("/train/history", dependencies=[Depends(verify_api_key)])
+@router.get("/train/history")
 async def api_get_training_history():
     return await get_retraining_history()
 
@@ -397,7 +498,7 @@ async def api_get_training_history():
 class TestWebhookRequest(BaseModel):
     webhook_url: str
 
-@router.post("/settings/test-webhook", dependencies=[Depends(verify_api_key)])
+@router.post("/settings/test-webhook")
 async def api_test_webhook(req: TestWebhookRequest):
     from routes.deps import is_safe_webhook_url
     if not is_safe_webhook_url(req.webhook_url):
@@ -425,7 +526,7 @@ async def api_test_webhook(req: TestWebhookRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Gagal menghubungi webhook. Periksa URL dan pastikan server webhook aktif.")
 
-@router.post("/settings/recalibrate", dependencies=[Depends(verify_api_key)])
+@router.post("/settings/recalibrate")
 async def api_recalibrate_ensemble():
     try:
         from classifier.db_config import get_pg_pool, decrypt_text

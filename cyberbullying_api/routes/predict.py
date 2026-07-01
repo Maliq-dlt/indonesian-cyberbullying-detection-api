@@ -1,25 +1,28 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Security
+from fastapi.responses import StreamingResponse
 import asyncio
+import json
 import classifier
 from models import (
     TextRequest, LexiconResponse, MLResponse, TransformerResponse, EnsembleResponse, HybridResponse,
     BatchTextRequest, BatchResponse, BatchItemResponse
 )
-from routes.deps import verify_api_key, rate_limit_cloud_llm_and_batch
+from routes.deps import rate_limit_cloud_llm_and_batch, get_current_user
+from monitoring import PREDICTIONS_TOTAL
 
-router = APIRouter(prefix="/predict", tags=["prediction"])
+router = APIRouter(prefix="/predict", tags=["prediction"], dependencies=[Security(get_current_user, scopes=["predict"])])
 
-@router.post("/lexicon", response_model=LexiconResponse, dependencies=[Depends(verify_api_key)])
+@router.post("/lexicon", response_model=LexiconResponse)
 def predict_lexicon(req: TextRequest):
     return classifier.predict_lexicon(req.text, bool(req.use_fuzzy))
 
-@router.post("/ml", response_model=MLResponse, dependencies=[Depends(verify_api_key)])
+@router.post("/ml", response_model=MLResponse)
 def predict_ml(req: TextRequest):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
     return classifier.predict_ml(req.text)
 
-@router.post("/transformers", response_model=TransformerResponse, dependencies=[Depends(verify_api_key)])
+@router.post("/transformers", response_model=TransformerResponse)
 def predict_transformers(req: TextRequest):
     if classifier.TRANSFORMER_SESSION is None and classifier.TRANSFORMER_MODEL is None:
         raise HTTPException(status_code=503, detail="Model Transformer belum termuat.")
@@ -29,7 +32,7 @@ def predict_transformers(req: TextRequest):
         print(f"Error Transformer: {e}")
         raise HTTPException(status_code=500, detail="Terjadi kesalahan internal server saat menjalankan model Transformer.")
 
-@router.post("/ensemble", response_model=EnsembleResponse, dependencies=[Depends(verify_api_key)])
+@router.post("/ensemble", response_model=EnsembleResponse)
 def predict_ensemble(req: TextRequest):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
@@ -48,7 +51,7 @@ async def send_webhook_notification(webhook_url: str, payload: dict):
     except Exception as e:
         print(f"Failed to send webhook to {webhook_url}: {e}")
 
-@router.post("/hybrid", response_model=HybridResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
+@router.post("/hybrid", response_model=HybridResponse, dependencies=[Depends(rate_limit_cloud_llm_and_batch)])
 async def predict_hybrid(req: TextRequest, background_tasks: BackgroundTasks):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
@@ -79,9 +82,14 @@ async def predict_hybrid(req: TextRequest, background_tasks: BackgroundTasks):
     except Exception as e:
         print(f"Warning: Gagal mempersiapkan task webhook: {e}")
         
+    try:
+        PREDICTIONS_TOTAL.labels(decision_source=res.decision_source, category=res.category).inc()
+    except Exception as exc:
+        print(f"Warning: Gagal merekam metrik prediksi: {exc}")
+        
     return res
 
-@router.post("/batch", response_model=BatchResponse, dependencies=[Depends(verify_api_key), Depends(rate_limit_cloud_llm_and_batch)])
+@router.post("/batch", response_model=BatchResponse, dependencies=[Depends(rate_limit_cloud_llm_and_batch)])
 async def predict_batch(req: BatchTextRequest):
     for text in req.texts:
         if not text or len(text.strip()) == 0:
@@ -110,3 +118,45 @@ async def predict_batch(req: BatchTextRequest):
             word_importances=pred.word_importances
         ))
     return BatchResponse(results=results)
+
+
+@router.post("/hybrid/stream", dependencies=[Depends(rate_limit_cloud_llm_and_batch)])
+async def predict_hybrid_stream_endpoint(req: TextRequest):
+    if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
+        raise HTTPException(status_code=503, detail="Model ML belum termuat.")
+
+    async def event_generator():
+        try:
+            async for event in classifier.predict_hybrid_stream(req.text):
+                # Format to JSON string and yield as SSE data
+                data_dict = {
+                    "chunk": event.get("chunk"),
+                    "done": event.get("done"),
+                }
+                if event.get("final_data"):
+                    final_data = event.get("final_data")
+                    try:
+                        PREDICTIONS_TOTAL.labels(decision_source=final_data.decision_source, category=final_data.category).inc()
+                    except Exception as exc:
+                        print(f"Warning: Gagal merekam metrik prediksi stream: {exc}")
+                    data_dict["final_data"] = {
+                        "text": final_data.text,
+                        "is_toxic": final_data.is_toxic,
+                        "is_bully": final_data.is_bully,
+                        "probability_toxic": final_data.probability_toxic,
+                        "probability_bully": final_data.probability_bully,
+                        "category": final_data.category,
+                        "decision_source": final_data.decision_source,
+                        "reason": final_data.reason,
+                        "word_importances": [
+                            {"word": w.word, "weight_toxic": w.weight_toxic, "weight_bully": w.weight_bully}
+                            if hasattr(w, "word") else w for w in final_data.word_importances
+                        ]
+                    }
+                yield f"data: {json.dumps(data_dict)}\n\n"
+        except Exception as e:
+            print(f"Warning: Gagal melakukan streaming prediksi hybrid: {e}")
+            yield f"data: {json.dumps({'error': 'Terjadi kesalahan internal saat memproses stream.', 'done': True})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+

@@ -18,8 +18,9 @@ import socket
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import Header, HTTPException, Request, status
-
+from fastapi import Header, HTTPException, Request, status, Depends
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+import jwt
 import classifier
 
 
@@ -76,10 +77,10 @@ def verify_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-
             detail="API key is required. Send it using the X-API-Key header.",
         )
 
-    expected_hash = hashlib.sha256(expected_key.encode("utf-8")).digest()
-    provided_hash = hashlib.sha256(x_api_key.encode("utf-8")).digest()
+    expected_bytes = expected_key.encode("utf-8")
+    provided_bytes = x_api_key.encode("utf-8")
 
-    if not hmac.compare_digest(provided_hash, expected_hash):
+    if not hmac.compare_digest(provided_bytes, expected_bytes):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key.",
@@ -203,3 +204,78 @@ def is_safe_webhook_url(url: str) -> bool:
         return True
     except Exception:
         return False
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/auth/token",
+    scopes={
+        "predict": "Akses untuk analisis dan prediksi cyberbullying (Core API).",
+        "admin": "Akses administratif untuk manajemen data HITL, scraper, dan retraining model."
+    },
+    auto_error=False
+)
+
+JWT_SECRET = os.getenv("JWT_SECRET", os.getenv("API_KEY", "bullyguard_id_dev_insecure_key_source")).strip()
+ALGORITHM = "HS256"
+
+async def get_current_user(
+    security_scopes: SecurityScopes,
+    token: Optional[str] = Depends(oauth2_scheme),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")
+) -> dict:
+    # 1. Dev mode bypass jika diizinkan dan token serta API Key kosong
+    if is_development_env() and _bool_env("ALLOW_MISSING_API_KEY_IN_DEV", True) and not token and not x_api_key:
+        return {"username": "dev_admin", "scopes": ["predict", "admin"]}
+
+    # 2. Jika tidak ada token JWT tetapi ada X-API-Key, validasi X-API-Key untuk backward compatibility
+    if not token and x_api_key:
+        expected_key = os.getenv("API_KEY", "").strip()
+        if expected_key:
+            expected_bytes = expected_key.encode("utf-8")
+            provided_bytes = x_api_key.encode("utf-8")
+            if hmac.compare_digest(provided_bytes, expected_bytes):
+                return {"username": "apikey_user", "scopes": ["predict", "admin"]}
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key tidak valid.",
+        )
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token autentikasi atau API key tidak ditemukan. Silakan login ke /api/auth/token terlebih dahulu.",
+            headers={"WWW-Authenticate": f"Bearer realm='cyberbullying_api' scope='{security_scopes.scope_str}'"},
+        )
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        token_scopes = payload.get("scopes", [])
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token tidak valid: klaim sub tidak ditemukan.",
+                headers={"WWW-Authenticate": "Bearer error='invalid_token'"},
+            )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token autentikasi telah kedaluwarsa. Silakan lakukan autentikasi ulang.",
+            headers={"WWW-Authenticate": "Bearer error='invalid_token', error_description='token expired'"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token autentikasi tidak valid atau rusak.",
+            headers={"WWW-Authenticate": "Bearer error='invalid_token'"},
+        )
+
+    # Validasi scopes (RBAC)
+    for scope in security_scopes.scopes:
+        if scope not in token_scopes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Hak akses tidak mencukupi. Diperlukan scope: {scope}",
+                headers={"WWW-Authenticate": f"Bearer error='insufficient_scope', scope='{security_scopes.scope_str}'"},
+            )
+
+    return {"username": username, "scopes": token_scopes}

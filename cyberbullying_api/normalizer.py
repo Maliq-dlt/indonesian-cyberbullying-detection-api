@@ -9,6 +9,52 @@ from typing import List, Dict, Any
 SLANG_MAP = {}
 ABUSIVE_WORDS_SET = set()
 FORMAL_WORDS_SET = set()
+ABUSIVE_TRIE = None
+
+class AbusiveTrie:
+    def __init__(self):
+        self.root = {}
+
+    def insert(self, word: str):
+        node = self.root
+        for char in word:
+            if char not in node:
+                node[char] = {}
+            node = node[char]
+        node['$'] = word
+
+    def search_edit_distance_one(self, word: str) -> str | None:
+        n = len(word)
+        results = []
+
+        def dfs(node, i, edit_count):
+            if edit_count > 1:
+                return
+            if i == n:
+                if '$' in node and edit_count == 1:
+                    results.append(node['$'])
+                if edit_count == 0:
+                    for char in node:
+                        if char != '$':
+                            dfs(node[char], i, 1)
+                return
+
+            char = word[i]
+            if char in node:
+                dfs(node[char], i + 1, edit_count)
+
+            if edit_count == 0:
+                for next_char in node:
+                    if next_char != '$' and next_char != char:
+                        dfs(node[next_char], i + 1, 1)
+                dfs(node, i + 1, 1)
+                for next_char in node:
+                    if next_char != '$':
+                        dfs(node[next_char], i, 1)
+
+        dfs(self.root, 0, 0)
+        return results[0] if results else None
+
 
 # Set kata hubung, kata ganti, dan kata kerja/sifat umum bahasa Indonesia untuk mencegah salah koreksi
 INDONESIAN_COMMON_WORDS = {
@@ -71,6 +117,8 @@ def get_close_match_abusive(word: str) -> str | None:
     # Jika kata merupakan kata formal yang valid/umum, atau ada di slang map, jangan diganti!
     if word in FORMAL_WORDS_SET or word in SLANG_MAP:
         return None
+    if ABUSIVE_TRIE is not None:
+        return ABUSIVE_TRIE.search_edit_distance_one(word)
     for ab_w in ABUSIVE_WORDS_SET:
         if abs(len(word) - len(ab_w)) > 1:
             continue
@@ -106,7 +154,16 @@ def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
         if os.path.exists(abusive_path):
             df_abusive = pd.read_csv(abusive_path)
             ABUSIVE_WORDS_SET = set(df_abusive['ABUSIVE'].dropna().str.strip().str.lower().unique())
+            global ABUSIVE_TRIE
+            ABUSIVE_TRIE = AbusiveTrie()
+            for ab_w in ABUSIVE_WORDS_SET:
+                ABUSIVE_TRIE.insert(ab_w)
             print(f"Berhasil memuat {len(ABUSIVE_WORDS_SET)} kata abusive untuk spell correction.")
+            try:
+                from monitoring import TRIE_WORDS_COUNT
+                TRIE_WORDS_COUNT.set(len(ABUSIVE_WORDS_SET))
+            except Exception as prometheus_err:
+                print(f"Warning: Gagal menyimpan metrik Trie words: {prometheus_err}")
     except Exception as e:
         print("Warning: Gagal memuat abusive.csv di normalizer:", e)
 
