@@ -42,7 +42,7 @@ We enforce **Conventional Commits** to auto-generate changelogs and maintain a r
 ## 🛠️ Development Setup
 
 ### Backend (FastAPI)
-1. **Virtual Environment**: Create a virtual environment using Python 3.10+
+1. **Virtual Environment**: Create a virtual environment using Python 3.11+
    ```bash
    cd cyberbullying_api
    python -m venv .venv
@@ -56,6 +56,7 @@ We enforce **Conventional Commits** to auto-generate changelogs and maintain a r
    ```env
    ENV=development
    API_KEY=your_secure_development_key
+   JWT_SECRET=your_jwt_secret  # Falls back to API_KEY if not set
    PG_URL=postgresql://cyber_user:cyber_password@localhost:5432/cyberbullying_db
    REDIS_URL=redis://localhost:6379/0
    ```
@@ -84,13 +85,20 @@ We enforce **Conventional Commits** to auto-generate changelogs and maintain a r
 
 ## 🧪 Testing Requirements
 
-We maintain a high test coverage threshold (>80%).
+We maintain a high test coverage threshold (>80%). The project currently has **101 backend tests** and **45 frontend tests**.
 * **Run Backend Tests**:
   ```bash
-  pytest cyberbullying_api/tests --cov=cyberbullying_api
+  # From project root (requires PYTHONPATH)
+  $env:ENV="development"; $env:PYTHONPATH=".;cyberbullying_api"; pytest tests/ -q
+  $env:ENV="development"; $env:PYTHONPATH=".;cyberbullying_api"; pytest cyberbullying_api/tests/ -q
+  ```
+* **Run Frontend Tests**:
+  ```bash
+  cd frontend
+  npx vitest run
   ```
 * Ensure you write unit tests for every new router endpoint, service utility, or data model you add.
-* Mock external API calls (e.g., Hugging Face hub, Cloud LLM (OpenCode Go), TikTok HTTP endpoints) using pytest fixtures.
+* Mock external API calls (e.g., Hugging Face hub, Cloud LLM (Gemini API), TikTok HTTP endpoints) using pytest fixtures.
 
 ---
 

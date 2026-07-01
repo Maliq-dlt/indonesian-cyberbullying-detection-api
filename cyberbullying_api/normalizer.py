@@ -3,7 +3,10 @@ import html
 import os
 import unicodedata
 import pandas as pd
+import logging
 from typing import List, Dict, Any
+
+logger = logging.getLogger("bullyguard")
 
 # Global Slang Map (diisi melalui fungsi init_slang_map)
 SLANG_MAP = {}
@@ -137,7 +140,7 @@ def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
             alay_df = pd.read_csv(alay_path, header=None, names=['slang', 'formal'], encoding='latin-1')
             alay_map = dict(zip(alay_df['slang'], alay_df['formal']))
     except Exception as e:
-        print("Warning: Gagal memuat new_kamusalay.csv di normalizer:", e)
+        logger.warning(f"Gagal memuat new_kamusalay.csv di normalizer: {e}")
 
     try:
         if singkatan_path and os.path.exists(singkatan_path):
@@ -145,7 +148,7 @@ def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
             singkatan_df = singkatan_df.dropna(subset=['singkatan', 'asli'])
             singkatan_map = dict(zip(singkatan_df['singkatan'], singkatan_df['asli']))
     except Exception as e:
-        print("Warning: Gagal memuat kamus_singkatan.csv di normalizer:", e)
+        logger.warning(f"Gagal memuat kamus_singkatan.csv di normalizer: {e}")
 
     # Muat juga kata abusive untuk fuzzy spell correction
     try:
@@ -158,14 +161,14 @@ def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
             ABUSIVE_TRIE = AbusiveTrie()
             for ab_w in ABUSIVE_WORDS_SET:
                 ABUSIVE_TRIE.insert(ab_w)
-            print(f"Berhasil memuat {len(ABUSIVE_WORDS_SET)} kata abusive untuk spell correction.")
+            logger.info(f"Berhasil memuat {len(ABUSIVE_WORDS_SET)} kata abusive untuk spell correction.")
             try:
                 from monitoring import TRIE_WORDS_COUNT
                 TRIE_WORDS_COUNT.set(len(ABUSIVE_WORDS_SET))
             except Exception as prometheus_err:
-                print(f"Warning: Gagal menyimpan metrik Trie words: {prometheus_err}")
+                logger.warning(f"Gagal menyimpan metrik Trie words: {prometheus_err}")
     except Exception as e:
-        print("Warning: Gagal memuat abusive.csv di normalizer:", e)
+        logger.warning(f"Gagal memuat abusive.csv di normalizer: {e}")
 
     SLANG_MAP = {**singkatan_map, **alay_map}
     

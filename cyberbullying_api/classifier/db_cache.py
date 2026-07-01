@@ -1,7 +1,10 @@
 import os
 import json
 import hashlib
+import logging
 from typing import Dict, Any
+
+logger = logging.getLogger("bullyguard")
 from classifier.db_config import get_redis
 
 async def get_cached_response(text: str) -> Dict[str, Any] | None:
@@ -13,7 +16,7 @@ async def get_cached_response(text: str) -> Dict[str, Any] | None:
             if res:
                 return json.loads(res)
         except Exception as e:
-            print(f"Warning: Redis error pada get_cached_response: {e}")
+            logger.warning("Redis error on get_cached_response", extra={"error": str(e)})
     return None
 
 async def save_cached_response(text: str, response_dict: Dict[str, Any]):
@@ -23,4 +26,4 @@ async def save_cached_response(text: str, response_dict: Dict[str, Any]):
             text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
             await r.set(f"cloud_llm:{text_hash}", json.dumps(response_dict), ex=604800) # Cache 7 hari
         except Exception as e:
-            print(f"Warning: Redis error pada save_cached_response: {e}")
+            logger.warning("Redis error on save_cached_response", extra={"error": str(e)})

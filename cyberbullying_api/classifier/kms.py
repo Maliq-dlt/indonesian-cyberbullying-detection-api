@@ -1,5 +1,8 @@
 import os
 import base64
+import logging
+
+logger = logging.getLogger("bullyguard")
 
 def get_encryption_key() -> bytes | None:
     """
@@ -36,10 +39,10 @@ def get_encryption_key() -> bytes | None:
             
             return key_data.encode("utf-8")
         except ImportError:
-            print("Warning: pustaka 'hvac' tidak terinstal. Gagal memuat kunci dari Vault.")
+            logger.warning("hvac library not installed, failed to load key from Vault")
             raise ImportError("Pustaka 'hvac' diperlukan untuk integrasi HashiCorp Vault KMS.")
         except Exception as e:
-            print(f"Error: Gagal mengambil kunci dari HashiCorp Vault: {e}")
+            logger.error("Failed to fetch key from HashiCorp Vault", extra={"error": str(e)})
             raise
 
     # 3. AWS KMS Provider
@@ -61,10 +64,10 @@ def get_encryption_key() -> bytes | None:
             response = kms_client.decrypt(CiphertextBlob=ciphertext, KeyId=key_id)
             return response['Plaintext']
         except ImportError:
-            print("Warning: pustaka 'boto3' tidak terinstal. Gagal memuat kunci dari AWS KMS.")
+            logger.warning("boto3 library not installed, failed to load key from AWS KMS")
             raise ImportError("Pustaka 'boto3' diperlukan untuk integrasi AWS KMS.")
         except Exception as e:
-            print(f"Error: Gagal mengambil kunci dari AWS KMS: {e}")
+            logger.error("Failed to fetch key from AWS KMS", extra={"error": str(e)})
             raise
 
     # 4. Fallback (tidak dikonfigurasi)

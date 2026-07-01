@@ -17,23 +17,41 @@ Sebelum Stage 4 diterapkan, komponen `Detector.tsx` merupakan berkas raksasa tun
 
 Tujuan refaktorisasi ini adalah memisahkan kode berdasarkan fungsinya (Separation of Concerns) tanpa mengubah visual asli atau perilaku aplikasi.
 
-### 📂 Struktur Modul Baru (`frontend/src/components/Detector/`)
+### 📂 Struktur Modul Baru (`frontend/src/`)
 
 ```text
-Detector/
-├── Detector.tsx              # Komposisi layout utama (Layout Orchestration)
-├── InputPanel.tsx            # Form input teks, selector tipe model, tombol submit
-├── ResultCard.tsx            # Tampilan hasil analisis model tunggal
-├── ComparisonResultCard.tsx  # Tabel hasil audit perbandingan multi-model
-├── XaiDrawer.tsx             # Panel laci samping grafik visualisasi SHAP (Word Importance)
-├── EmptyState.tsx            # Tampilan kosong sebelum teks dianalisis
-├── ProbabilityBar.tsx        # Bar persentase probabilitas toxic & bully
-├── useDetector.ts            # Custom hook pengelola state dan action
-├── api.ts                    # Fungsi API, normalisasi skema response, fallback lokal
-├── constants.ts              # Daftar pilihan model dan konstanta UI
-├── types.ts                  # Interface TypeScript (shared types)
-├── utils.ts                  # Fungsi helper pemformatan teks & persentase
-└── index.ts                  # Entrypoint export publik
+frontend/src/
+├── App.tsx                           # Thin orchestrator menggunakan Zustand store
+├── store/
+│   └── useAppStore.ts                # Zustand global state (theme, apiUrl, activeTab, dll)
+├── components/
+│   ├── Detector/                     # Komponen deteksi modular
+│   │   ├── Detector.tsx              # Komposisi layout utama
+│   │   ├── InputPanel.tsx            # Form input teks & selector model
+│   │   ├── ResultCard.tsx            # Tampilan hasil analisis
+│   │   ├── ComparisonResultCard.tsx  # Tabel perbandingan multi-model
+│   │   ├── XaiDrawer.tsx             # Panel visualisasi SHAP
+│   │   ├── EmptyState.tsx            # Tampilan kosong
+│   │   ├── ProbabilityBar.tsx        # Bar probabilitas
+│   │   ├── useDetector.ts            # Custom hook state & action
+│   │   ├── api.ts                    # Fungsi API & normalisasi response
+│   │   ├── constants.ts              # Konstanta UI
+│   │   ├── types.ts                  # Interface TypeScript
+│   │   ├── utils.ts                  # Helper formatting
+│   │   └── index.ts                  # Export publik
+│   ├── Home/                         # Sub-komponen halaman utama
+│   │   ├── ChatSimulator.tsx         # Simulator chat deteksi
+│   │   ├── FeaturesShowcase.tsx      # Showcase fitur tab interaktif
+│   │   └── DashboardHistoryChart.tsx # Grafik riwayat deteksi
+│   ├── Home.tsx                      # Thin orchestrator halaman utama
+│   ├── ActiveLearning.tsx            # Dashboard active learning
+│   ├── BatchAnalysis.tsx             # Analisis batch
+│   ├── Settings.tsx                  # Pengaturan API & model
+│   ├── SocialScraper.tsx             # Scraper media sosial
+│   ├── Navbar.tsx                    # Navigation bar
+│   ├── Sidebar.tsx                   # Sidebar navigasi
+│   └── XAIHighlightText.tsx          # Highlight teks XAI
+└── main.tsx                          # Entry point React
 ```
 
 ---
@@ -83,6 +101,8 @@ Setelah melakukan refaktorisasi, jalankan pengujian manual berikut pada browser:
 ---
 
 ## 📈 5. Rekomendasi Peningkatan Frontend Selanjutnya
-- [ ] Membuat shared API client (menggunakan Axios atau instance Fetch) untuk pengelolaan header API Key terpusat.
-- [ ] Menambahkan pengujian komponen otomatis menggunakan *Vitest* dan *React Testing Library*.
+- [x] ~~Membuat shared API client~~ — API normalization layer sudah ada di `Detector/api.ts`.
+- [x] ~~Menambahkan pengujian komponen otomatis menggunakan *Vitest*~~ — **Selesai**: 45 Vitest tests telah mencakup Detector, XAIHighlightText, API, constants, dan utils.
+- [x] ~~Mengurangi prop drilling~~ — **Selesai**: Zustand store (`store/useAppStore.ts`) menggantikan seluruh prop drilling dari App.tsx.
+- [x] ~~Memecah Home.tsx God Component~~ — **Selesai**: Diekstrak ke 3 sub-komponen (`ChatSimulator`, `FeaturesShowcase`, `DashboardHistoryChart`).
 - [ ] Mengganti indikator loading teks sederhana menggunakan skeleton loading modern agar UI terasa lebih premium.

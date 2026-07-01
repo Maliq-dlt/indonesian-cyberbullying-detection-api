@@ -9,6 +9,9 @@ Proyek ini mendemonstrasikan bagaimana memigrasikan model deteksi cyberbullying 
 2. **Vector Search dengan `pgvector`:** Pencarian *Few-Shot* (RAG) menggunakan *database* PostgreSQL melalui ekstensi `pgvector` dan model `sentence-transformers`, memberikan skalabilitas pencarian tak terbatas dengan latensi sub-milidetik.
 3. **Human-in-the-Loop (Active Learning):** Terdapat Admin Dashboard di mana prediksi salah dapat dikoreksi. Sistem akan melakukan *oversampling* (bobot x5) pada data tervalidasi manusia ini saat proses *retraining*.
 4. **Auto-Rollback Mechanism:** Jika skrip pelatihan otomatis menghasilkan model yang kualitas F1-score-nya turun > 8%, sistem secara otomatis membatalkan *deployment* dan mempertahankan model lama.
+5. **API Versioning:** Seluruh endpoint tersedia di `/api/v1/` dengan backward compatibility routes.
+6. **Security Headers & Rate Limiting:** Middleware keamanan (HSTS, X-Frame-Options, Request Size Limit) dan rate limiting berbasis Redis.
+7. **Prometheus Metrics:** Endpoint `/metrics` untuk monitoring request count dan latency.
 
 ## 🚀 Fitur Dasar
 1. **Leksikon & Normalisasi Teks** (`POST /predict/lexicon`):
@@ -18,9 +21,14 @@ Proyek ini mendemonstrasikan bagaimana memigrasikan model deteksi cyberbullying 
 2. **Machine Learning Classifier** (`POST /predict/ml`):
    - Deteksi cerdas berbasis statistik menggunakan **Logistic Regression** dan **TF-IDF Vectorizer**.
    - Kecepatan inferensi tinggi dengan F1-Score **~89.4%**.
+   - Endpoint async menggunakan `asyncio.to_thread` untuk non-blocking.
 3. **Deep Learning Transformer** (`POST /predict/transformers`):
    - Deteksi konteks mendalam menggunakan arsitektur **XLM-RoBERTa** (`nahiar/hatespeech-abusive-xlm-roberta-v1`).
    - Mampu menangani ambiguitas konteks kalimat secara lebih akurat.
+4. **Ensemble** (`POST /predict/ensemble`):
+   - Kombinasi voting dari Lexicon + ML + Transformer untuk hasil paling stabil.
+5. **Hybrid** (`POST /predict/hybrid`):
+   - Pipeline routing otomatis 3-Tier dengan confidence-based escalation.
 
 ---
 
@@ -33,11 +41,11 @@ pip install -r requirements.txt
 ```
 
 ### 2. Ekspor Model
-Jalankan skrip pelatihan untuk membuat file model Logistic Regression:
+Jalankan skrip retraining untuk membuat file model Logistic Regression:
 ```bash
-python train_and_export.py
+python retrain.py
 ```
-Skrip ini akan melatih model di dataset kompilasi dan menyimpan file biner `model_lr.joblib` dan `vectorizer.joblib` ke dalam folder.
+Skrip ini akan melatih model di dataset kompilasi dan menyimpan file biner `model_lr.joblib` dan `vectorizer.joblib` ke dalam folder `models/`.
 
 ### 3. Jalankan Server API
 Jalankan Uvicorn server:

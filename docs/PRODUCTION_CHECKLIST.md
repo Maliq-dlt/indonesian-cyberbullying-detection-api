@@ -32,8 +32,10 @@ Dokumen ini berisi daftar persyaratan wajib (*checklist*) yang harus dipenuhi se
 - [ ] **Pencadangan Data**: Mengaktifkan skrip backup otomatis berkala untuk database PostgreSQL.
 - [ ] **Keamanan Redis**: Redis hanya dapat diakses melalui jaringan internal Docker dan diproteksi kata sandi yang kuat.
 - [ ] **Health Checks**: Menambahkan instruksi healthcheck Docker untuk memantau kesehatan database, redis, backend, dan celery worker.
-- [ ] **Structured Logging**: Mengaktifkan JSON structured logging agar log sistem mudah diindeks oleh sistem monitoring (misalnya ELK stack, Grafana Loki).
-- [ ] **Metrics & Monitoring**: Mengaktifkan monitoring penggunaan CPU, Memory, Latency API (P50, P95, P99), serta tingkat error.
+- [x] **Structured Logging**: JSON structured logging telah aktif di `main.py` dengan format kompatibel ELK/Loki.
+- [x] **Metrics & Monitoring**: Prometheus metrics (`/metrics`) telah aktif dengan counter request dan histogram latency.
+- [x] **Security Headers**: Middleware security headers (HSTS, X-Frame-Options, dll) telah aktif di seluruh response.
+- [x] **Request Size Limit**: Middleware pembatasan ukuran body (10MB) telah aktif.
 - [ ] **Version Lock**: Mengunci versi Docker base image (`python:3.11-slim` dan `node:20-alpine`) serta versi dependencies di `requirements.txt`.
 
 ---

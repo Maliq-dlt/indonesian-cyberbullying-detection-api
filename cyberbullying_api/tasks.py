@@ -1,9 +1,12 @@
 import os
 import sys
 import subprocess
+import logging
 from celery import Celery
 import redis
 from dotenv import load_dotenv
+
+logger = logging.getLogger("bullyguard")
 if os.path.exists(".env"):
     load_dotenv(".env")
 elif os.path.exists("../.env"):
@@ -32,7 +35,7 @@ def run_retrain_task(model_type: str = "both"):
         r = redis.from_url(REDIS_URL)
         r.set("training_status", "running")
     except Exception as e:
-        print(f"Warning in Celery task (Redis status update): {e}")
+        logger.warning(f"Warning in Celery task (Redis status update): {e}")
         r = None
         
     os.makedirs(os.path.dirname(log_path), exist_ok=True)

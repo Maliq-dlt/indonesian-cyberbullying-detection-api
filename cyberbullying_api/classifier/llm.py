@@ -3,7 +3,10 @@ import json
 import httpx
 import numpy as np
 import asyncio
+import logging
 from typing import List, Dict, Any, AsyncGenerator
+
+logger = logging.getLogger("bullyguard")
 
 from classifier.database import get_cached_response, save_cached_response, get_pg_pool, decrypt_text
 from normalizer import normalize_text
@@ -56,7 +59,7 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
                         )
                     return examples_str
         except Exception as e:
-            print("Warning: Gagal menggunakan pgvector, fallback ke TF-IDF:", e)
+            logger.warning("Failed to use pgvector, falling back to TF-IDF", extra={"error": str(e)})
 
     # Fallback ke TF-IDF
     memory_texts = []
@@ -101,14 +104,14 @@ async def retrieve_relevant_examples(query: str, top_k: int = 3) -> str:
             )
         return examples_str
     except Exception as e:
-        print("Warning: Gagal melakukan RAG retrieval:", e)
+        logger.warning("Failed to perform RAG retrieval", extra={"error": str(e)})
         return ""
 
 async def query_cloud_llm_async(text: str, model_name: str | None = None) -> Dict[str, Any]:
     # Cek cache terlebih dahulu
     cached = await get_cached_response(text)
     if cached:
-        print(f"[CACHE HIT] Mengambil hasil analisis LLM dari cache untuk teks: '{text}'")
+        logger.info("Cache hit: returning cached LLM result", extra={"text": text[:60]})
         return cached
 
     async with CLOUD_LLM_SEM:
@@ -214,10 +217,10 @@ async def _query_cloud_llm_async_raw(text: str, model_name: str | None = None) -
                 return result
             else:
                 GEMINI_FAILURES_TOTAL.inc()
-                print(f"Warning: Cloud LLM API Error: {response.status_code} - {response.text}")
+                logger.warning("Cloud LLM API error", extra={"status_code": response.status_code, "response": response.text[:200]})
     except Exception as e:
         GEMINI_FAILURES_TOTAL.inc()
-        print("Warning: Gagal menghubungi Cloud LLM:", e)
+        logger.warning("Failed to contact Cloud LLM", extra={"error": str(e)})
         
     return {
         "is_toxic": False,
@@ -230,7 +233,7 @@ async def query_cloud_llm_stream_async(text: str, model_name: str | None = None)
     # Cek cache terlebih dahulu
     cached = await get_cached_response(text)
     if cached:
-        print(f"[CACHE HIT] Mengambil hasil analisis LLM dari cache untuk teks: '{text}'")
+        logger.info("Cache hit: returning cached LLM result (stream)", extra={"text": text[:60]})
         # Yield the cached result directly
         yield {"chunk": cached.get("reason", ""), "done": True, "final_data": cached}
         return
@@ -358,7 +361,7 @@ async def _query_cloud_llm_stream_async_raw(text: str, model_name: str | None = 
 
     except Exception as e:
         GEMINI_FAILURES_TOTAL.inc()
-        print("Warning: Gagal menghubungi Cloud LLM secara streaming:", e)
+        logger.warning("Failed to contact Cloud LLM (streaming)", extra={"error": str(e)})
         yield {
             "chunk": "", 
             "done": True, 

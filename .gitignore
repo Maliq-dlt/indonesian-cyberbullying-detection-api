@@ -48,3 +48,7 @@ cyberbullying_api/scraper/logs/
 !docs/*.jpeg
 !docs/*.gif
 
+# Pytest coverage reports
+.coverage
+coverage.xml
+htmlcov/

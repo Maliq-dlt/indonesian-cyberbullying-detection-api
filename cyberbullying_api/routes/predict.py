@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Security
 from fastapi.responses import StreamingResponse
 import asyncio
 import json
+import logging
 import classifier
 from models import (
     TextRequest, LexiconResponse, MLResponse, TransformerResponse, EnsembleResponse, HybridResponse,
@@ -10,46 +11,48 @@ from models import (
 from routes.deps import rate_limit_cloud_llm_and_batch, get_current_user
 from monitoring import PREDICTIONS_TOTAL
 
+logger = logging.getLogger("bullyguard")
+
 router = APIRouter(prefix="/predict", tags=["prediction"], dependencies=[Security(get_current_user, scopes=["predict"])])
 
 @router.post("/lexicon", response_model=LexiconResponse)
-def predict_lexicon(req: TextRequest):
-    return classifier.predict_lexicon(req.text, bool(req.use_fuzzy))
+async def predict_lexicon(req: TextRequest):
+    return await asyncio.to_thread(classifier.predict_lexicon, req.text, bool(req.use_fuzzy))
 
 @router.post("/ml", response_model=MLResponse)
-def predict_ml(req: TextRequest):
+async def predict_ml(req: TextRequest):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
-    return classifier.predict_ml(req.text)
+    return await asyncio.to_thread(classifier.predict_ml, req.text)
 
 @router.post("/transformers", response_model=TransformerResponse)
-def predict_transformers(req: TextRequest):
+async def predict_transformers(req: TextRequest):
     if classifier.TRANSFORMER_SESSION is None and classifier.TRANSFORMER_MODEL is None:
         raise HTTPException(status_code=503, detail="Model Transformer belum termuat.")
     try:
-        return classifier.predict_transformers(req.text)
+        return await asyncio.to_thread(classifier.predict_transformers, req.text)
     except Exception as e:
-        print(f"Error Transformer: {e}")
+        logger.error("Error Transformer prediction", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail="Terjadi kesalahan internal server saat menjalankan model Transformer.")
 
 @router.post("/ensemble", response_model=EnsembleResponse)
-def predict_ensemble(req: TextRequest):
+async def predict_ensemble(req: TextRequest):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
-    return classifier.predict_ensemble(req.text)
+    return await asyncio.to_thread(classifier.predict_ensemble, req.text)
 
 async def send_webhook_notification(webhook_url: str, payload: dict):
     from routes.deps import is_safe_webhook_url
     if not is_safe_webhook_url(webhook_url):
-        print(f"Warning: Percobaan SSRF terdeteksi! Webhook ke {webhook_url} dibatalkan.")
+        logger.warning("SSRF attempt blocked", extra={"url": webhook_url})
         return
     import httpx
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             res = await client.post(webhook_url, json=payload)
-            print(f"Webhook sent: {res.status_code}")
+            logger.info("Webhook sent", extra={"status": res.status_code})
     except Exception as e:
-        print(f"Failed to send webhook to {webhook_url}: {e}")
+        logger.warning("Webhook send failed", extra={"url": webhook_url, "error": str(e)})
 
 @router.post("/hybrid", response_model=HybridResponse, dependencies=[Depends(rate_limit_cloud_llm_and_batch)])
 async def predict_hybrid(req: TextRequest, background_tasks: BackgroundTasks):
@@ -80,12 +83,12 @@ async def predict_hybrid(req: TextRequest, background_tasks: BackgroundTasks):
                 }
                 background_tasks.add_task(send_webhook_notification, settings["webhook_url"], payload)
     except Exception as e:
-        print(f"Warning: Gagal mempersiapkan task webhook: {e}")
+        logger.warning("Failed to prepare webhook task", extra={"error": str(e)})
         
     try:
         PREDICTIONS_TOTAL.labels(decision_source=res.decision_source, category=res.category).inc()
     except Exception as exc:
-        print(f"Warning: Gagal merekam metrik prediksi: {exc}")
+        logger.warning("Failed to record prediction metric", extra={"error": str(exc)})
         
     return res
 
@@ -138,7 +141,7 @@ async def predict_hybrid_stream_endpoint(req: TextRequest):
                     try:
                         PREDICTIONS_TOTAL.labels(decision_source=final_data.decision_source, category=final_data.category).inc()
                     except Exception as exc:
-                        print(f"Warning: Gagal merekam metrik prediksi stream: {exc}")
+                        logger.warning("Failed to record stream metric", extra={"error": str(exc)})
                     data_dict["final_data"] = {
                         "text": final_data.text,
                         "is_toxic": final_data.is_toxic,
@@ -155,7 +158,7 @@ async def predict_hybrid_stream_endpoint(req: TextRequest):
                     }
                 yield f"data: {json.dumps(data_dict)}\n\n"
         except Exception as e:
-            print(f"Warning: Gagal melakukan streaming prediksi hybrid: {e}")
+            logger.warning("Streaming prediction failed", extra={"error": str(e)})
             yield f"data: {json.dumps({'error': 'Terjadi kesalahan internal saat memproses stream.', 'done': True})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

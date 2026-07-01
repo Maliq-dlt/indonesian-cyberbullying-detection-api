@@ -70,7 +70,38 @@ Sistem webhook yang digunakan untuk mengirim notifikasi hasil deteksi rentan ter
 
 ---
 
-## 🛡️ 6. Keamanan Header Reverse Proxy
+## 🛡️ 6. Security Headers Middleware
+
+Seluruh response API dilengkapi dengan security headers standar untuk mencegah serangan umum:
+- **`X-Content-Type-Options: nosniff`**: Mencegah browser melakukan MIME-type sniffing.
+- **`X-Frame-Options: DENY`**: Mencegah clickjacking dengan melarang embedding iframe.
+- **`X-XSS-Protection: 0`**: Menonaktifkan XSS filter legacy browser (modern browser menggunakan CSP).
+- **`Referrer-Policy: strict-origin-when-cross-origin`**: Membatasi informasi referrer yang dikirim.
+- **`Permissions-Policy: camera=(), microphone=(), geolocation=()`**: Menonaktifkan akses perangkat browser.
+- **`Cache-Control: no-store`**: Mencegah caching response sensitif.
+- **`Strict-Transport-Security (HSTS)`**: Hanya aktif di production, memaksa browser menggunakan HTTPS.
+
+---
+
+## 📦 7. Request Size Limit Middleware
+
+Untuk mencegah serangan DoS melalui payload request berukuran raksasa:
+- **Batas Default**: 10 MB per request body.
+- **Respons**: Mengembalikan HTTP 413 (Payload Too Large) jika melebihi batas.
+- **Implementasi**: Middleware `RequestSizeLimitMiddleware` di `main.py` memeriksa header `Content-Length` sebelum memproses body.
+
+---
+
+## 🔐 8. JWT Secret Hardening
+
+Autentikasi JWT menggunakan secret yang aman:
+- **Production**: `JWT_SECRET` **wajib** diatur secara eksplisit di `.env`. Jika tidak diatur, server akan menolak startup.
+- **Development**: Jika `JWT_SECRET` dan `API_KEY` tidak diatur, sistem akan menghasilkan secret acak per-process menggunakan `secrets.token_hex(32)`.
+- **Tidak ada lagi hardcoded fallback**: Secret fallback lama (`"bullyguard_id_dev_insecure_key_source"`) telah dihapus.
+
+---
+
+## 🌐 9. Keamanan Header Reverse Proxy
 
 API Key rate limiter memerlukan IP asli klien untuk melacak limit.
 - **Trust Proxy Headers**: Hanya aktifkan `TRUST_PROXY_HEADERS=true` jika backend berada di belakang reverse proxy terpercaya (seperti Nginx atau Cloudflare).
@@ -78,21 +109,24 @@ API Key rate limiter memerlukan IP asli klien untuk melacak limit.
 
 ---
 
-## 🗂️ 7. Pemetaan Keamanan Endpoint
+## 🗂️ 10. Pemetaan Keamanan Endpoint
 
 | Endpoint API | Akses Publik | Keterangan / Proteksi |
 | :--- | :---: | :--- |
 | **`/`** | ✅ Ya | Landing page statis |
 | **`/health`** | ✅ Ya | Status pengecekan kontainer (*healthcheck*) |
+| **`/metrics`** | ✅ Ya | Prometheus metrics endpoint |
 | **`/docs`** | ⚠️ Dev Only | Swagger UI (Wajib dimatikan di production) |
-| **`/predict/*`** | ❌ Dilindungi | Endpoint klasifikasi hybrid |
+| **`/predict/*`** | ❌ Dilindungi | Endpoint klasifikasi hybrid (juga tersedia di `/api/v1/predict/*`) |
 | **`/models/*`** | ❌ Dilindungi | Pengaturan dan retrain model |
+| **`/api/v1/*`** | ❌ Dilindungi | Versioned API routes (recommended) |
 
 ---
 
-## 📝 8. Agenda Perbaikan Keamanan Selanjutnya
-- [ ] Menerapkan autentikasi berbasis token session/JWT jika aplikasi berkembang mendukung multi-user.
-- [ ] Menambahkan audit logging untuk mendokumentasikan setiap aksi admin (retraining model, audit data).
-- [ ] Membatasi ukuran body payload request di tingkat reverse proxy (Nginx `client_max_body_size`) untuk mencegah serangan denial-of-service via upload teks raksasa.
+## 📝 11. Agenda Perbaikan Keamanan Selanjutnya
+- [x] ~~Menerapkan autentikasi berbasis token session/JWT~~ — **Selesai**: JWT secret hardening telah diimplementasikan.
+- [x] ~~Menambahkan audit logging~~ — **Selesai**: Structured JSON logging telah aktif.
+- [x] ~~Membatasi ukuran body payload request~~ — **Selesai**: Request Size Limit Middleware (10MB) telah aktif.
 - [ ] Menambahkan pemindaian celah keamanan dependensi (*dependency vulnerability scanning*) otomatis di CI/CD.
+- [ ] Menambahkan Content Security Policy (CSP) header untuk frontend.
 

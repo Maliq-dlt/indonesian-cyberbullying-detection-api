@@ -4,8 +4,11 @@ import json
 import asyncio
 import base64
 import hashlib
+import logging
 from typing import List, Dict, Any
 import time
+
+logger = logging.getLogger("bullyguard")
 
 try:
     import asyncpg
@@ -13,7 +16,7 @@ try:
 except ImportError:
     asyncpg = None
     redis = None
-    print("Warning: asyncpg atau redis tidak terinstal. Modul Database mungkin tidak beroperasi.")
+    logger.warning("asyncpg atau redis tidak terinstal. Modul Database mungkin tidak beroperasi.")
 
 from cryptography.fernet import Fernet
 
@@ -45,7 +48,7 @@ elif not api_key:
         with open(_dev_key_path, "w") as _f:
             _f.write(_random_key)
         key_source = _random_key.encode("utf-8")
-        print(f"WARNING: Kunci enkripsi development baru digenerate dan disimpan di {_dev_key_path}")
+        logger.warning(f"Kunci enkripsi development baru digenerate dan disimpan di {_dev_key_path}")
 else:
     key_source = api_key.encode("utf-8")
 
@@ -58,7 +61,7 @@ def encrypt_text(text: str) -> str:
     try:
         return CIPHER_SUITE.encrypt(text.encode("utf-8")).decode("utf-8")
     except Exception as e:
-        print(f"Warning: Gagal mengenkripsi teks: {e}")
+        logger.warning(f"Gagal mengenkripsi teks: {e}")
         return text
 
 def decrypt_text(enc_text: str) -> str:
@@ -138,7 +141,7 @@ async def get_pg_pool():
                     pass
                 
                 if has_old_text:
-                    print("Melakukan migrasi PostgreSQL ke skema baru yang terenkripsi...")
+                    logger.info("Melakukan migrasi PostgreSQL ke skema baru yang terenkripsi...")
                     await conn.execute("ALTER TABLE classification_memory RENAME TO classification_memory_old;")
                     await conn.execute("""
                         CREATE TABLE classification_memory (
@@ -169,7 +172,7 @@ async def get_pg_pool():
                         text_hash, enc_text, row["is_toxic"], row["is_bully"], row["reason"], row["decision_source"], 
                         row["confidence"], row["probability_toxic"], row["probability_bully"], row["timestamp"], row["is_validated"], row["embedding"])
                     await conn.execute("DROP TABLE classification_memory_old;")
-                    print("Migrasi PostgreSQL selesai.")
+                    logger.info("Migrasi PostgreSQL selesai.")
                 else:
                     await conn.execute("""
                         CREATE TABLE IF NOT EXISTS classification_memory (
@@ -205,12 +208,12 @@ async def get_pg_pool():
                     pass
                 try:
                     await conn.execute("CREATE INDEX IF NOT EXISTS classification_memory_embedding_idx ON classification_memory USING hnsw (embedding vector_cosine_ops);")
-                    print("Indeks HNSW pgvector berhasil dikonfigurasi.")
+                    logger.info("Indeks HNSW pgvector berhasil dikonfigurasi.")
                 except Exception as idx_err:
-                    print(f"Warning: Gagal membuat indeks HNSW pgvector (melewati): {idx_err}")
-            print("PostgreSQL terkoneksi & tabel diverifikasi (dengan pgvector).")
+                    logger.warning(f"Gagal membuat indeks HNSW pgvector (melewati): {idx_err}")
+            logger.info("PostgreSQL terkoneksi & tabel diverifikasi (dengan pgvector).")
         except Exception as e:
-            print(f"Warning: Gagal inisialisasi PostgreSQL: {e}")
+            logger.warning(f"Gagal inisialisasi PostgreSQL: {e}")
             PG_FAILED_UNTIL = current_time + 60.0
     return PG_POOL
 
@@ -231,9 +234,9 @@ async def get_redis():
                 socket_connect_timeout=1.5
             )
             await REDIS_CLIENT.ping()
-            print("Redis terkoneksi.")
+            logger.info("Redis terkoneksi.")
         except Exception as e:
-            print(f"Warning: Gagal inisialisasi Redis: {e}")
+            logger.warning(f"Gagal inisialisasi Redis: {e}")
             REDIS_FAILED_UNTIL = current_time + 60.0
             REDIS_CLIENT = None
     return REDIS_CLIENT
@@ -254,7 +257,7 @@ def init_sqlite_db(db_path: str):
             has_old_text = True
             
     if has_old_text:
-        print("Melakukan migrasi SQLite ke skema baru yang terenkripsi...")
+        logger.info("Melakukan migrasi SQLite ke skema baru yang terenkripsi...")
         cursor.execute("ALTER TABLE classification_memory RENAME TO classification_memory_old")
         cursor.execute("""
             CREATE TABLE classification_memory (
@@ -287,7 +290,7 @@ def init_sqlite_db(db_path: str):
             ))
         cursor.execute("DROP TABLE classification_memory_old")
         conn.commit()
-        print("Migrasi SQLite selesai.")
+        logger.info("Migrasi SQLite selesai.")
     else:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS classification_memory (
@@ -343,11 +346,11 @@ def get_sqlite_db_path() -> str:
 def init_cache_db():
     masked_pg = re.sub(r'(://[^:]*:)([^@/]+)(@)', r'\1***\3', PG_URL)
     masked_redis = re.sub(r'(://[^:]*:)([^@/]+)(@)', r'\1***\3', REDIS_URL)
-    print(f"Sistem Infrastruktur siap menggunakan PostgreSQL ({masked_pg}) dan Redis ({masked_redis}) secara lazy.")
+    logger.info(f"Sistem Infrastruktur siap menggunakan PostgreSQL ({masked_pg}) dan Redis ({masked_redis}) secara lazy.")
     
     try:
         db_path = get_sqlite_db_path()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         init_sqlite_db(db_path)
     except Exception as e:
-        print(f"Warning: Gagal inisialisasi SQLite database: {e}")
+        logger.warning(f"Gagal inisialisasi SQLite database: {e}")

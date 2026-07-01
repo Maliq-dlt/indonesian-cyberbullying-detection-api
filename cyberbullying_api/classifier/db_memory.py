@@ -4,7 +4,10 @@ import re
 import json
 import hashlib
 import asyncio
+import logging
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger("bullyguard")
 from models import HybridResponse, determine_category
 from classifier.db_config import (
     get_pg_pool, get_redis, encrypt_text, decrypt_text, SQLITE_WRITE_LOCK, get_sqlite_db_path
@@ -75,7 +78,7 @@ async def save_classification_memory(res: HybridResponse, embedding_json: str | 
                 embedding_json)
                 return
         except Exception as e:
-            print(f"Warning: PostgreSQL error pada save_classification_memory: {e}")
+            logger.warning("PostgreSQL error on save_classification_memory", extra={"error": str(e)})
 
     # Fallback to SQLite
     try:
@@ -117,7 +120,7 @@ async def save_classification_memory(res: HybridResponse, embedding_json: str | 
         async with SQLITE_WRITE_LOCK:
             await asyncio.to_thread(write_sqlite)
     except Exception as sq_err:
-        print(f"Warning: SQLite error pada save_classification_memory fallback: {sq_err}")
+        logger.warning("SQLite error on save_classification_memory fallback", extra={"error": str(sq_err)})
 
 async def get_classification_memory(text: str) -> HybridResponse | None:
     text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -145,7 +148,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
             else:
                 CACHE_LOOKUPS_TOTAL.labels(cache_type="redis", status="miss").inc()
         except Exception as e:
-            print(f"Warning: Redis error saat membaca memori: {e}")
+            logger.warning("Redis error reading memory", extra={"error": str(e)})
             
     pool = await get_pg_pool()
     if pool:
@@ -190,7 +193,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                 else:
                     CACHE_LOOKUPS_TOTAL.labels(cache_type="postgres", status="miss").inc()
         except Exception as e:
-            print(f"Warning: PostgreSQL error saat membaca memori: {e}")
+            logger.warning("PostgreSQL error reading memory", extra={"error": str(e)})
             
     # SQLite fallback read
     try:
@@ -246,7 +249,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
             else:
                 CACHE_LOOKUPS_TOTAL.labels(cache_type="sqlite", status="miss").inc()
     except Exception as sq_err:
-        print(f"Warning: SQLite error pada get_classification_memory fallback: {sq_err}")
+        logger.warning("SQLite error on get_classification_memory fallback", extra={"error": str(sq_err)})
         
     # 5. Semantic Cache Lookup (jika tidak ada pencocokan eksak)
     try:
@@ -306,7 +309,7 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                                 reason=f"[Cocok Semantik dengan '{decrypted_text}'] {row['reason']}"
                             )
                 except Exception as pg_sem_err:
-                    print(f"Warning: Gagal PostgreSQL semantic cache lookup: {pg_sem_err}")
+                    logger.warning("PostgreSQL semantic cache lookup failed", extra={"error": str(pg_sem_err)})
 
             # Fallback pencarian semantik di SQLite menggunakan Python numpy
             try:
@@ -389,9 +392,9 @@ async def get_classification_memory(text: str) -> HybridResponse | None:
                                 reason=f"[Cocok Semantik dengan '{decrypted_text}'] {best_row[4]}"
                             )
             except Exception as sq_sem_err:
-                print(f"Warning: SQLite semantic cache lookup error: {sq_sem_err}")
+                logger.warning("SQLite semantic cache lookup error", extra={"error": str(sq_sem_err)})
     except Exception as general_sem_err:
-        print(f"Warning: Semantic cache error: {general_sem_err}")
+        logger.warning("Semantic cache error", extra={"error": str(general_sem_err)})
         
     return None
 
@@ -419,7 +422,7 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
                     results.append(row_dict)
             return results
         except Exception as e:
-            print(f"Warning: PostgreSQL error pada get_unvalidated_memory: {e}")
+            logger.warning("PostgreSQL error on get_unvalidated_memory", extra={"error": str(e)})
 
     # SQLite fallback
     try:
@@ -451,11 +454,12 @@ async def get_unvalidated_memory(limit: int = 50) -> List[Dict[str, Any]]:
                     row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
                 results.append(row_dict)
     except Exception as e:
-        print(f"Warning: SQLite error pada get_unvalidated_memory: {e}")
+        logger.warning("SQLite error on get_unvalidated_memory", extra={"error": str(e)})
     return results
 
 async def get_categorized_memory(
     limit: int = 500,
+    offset: int = 0,
     confidence_min: Optional[float] = None,
     confidence_max: Optional[float] = None,
     decision_source: Optional[str] = None,
@@ -482,8 +486,8 @@ async def get_categorized_memory(
                     SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, timestamp, is_validated
                     FROM classification_memory
                     ORDER BY ABS(confidence - 0.5) ASC, timestamp DESC
-                    LIMIT $1
-                """, fetch_limit)
+                    LIMIT $1 OFFSET $2
+                """, fetch_limit, offset)
                 for r in rows:
                     row_dict = dict(r)
                     enc_text = row_dict.pop("encrypted_text", "")
@@ -494,7 +498,7 @@ async def get_categorized_memory(
                         row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
                     records.append(row_dict)
         except Exception as e:
-            print(f"Warning: PostgreSQL error pada get_categorized_memory: {e}")
+            logger.warning("PostgreSQL error on get_categorized_memory", extra={"error": str(e)})
             
     if not records:
         try:
@@ -508,8 +512,8 @@ async def get_categorized_memory(
                         SELECT text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, timestamp, is_validated
                         FROM classification_memory
                         ORDER BY abs(confidence - 0.5) ASC, timestamp DESC
-                        LIMIT ?
-                    """, (fetch_limit,))
+                        LIMIT ? OFFSET ?
+                    """, (fetch_limit, offset))
                     rows = cursor.fetchall()
                     res_list = [dict(r) for r in rows]
                     conn.close()
@@ -525,7 +529,7 @@ async def get_categorized_memory(
                         row_dict["text"] = "[Gagal mendekripsi — kunci tidak cocok]"
                     records.append(row_dict)
         except Exception as e:
-            print(f"Warning: SQLite error pada get_categorized_memory: {e}")
+            logger.warning("SQLite error on get_categorized_memory", extra={"error": str(e)})
             
     filtered_records = []
     for r in records:
@@ -629,15 +633,15 @@ async def update_validation_status(text: str, is_toxic: bool, is_bully: bool, is
                 1.0 if is_toxic else 0.0,
                 1.0 if is_bully else 0.0,
                 is_validated)
-            print(f"[HITL] Berhasil memvalidasi data di PostgreSQL untuk: '{text}'")
+            logger.info("HITL: Data validated in PostgreSQL", extra={"text": text[:80]})
             return True
         except Exception as e:
-            print(f"Warning: PostgreSQL error pada update_validation_status: {e}")
+            logger.warning("PostgreSQL error on update_validation_status", extra={"error": str(e)})
 
     # SQLite fallback
     try:
         db_path = get_sqlite_db_path()
-        print("DEBUG save_classification_memory db_path:", db_path)
+        logger.debug("save_classification_memory SQLite fallback path", extra={"db_path": db_path})
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
         def write_validation_sqlite():
@@ -663,10 +667,10 @@ async def update_validation_status(text: str, is_toxic: bool, is_bully: bool, is
 
         async with SQLITE_WRITE_LOCK:
             await asyncio.to_thread(write_validation_sqlite)
-        print(f"[HITL] Berhasil memvalidasi data di SQLite untuk: '{text}'")
+        logger.info("HITL: Data validated in SQLite", extra={"text": text[:80]})
         return True
     except Exception as e:
-        print(f"Warning: SQLite error pada update_validation_status: {e}")
+        logger.warning("SQLite error on update_validation_status", extra={"error": str(e)})
     return False
 
 async def save_retraining_history(f1_toxic: float, f1_bully: float, threshold_toxic: float, threshold_bully: float, active_version: str):
@@ -680,7 +684,7 @@ async def save_retraining_history(f1_toxic: float, f1_bully: float, threshold_to
                 """, f1_toxic, f1_bully, threshold_toxic, threshold_bully, active_version)
                 return
         except Exception as e:
-            print(f"Warning: PostgreSQL error pada save_retraining_history: {e}")
+            logger.warning("PostgreSQL error on save_retraining_history", extra={"error": str(e)})
 
     try:
         db_path = get_sqlite_db_path()
@@ -698,22 +702,23 @@ async def save_retraining_history(f1_toxic: float, f1_bully: float, threshold_to
         async with SQLITE_WRITE_LOCK:
             await asyncio.to_thread(save_history_sqlite)
     except Exception as e:
-        print(f"Warning: SQLite error pada save_retraining_history: {e}")
+        logger.warning("SQLite error on save_retraining_history", extra={"error": str(e)})
 
-async def get_retraining_history(limit: int = 50) -> List[Dict[str, Any]]:
+async def get_retraining_history(limit: int = 50, offset: int = 0, order: str = "asc") -> List[Dict[str, Any]]:
+    order_clause = "DESC" if order.lower() == "desc" else "ASC"
     pool = await get_pg_pool()
     if pool:
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch("""
+                rows = await conn.fetch(f"""
                     SELECT id, timestamp, f1_toxic, f1_bully, threshold_toxic, threshold_bully, active_version
                     FROM retraining_history
-                    ORDER BY id ASC
-                    LIMIT $1
-                """, limit)
+                    ORDER BY id {order_clause}
+                    LIMIT $1 OFFSET $2
+                """, limit, offset)
                 return [dict(r) for r in rows]
         except Exception as e:
-            print(f"Warning: PostgreSQL error pada get_retraining_history: {e}")
+            logger.warning("PostgreSQL error on get_retraining_history", extra={"error": str(e)})
 
     try:
         db_path = get_sqlite_db_path()
@@ -721,12 +726,12 @@ async def get_retraining_history(limit: int = 50) -> List[Dict[str, Any]]:
         def read_history_sqlite():
             conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, timestamp, f1_toxic, f1_bully, threshold_toxic, threshold_bully, active_version
                 FROM retraining_history
-                ORDER BY id ASC
-                LIMIT ?
-            """, (limit,))
+                ORDER BY id {order_clause}
+                LIMIT ? OFFSET ?
+            """, (limit, offset))
             rows = cursor.fetchall()
             conn.close()
             return rows
@@ -746,5 +751,5 @@ async def get_retraining_history(limit: int = 50) -> List[Dict[str, Any]]:
             })
         return result
     except Exception as e:
-        print(f"Warning: SQLite error pada get_retraining_history: {e}")
+        logger.warning("SQLite error on get_retraining_history", extra={"error": str(e)})
         return []

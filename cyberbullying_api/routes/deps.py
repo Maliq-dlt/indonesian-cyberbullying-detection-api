@@ -13,10 +13,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import ipaddress
+import logging
 import os
 import socket
 from typing import Optional
 from urllib.parse import urlparse
+
+logger = logging.getLogger("bullyguard")
 
 from fastapi import Header, HTTPException, Request, status, Depends
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
@@ -152,7 +155,7 @@ async def rate_limit_cloud_llm_and_batch(request: Request) -> None:
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"Warning: failed to evaluate Redis rate limit: {exc}")
+        logger.warning("Failed to evaluate Redis rate limit", extra={"error": str(exc)})
         if fail_open:
             return
         raise HTTPException(
@@ -214,7 +217,23 @@ oauth2_scheme = OAuth2PasswordBearer(
     auto_error=False
 )
 
-JWT_SECRET = os.getenv("JWT_SECRET", os.getenv("API_KEY", "bullyguard_id_dev_insecure_key_source")).strip()
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
+if not JWT_SECRET:
+    JWT_SECRET = os.getenv("API_KEY", "").strip()
+if not JWT_SECRET:
+    if is_development_env():
+        # Gunakan secret acak per-process di development (tidak persisten, tidak bisa ditebak)
+        import secrets
+        JWT_SECRET = secrets.token_hex(32)
+        logger.warning(
+            "JWT_SECRET dan API_KEY tidak diatur. Menggunakan secret acak per-process. "
+            "Token JWT tidak akan bertahan setelah restart server."
+        )
+    else:
+        raise RuntimeError(
+            "CRITICAL: JWT_SECRET atau API_KEY harus diatur di environment non-development. "
+            "Server menolak startup demi keamanan."
+        )
 ALGORITHM = "HS256"
 
 async def get_current_user(

@@ -1,5 +1,8 @@
 import os
 import json
+import logging
+
+logger = logging.getLogger("bullyguard")
 from classifier.db_config import get_redis
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", "settings.json")
@@ -56,7 +59,7 @@ async def save_settings(settings: dict):
         with open(SETTINGS_FILE, "w") as f:
             json.dump(final_settings, f, indent=4)
     except Exception as e:
-        print(f"Error saving settings file: {e}")
+        logger.error("Error saving settings file", extra={"error": str(e)})
         
     # Sync with Redis
     r = await get_redis()

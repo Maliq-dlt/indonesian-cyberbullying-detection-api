@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { m, AnimatePresence } from 'framer-motion';
+import { m } from 'framer-motion';
 import { 
   Shield, CheckCircle, Activity, ArrowRight, PlayCircle, 
-  Check, MessageSquare, Globe, UploadCloud, Workflow, 
-  Settings, Download, Moon, Sun, ArrowUpRight, RefreshCw
+  Moon, Sun, ArrowUpRight, RefreshCw
 } from 'lucide-react';
+
+import ChatSimulator from './Home/ChatSimulator';
+import FeaturesShowcase from './Home/FeaturesShowcase';
+import DashboardHistoryChart from './Home/DashboardHistoryChart';
+import type { HistoryDataPoint } from './Home/DashboardHistoryChart';
 
 interface HomeProps {
   setActiveTab: (tab: any) => void;
@@ -39,545 +43,9 @@ const itemVariants = {
   }
 };
 
-const simulatedComments = [
-  {
-    author: "user_anon88",
-    avatar: "A",
-    text: "Terima kasih atas bantuannya hari ini, sangat terbantu sekali! Sukses selalu.",
-    verdict: "Aman / Bersih",
-    confidence: 0.99,
-    details: "Teks dianalisis aman dari indikasi cyberbullying, ujaran kebencian, atau pelecehan.",
-    type: "aman",
-    segments: [
-      { text: "Terima kasih atas bantuannya hari ini, sangat terbantu sekali! Sukses selalu." }
-    ]
-  },
-  {
-    author: "hater_detect32",
-    avatar: "H",
-    text: "eh lu bego banget sih kerja ginian aja ga becus wkwk mental lemah",
-    verdict: "Toxic & Bullying",
-    confidence: 0.95,
-    details: "Mengandung makian personal kasar dan ejekan merendahkan kapasitas mental seseorang.",
-    type: "toxic-bully",
-    segments: [
-      { text: "eh lu " },
-      { text: "bego", type: "toxic", weight: 0.85 },
-      { text: " banget sih kerja ginian aja " },
-      { text: "ga becus", type: "toxic", weight: 0.75 },
-      { text: " wkwk " },
-      { text: "mental lemah", type: "bully", weight: 0.90 }
-    ]
-  },
-  {
-    author: "gamer_id90",
-    avatar: "G",
-    text: "anjing kaget gua kirain musuhnya udah mati ternyata masih hidup kampret",
-    verdict: "Toxic but Non-Bully",
-    confidence: 0.88,
-    details: "Mengandung kata kasar/umpatan mengekspresikan emosi kekagetan, bukan serangan personal.",
-    type: "toxic-nonbully",
-    segments: [
-      { text: "anjing", type: "toxic", weight: 0.88 },
-      { text: " kaget gua kirain musuhnya udah mati ternyata masih hidup " },
-      { text: "kampret", type: "toxic", weight: 0.70 }
-    ]
-  },
-  {
-    author: "sarcasm_king",
-    avatar: "S",
-    text: "pinter banget sih kamu ya, sampe-sampe nilai ujiannya dapet nol terus",
-    verdict: "Non-Toxic but Bully",
-    confidence: 0.84,
-    details: "Sarkasme halus meremehkan inteligensi orang lain secara pasif-agresif.",
-    type: "nontoxic-bully",
-    segments: [
-      { text: "pinter banget sih", type: "bully", weight: 0.65 },
-      { text: " kamu ya, sampe-sampe " },
-      { text: "nilai ujiannya dapet nol terus", type: "bully", weight: 0.82 }
-    ]
-  }
-];
-
-function ChatSimulator() {
-  const [index, setIndex] = useState(0);
-  const [textToShow, setTextToShow] = useState('');
-  const [stage, setStage] = useState<'typing' | 'scanning' | 'revealing' | 'idle'>('typing');
-  const [typedLength, setTypedLength] = useState(0);
-  
-  const currentComment = simulatedComments[index];
-  const fullText = currentComment.text;
-
-  // Typing effect
-  useEffect(() => {
-    if (stage !== 'typing') return;
-    
-    if (typedLength < fullText.length) {
-      const timer = setTimeout(() => {
-        setTypedLength(prev => prev + 1);
-        setTextToShow(fullText.slice(0, typedLength + 1));
-      }, 35 + Math.random() * 25);
-      return () => clearTimeout(timer);
-    } else {
-      const timer = setTimeout(() => {
-        setStage('scanning');
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [stage, typedLength, fullText]);
-
-  // Scanning effect
-  useEffect(() => {
-    if (stage !== 'scanning') return;
-    
-    const timer = setTimeout(() => {
-      setStage('revealing');
-    }, 1800);
-    return () => clearTimeout(timer);
-  }, [stage]);
-
-  // Revealing & Idle cycle
-  useEffect(() => {
-    if (stage !== 'revealing') return;
-    
-    const timer = setTimeout(() => {
-      setStage('idle');
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [stage]);
-
-  useEffect(() => {
-    if (stage !== 'idle') return;
-    
-    const timer = setTimeout(() => {
-      setStage('typing');
-      setTypedLength(0);
-      setTextToShow('');
-      setIndex(prev => (prev + 1) % simulatedComments.length);
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [stage]);
-
-  const config = {
-    aman: {
-      badgeClass: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20",
-      progressClass: "bg-emerald-500",
-      textClass: "text-emerald-800 dark:text-emerald-400"
-    },
-    'toxic-bully': {
-      badgeClass: "bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-105 dark:border-rose-500/20",
-      progressClass: "bg-rose-600",
-      textClass: "text-rose-800 dark:text-rose-400"
-    },
-    'toxic-nonbully': {
-      badgeClass: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-500/20",
-      progressClass: "bg-amber-500",
-      textClass: "text-amber-800 dark:text-amber-400"
-    },
-    'nontoxic-bully': {
-      badgeClass: "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-100 dark:border-purple-500/20",
-      progressClass: "bg-purple-600",
-      textClass: "text-purple-800 dark:text-purple-400"
-    }
-  }[currentComment.type as 'aman' | 'toxic-bully' | 'toxic-nonbully' | 'nontoxic-bully'] || {
-    badgeClass: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20",
-    progressClass: "bg-emerald-500",
-    textClass: "text-emerald-800 dark:text-emerald-400"
-  };
-
-  return (
-    <div className="relative glass-card rounded-2xl p-6 border border-white/60 dark:border-white/10 shadow-xl overflow-hidden min-h-[300px] flex flex-col justify-between">
-      {/* Laser Scanner Bar */}
-      {stage === 'scanning' && (
-        <m.div
-          initial={{ top: '0%' }}
-          animate={{ top: '100%' }}
-          transition={{ repeat: Infinity, repeatType: "reverse", duration: 0.9, ease: "linear" }}
-          className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/80 to-transparent pointer-events-none shadow-[0_0_10px_rgba(59,130,246,0.8)] z-20"
-        />
-      )}
-
-      {/* Header bar of mock */}
-      <div className="flex justify-between items-center mb-4 border-b border-gray-150 dark:border-gray-800/60 pb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
-            <Shield className="w-4.5 h-4.5" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-gray-900 dark:text-[#faf8ff] leading-none">Analisis Real-Time</h3>
-            <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-0.5 block leading-none">AI Hybrid Scanner</span>
-          </div>
-        </div>
-        <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 border border-emerald-100 dark:border-emerald-500/20 leading-none">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active
-        </span>
-      </div>
-
-      {/* Comment Body */}
-      <div className="bg-gray-50/50 dark:bg-black/10 rounded-xl p-4 border border-gray-150 dark:border-gray-800/60 mb-4 flex-grow flex flex-col justify-center min-h-[90px] relative">
-        {stage === 'scanning' && (
-          <div className="absolute inset-0 bg-blue-500/3 dark:bg-blue-500/5 animate-pulse pointer-events-none" />
-        )}
-        <div className="flex gap-2.5 mb-2.5 items-center">
-          <div className="w-6.5 h-6.5 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xs shrink-0 select-none">
-            {currentComment.avatar}
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-gray-850 dark:text-gray-200 leading-none">{currentComment.author}</span>
-            <span className="text-[9px] text-gray-400 font-semibold leading-none mt-1">Baru saja</span>
-          </div>
-        </div>
-        <p className="text-xs text-gray-700 dark:text-gray-300 italic font-medium leading-relaxed">
-          "
-          {stage === 'typing' || stage === 'scanning' ? (
-            textToShow
-          ) : (
-            currentComment.segments.map((seg, idx) => {
-              if (seg.type === 'toxic') {
-                return (
-                  <span 
-                    key={idx} 
-                    className="bg-rose-500/15 text-rose-700 dark:bg-rose-500/25 dark:text-rose-300 font-bold px-1.5 py-0.5 rounded border-b-2 border-rose-400/60 transition-colors"
-                  >
-                    {seg.text}
-                  </span>
-                );
-              } else if (seg.type === 'bully') {
-                return (
-                  <span 
-                    key={idx} 
-                    className="bg-purple-500/15 text-purple-700 dark:bg-purple-500/25 dark:text-purple-300 font-bold px-1.5 py-0.5 rounded border-b-2 border-purple-400/60 transition-colors"
-                  >
-                    {seg.text}
-                  </span>
-                );
-              } else {
-                return <span key={idx}>{seg.text}</span>;
-              }
-            })
-          )}
-          "
-        </p>
-      </div>
-
-      {/* AI Diagnosis Verdict Box */}
-      <div className="min-h-[72px] flex items-center justify-center">
-        <AnimatePresence mode="wait">
-          {(stage === 'revealing' || stage === 'idle') ? (
-            <m.div
-              key={index}
-              initial={{ opacity: 0, y: 15, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.98 }}
-              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className={`w-full border rounded-xl p-3.5 flex items-start gap-3 shadow-xxs ${config.badgeClass}`}
-            >
-              <div className="flex-grow">
-                <div className="flex items-center justify-between mb-1">
-                  <h4 className={`text-xs font-black leading-none ${config.textClass}`}>{currentComment.verdict}</h4>
-                  <span className="text-[9px] font-black bg-white/90 dark:bg-black/20 border border-current px-1.5 py-0.5 rounded leading-none shrink-0">
-                    {Math.round(currentComment.confidence * 100)}% Confidence
-                  </span>
-                </div>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium leading-normal">
-                  {currentComment.details}
-                </p>
-                <div className="mt-2.5 w-full bg-white/60 dark:bg-black/20 h-1 rounded-full overflow-hidden border border-black/5">
-                  <m.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${currentComment.confidence * 100}%` }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
-                    className={`h-full rounded-full ${config.progressClass}`} 
-                  />
-                </div>
-              </div>
-            </m.div>
-          ) : stage === 'scanning' ? (
-            <m.div
-              key="scanning-state"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-3 flex flex-col items-center gap-1.5"
-            >
-              <Activity className="w-5 h-5 text-blue-500 animate-pulse" />
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest animate-pulse">Memindai Konten Teks...</span>
-            </m.div>
-          ) : (
-            <m.div
-              key="idle-state"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.4 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider"
-            >
-              Menunggu input komentar...
-            </m.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-function FeaturesShowcase({ setActiveTab }: { setActiveTab: (tab: any) => void }) {
-  const [activeIdx, setActiveIdx] = useState(0);
-
-  const features = [
-    {
-      title: "Detektor AI & Bobot XAI",
-      shortDesc: "Analisis instan dengan visualisasi kontribusi kata kunci.",
-      fullDesc: "Uji teks secara instan menggunakan model hibrida. XAI (Explainable AI) menyorot kata toxic (merah) dan bully (ungu) lengkap dengan tooltip kontribusi kontributor numerik.",
-      tabId: "detector",
-      indexLabel: "01"
-    },
-    {
-      title: "TikTok & X Comment Scraper",
-      shortDesc: "Ambil data komentar media sosial secara otomatis.",
-      fullDesc: "Masukkan link video TikTok atau tweet X untuk mengunduh puluhan komentar secara langsung. Lakukan moderasi instan berbasis cookie platform dan proxy rotasi aman.",
-      tabId: "social",
-      indexLabel: "02"
-    },
-    {
-      title: "Batch Analisis CSV",
-      shortDesc: "Pemrosesan dokumen massal secara sinkron.",
-      fullDesc: "Unggah dokumen file CSV yang berisi ribuan baris komentar teks. Unduh laporan klasifikasi terperinci yang mencakup diagnosis label dan tingkat kepercayaan model.",
-      tabId: "batch",
-      indexLabel: "03"
-    },
-    {
-      title: "Active Learning Loop",
-      shortDesc: "Latih ulang model berbasis koreksi manusia.",
-      fullDesc: "Gunakan moderasi drag-and-drop antar kuadran untuk mengoreksi kesalahan prediksi kecerdasan buatan. Jalankan retrain model secara asinkron dengan sekali klik.",
-      tabId: "active-learning",
-      indexLabel: "04"
-    },
-    {
-      title: "Manajemen Platform & Cookie",
-      shortDesc: "Kelola sesi dan status server secara terintegrasi.",
-      fullDesc: "Ubah base URL FastAPI, unggah cookie JSON untuk TikTok/X, dan pantau status pemuatan model transformers serta penyerapan memori cache di satu panel kontrol.",
-      tabId: "settings",
-      indexLabel: "05"
-    }
-  ];
-
-  return (
-    <div className="w-full flex flex-col gap-8 mt-16 border-t border-gray-150 dark:border-gray-800/60 pt-16">
-      <div className="max-w-2xl mx-auto text-center flex flex-col gap-3">
-        <h2 className="text-3xl font-black text-gray-900 dark:text-[#faf8ff] tracking-tight">Eksplorasi Fitur Dashboard</h2>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">
-          Sistem deteksi cyberbullying komprehensif yang dirancang untuk mendukung ekosistem moderasi konten etis bahasa Indonesia.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch mt-6">
-        {/* Left Side: Navigation Tabs */}
-        <div className="lg:col-span-5 flex flex-col gap-2">
-          {features.map((feat, idx) => {
-            const isActive = activeIdx === idx;
-            return (
-              <div
-                key={idx}
-                onMouseEnter={() => setActiveIdx(idx)}
-                onClick={() => setActiveIdx(idx)}
-                className={`p-4 rounded-xl border text-left cursor-pointer transition-all flex items-start gap-4 select-none ${
-                  isActive
-                    ? 'bg-white dark:bg-[#151726] border-blue-500/30 dark:border-blue-500/20 shadow-xs'
-                    : 'bg-transparent border-transparent opacity-60 hover:opacity-90'
-                }`}
-              >
-                <span className={`text-xs font-black px-2 py-1 rounded-md shrink-0 ${
-                  isActive ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-gray-100 dark:bg-white/5 text-gray-400'
-                }`}>
-                  {feat.indexLabel}
-                </span>
-                <div className="flex flex-col gap-1">
-                  <h3 className={`text-xs font-bold ${isActive ? 'text-gray-900 dark:text-[#faf8ff]' : 'text-gray-650 dark:text-gray-400'}`}>
-                    {feat.title}
-                  </h3>
-                  <p className="text-[10px] text-gray-450 dark:text-gray-400 font-medium">
-                    {feat.shortDesc}
-                  </p>
-                  {isActive && (
-                    <m.p 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="text-[10px] text-gray-500 dark:text-gray-450 font-normal leading-relaxed mt-2"
-                    >
-                      {feat.fullDesc}
-                    </m.p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Right Side: Mock UI Visual Showcase */}
-        <div className="lg:col-span-7 flex flex-col">
-          <div className="glass-card rounded-2xl p-6 border border-white/60 dark:border-white/10 flex-grow flex flex-col justify-between shadow-lg min-h-[350px] relative overflow-hidden">
-            <AnimatePresence mode="wait">
-              <m.div
-                key={activeIdx}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.25 }}
-                className="flex-grow flex flex-col justify-between h-full"
-              >
-                {/* Mock Header (Browser Bar) */}
-                <div className="flex items-center gap-2 mb-4 border-b border-gray-150 dark:border-gray-800/60 pb-3">
-                  <div className="flex gap-1">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-green-400" />
-                  </div>
-                  <div className="bg-gray-100 dark:bg-black/20 text-[9px] text-gray-400 font-bold px-3 py-1 rounded-md flex-grow text-center select-none truncate">
-                    BullyGuard ID Dashboard — {features[activeIdx].title}
-                  </div>
-                </div>
-
-                {/* Mock Screen Content depending on activeIdx */}
-                <div className="flex-grow flex items-center justify-center p-4">
-                  {activeIdx === 0 && (
-                    /* Mock 0: Detector */
-                    <div className="w-full flex flex-col gap-3 max-w-sm bg-white dark:bg-[#1c1b1c]/35 p-4 rounded-xl border border-gray-150 dark:border-gray-850 shadow-xxs">
-                      <div className="text-[10px] font-bold text-gray-400 uppercase leading-none mb-1">Hasil Deteksi &amp; XAI Highlight</div>
-                      <div className="border border-blue-150 bg-blue-50/10 dark:border-blue-950/40 p-3 rounded-lg text-xs leading-relaxed font-semibold text-gray-800 dark:text-gray-200">
-                        "kamu <span className="bg-rose-500/20 text-rose-700 dark:bg-rose-500/30 dark:text-rose-300 px-1 py-0.5 rounded border-b border-rose-400">bego banget</span> sih kerja ginian aja <span className="bg-rose-500/20 text-rose-700 dark:bg-rose-500/30 dark:text-rose-300 px-1 py-0.5 rounded border-b border-rose-400">ga becus</span>"
-                      </div>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        <span className="bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 px-2 py-0.5 rounded text-[9px] font-bold">Toxic &amp; Bullying (95%)</span>
-                        <span className="bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded text-[9px] font-medium">Hybrid Engine</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeIdx === 1 && (
-                    /* Mock 1: Scraper */
-                    <div className="w-full flex flex-col gap-3 max-w-sm">
-                      <div className="bg-white dark:bg-[#1c1b1c]/35 p-2 border border-gray-150 dark:border-gray-850 rounded-lg flex items-center justify-between text-[10px] font-mono text-gray-450 dark:text-gray-400">
-                        <span className="truncate">https://tiktok.com/@user/video/72381203</span>
-                        <span className="text-[8px] bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-1 rounded uppercase tracking-wider font-sans font-bold ml-2">Tiktok Scraped</span>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <div className="bg-rose-50/50 dark:bg-rose-950/5 border border-rose-100 dark:border-rose-900/30 p-2.5 rounded-lg flex items-center justify-between text-[10px]">
-                          <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">"mukamu jelek mending mati aja"</span>
-                          <span className="bg-rose-600 text-white font-bold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">Bully</span>
-                        </div>
-                        <div className="bg-emerald-50/50 dark:bg-emerald-950/5 border border-emerald-100 dark:border-emerald-900/30 p-2.5 rounded-lg flex items-center justify-between text-[10px]">
-                          <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">"sukses terus ya programnya kak"</span>
-                          <span className="bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">Aman</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeIdx === 2 && (
-                    /* Mock 2: Batch Analysis */
-                    <div className="w-full flex flex-col items-center justify-center gap-4 max-w-sm bg-white dark:bg-[#1c1b1c]/35 p-5 rounded-xl border border-gray-150 dark:border-gray-850 shadow-xxs">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-150 dark:border-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                          <UploadCloud className="w-5 h-5" />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200 leading-none">comments_database.csv</span>
-                          <span className="text-[9px] text-gray-400 font-medium mt-1 leading-none">2.4 MB • 350 Baris Komentar</span>
-                        </div>
-                      </div>
-                      <div className="w-full flex flex-col gap-1">
-                        <div className="flex justify-between text-[9px] font-bold text-gray-400">
-                          <span>MENGANALISIS DATASET...</span>
-                          <span className="text-blue-500">100% Selesai</span>
-                        </div>
-                        <div className="w-full bg-gray-100 dark:bg-gray-800/60 h-1 rounded-full overflow-hidden">
-                          <div className="bg-blue-500 h-full rounded-full w-full" />
-                        </div>
-                      </div>
-                      <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg text-[10px] border-none cursor-pointer flex items-center gap-1.5 w-full justify-center transition-colors">
-                        <Download className="w-3.5 h-3.5" /> Unduh Laporan CSV
-                      </button>
-                    </div>
-                  )}
-
-                  {activeIdx === 3 && (
-                    /* Mock 3: Active Learning */
-                    <div className="w-full grid grid-cols-2 gap-3 max-w-sm">
-                      <div className="border border-purple-200 dark:border-purple-900/30 bg-purple-50/10 p-3 rounded-xl flex flex-col gap-2">
-                        <div className="text-[9px] font-bold text-purple-700 dark:text-purple-400 flex items-center justify-between">
-                          <span>TOXIC (BULLEY)</span>
-                          <span className="bg-purple-100 dark:bg-purple-500/20 px-1 py-0.2 rounded font-sans">1 item</span>
-                        </div>
-                        <div className="bg-white dark:bg-[#1c1b1c] p-2 rounded-lg border border-purple-100 dark:border-purple-900/40 text-[9px] font-semibold text-gray-700 dark:text-gray-300 shadow-xxs cursor-grab select-none">
-                          "pinter amat ujian nol"
-                        </div>
-                      </div>
-                      <div className="border border-emerald-200 dark:border-emerald-900/30 bg-emerald-50/10 p-3 rounded-xl flex flex-col gap-2">
-                        <div className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-between">
-                          <span>AMAN</span>
-                          <span className="bg-emerald-100 dark:bg-emerald-500/20 px-1 py-0.2 rounded font-sans">10 item</span>
-                        </div>
-                        <div className="border border-dashed border-emerald-300 bg-emerald-50/50 p-3.5 rounded-lg flex items-center justify-center text-[8px] text-emerald-600 font-bold select-none">
-                          Tarik ke Sini
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeIdx === 4 && (
-                    /* Mock 4: Settings */
-                    <div className="w-full flex flex-col gap-3.5 max-w-sm bg-white dark:bg-[#1c1b1c]/35 p-4 rounded-xl border border-gray-150 dark:border-gray-850 shadow-xxs">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold text-gray-400">FASTAPI SERVER URL</label>
-                        <div className="bg-gray-100 dark:bg-white/5 border border-gray-150 dark:border-gray-850 px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-gray-700 dark:text-gray-350 select-none">
-                          http://localhost:8000
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-bold text-gray-400">TIKTOK SCRAPER SESSION COOKIE</label>
-                        <div className="bg-gray-100 dark:bg-white/5 border border-gray-150 dark:border-gray-850 px-2.5 py-1.5 rounded-lg text-[9px] font-mono text-gray-400 select-none">
-                          {"[ { \"name\": \"sessionid\", \"value\": \"********\" } ]"}
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center border-t border-gray-150 dark:border-gray-800/60 pt-2.5">
-                        <span className="text-[9px] text-gray-450 dark:text-gray-400 font-bold">STATUS KONEKSI ENGINE:</span>
-                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-500 uppercase">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Open in Dashboard Trigger */}
-                <button
-                  onClick={() => setActiveTab(features[activeIdx].tabId)}
-                  className="bg-gray-100 dark:bg-white/5 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400 text-gray-600 dark:text-gray-400 font-bold py-2.5 rounded-xl text-[10px] border-none cursor-pointer flex items-center justify-center gap-1 shrink-0 mt-4 transition-colors active-press"
-                >
-                  Buka Modul Dashboard
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </m.div>
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const mockHistory = [
-  { id: 1, timestamp: '2026-06-01', f1_toxic: 0.81, f1_bully: 0.78, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v1.0.0-mock' },
-  { id: 2, timestamp: '2026-06-02', f1_toxic: 0.83, f1_bully: 0.81, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v1.0.1-mock' },
-  { id: 3, timestamp: '2026-06-03', f1_toxic: 0.85, f1_bully: 0.83, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v1.1.0-mock' },
-  { id: 4, timestamp: '2026-06-04', f1_toxic: 0.88, f1_bully: 0.86, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v1.2.0-mock' },
-  { id: 5, timestamp: '2026-06-05', f1_toxic: 0.91, f1_bully: 0.89, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v2.0.0-mock' },
-];
-
 export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiUrl, apiKey }: HomeProps) {
-  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [historyData, setHistoryData] = useState<HistoryDataPoint[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(true);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -588,8 +56,10 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
         setHistoryLoading(true);
         const response = await fetch(`${apiUrl}/api/train/history`, { headers });
         if (response.ok) {
-          const history = await response.json();
-          setHistoryData(history || []);
+          const json = await response.json();
+          // Support both paginated { data: [...] } and legacy flat array
+          const history = Array.isArray(json) ? json : (json.data || []);
+          setHistoryData(history);
         }
       } catch (err) {
         console.error('Gagal mengambil riwayat retraining di dashboard:', err);
@@ -600,307 +70,6 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
 
     fetchHistory();
   }, [apiUrl, apiKey]);
-
-  const renderDashboardHistoryChart = () => {
-    const isMock = historyData.length === 0;
-    const chartData = isMock ? mockHistory : historyData;
-
-    const width = 600;
-    const height = 240;
-    const padLeft = 45;
-    const padRight = 20;
-    const padTop = 30;
-    const padBottom = 35;
-
-    const chartWidth = width - padLeft - padRight;
-    const chartHeight = height - padTop - padBottom;
-
-    const f1s = chartData.flatMap(d => [d.f1_toxic, d.f1_bully]);
-    const minF1 = Math.max(0.0, Math.min(0.6, ...f1s) - 0.05);
-    const maxF1 = 1.0;
-    const f1Range = maxF1 - minF1;
-
-    const getX = (idx: number) => {
-      if (chartData.length <= 1) return padLeft + chartWidth / 2;
-      return padLeft + (idx / (chartData.length - 1)) * chartWidth;
-    };
-
-    const getY = (val: number) => {
-      const ratio = (val - minF1) / f1Range;
-      return padTop + chartHeight - ratio * chartHeight;
-    };
-
-    let toxicPath = '';
-    let bullyPath = '';
-
-    chartData.forEach((d, idx) => {
-      const x = getX(idx);
-      const yToxic = getY(d.f1_toxic);
-      const yBully = getY(d.f1_bully);
-
-      if (idx === 0) {
-        toxicPath = `M ${x} ${yToxic}`;
-        bullyPath = `M ${x} ${yBully}`;
-      } else {
-        toxicPath += ` L ${x} ${yToxic}`;
-        bullyPath += ` L ${x} ${yBully}`;
-      }
-    });
-
-    const yTicks = [0.6, 0.7, 0.8, 0.9, 1.0].filter(t => t >= minF1);
-
-    return (
-      <div className="flex flex-col lg:flex-row gap-8 w-full">
-        {/* Left Side: Interactive Line Chart */}
-        <div className="flex-1 flex flex-col gap-4 relative">
-          <div className="flex justify-between items-center">
-            <div className="flex gap-4 text-xxs font-bold uppercase tracking-wider">
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-1 bg-rose-500 rounded-full inline-block"></span>
-                <span className="text-gray-600 dark:text-gray-300">F1 Toxicity</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-1 bg-indigo-500 rounded-full inline-block"></span>
-                <span className="text-gray-600 dark:text-gray-300">F1 Bullying</span>
-              </div>
-            </div>
-            {isMock && (
-              <span className="text-[9px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200/50">
-                Visualisasi Simulasi
-              </span>
-            )}
-          </div>
-
-          <div className="w-full overflow-hidden bg-gray-50/20 dark:bg-slate-950/20 border border-gray-100 dark:border-gray-800/40 rounded-2xl p-4 relative">
-            <svg 
-              viewBox={`0 0 ${width} ${height}`} 
-              className="w-full h-auto overflow-visible select-none"
-              onMouseLeave={() => setHoveredIdx(null)}
-            >
-              {/* Grid Lines */}
-              {yTicks.map(tick => {
-                const y = getY(tick);
-                return (
-                  <g key={tick} className="opacity-40 dark:opacity-20">
-                    <line 
-                      x1={padLeft} 
-                      y1={y} 
-                      x2={width - padRight} 
-                      y2={y} 
-                      stroke="var(--text-muted)" 
-                      strokeDasharray="4 4" 
-                      strokeWidth="1" 
-                    />
-                    <text 
-                      x={padLeft - 8} 
-                      y={y + 3.5} 
-                      textAnchor="end" 
-                      className="text-[9px] font-mono font-bold" 
-                      fill="var(--text-muted)"
-                    >
-                      {tick.toFixed(1)}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Animated Path for F1 Toxicity */}
-              <m.path 
-                d={toxicPath} 
-                fill="none" 
-                stroke="#f43f5e" 
-                strokeWidth="3" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className="drop-shadow-[0_4px_8px_rgba(244,63,94,0.2)]"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 1.5, ease: "easeInOut" }}
-              />
-
-              {/* Animated Path for F1 Bullying */}
-              <m.path 
-                d={bullyPath} 
-                fill="none" 
-                stroke="#6366f1" 
-                strokeWidth="3" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className="drop-shadow-[0_4px_8px_rgba(99,102,241,0.2)]"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 1.5, ease: "easeInOut" }}
-              />
-
-              {/* Interactive Hover Hitboxes (invisible vertical bars for easy hovering) */}
-              {chartData.map((d, idx) => {
-                const x = getX(idx);
-                return (
-                  <rect
-                    key={`hitbox-${idx}`}
-                    x={x - (chartWidth / (chartData.length * 2))}
-                    y={padTop}
-                    width={chartWidth / chartData.length}
-                    height={chartHeight}
-                    fill="transparent"
-                    className="cursor-pointer"
-                    onMouseEnter={() => setHoveredIdx(idx)}
-                  />
-                );
-              })}
-
-              {/* Toxic Points */}
-              {chartData.map((d, idx) => {
-                const x = getX(idx);
-                const y = getY(d.f1_toxic);
-                const isHovered = hoveredIdx === idx;
-                return (
-                  <circle 
-                    key={`toxic-pt-${idx}`} 
-                    cx={x} 
-                    cy={y} 
-                    r={isHovered ? "6" : "4.5"} 
-                    fill="#ffffff" 
-                    stroke="#f43f5e" 
-                    strokeWidth={isHovered ? "3.5" : "2.5"} 
-                    className="transition-all duration-150"
-                  />
-                );
-              })}
-
-              {/* Bully Points */}
-              {chartData.map((d, idx) => {
-                const x = getX(idx);
-                const y = getY(d.f1_bully);
-                const isHovered = hoveredIdx === idx;
-                return (
-                  <circle 
-                    key={`bully-pt-${idx}`} 
-                    cx={x} 
-                    cy={y} 
-                    r={isHovered ? "6" : "4.5"} 
-                    fill="#ffffff" 
-                    stroke="#6366f1" 
-                    strokeWidth={isHovered ? "3.5" : "2.5"} 
-                    className="transition-all duration-150"
-                  />
-                );
-              })}
-
-              {/* Vertical Guide Line on Hover */}
-              {hoveredIdx !== null && (
-                <line
-                  x1={getX(hoveredIdx)}
-                  y1={padTop}
-                  x2={getX(hoveredIdx)}
-                  y2={height - padBottom}
-                  stroke="#3b82f6"
-                  strokeWidth="1.5"
-                  strokeDasharray="3 3"
-                  className="opacity-65 pointer-events-none"
-                />
-              )}
-
-              {/* X-axis Version Labels */}
-              {chartData.map((d, idx) => {
-                const x = getX(idx);
-                return (
-                  <text 
-                    key={`lbl-${idx}`} 
-                    x={x} 
-                    y={height - padBottom + 16} 
-                    textAnchor="middle" 
-                    className="text-[8px] font-bold font-mono tracking-tighter" 
-                    fill="var(--text-muted)"
-                  >
-                    {d.active_version.split('-')[0]}
-                  </text>
-                );
-              })}
-
-              {/* X-axis line */}
-              <line 
-                x1={padLeft} 
-                y1={height - padBottom} 
-                x2={width - padRight} 
-                y2={height - padBottom} 
-                stroke="var(--card-border)" 
-                strokeWidth="1.5" 
-              />
-            </svg>
-
-            {/* Custom Interactive Tooltip Card inside the relative wrapper */}
-            {hoveredIdx !== null && (
-              <m.div
-                initial={{ opacity: 0, scale: 0.95, y: -8 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                className="absolute bg-slate-955/95 dark:bg-slate-900/95 text-white p-3.5 rounded-2xl border border-slate-800 shadow-2xl pointer-events-none text-xxs flex flex-col gap-1.5 z-40 font-semibold"
-                style={{
-                  left: `${(getX(hoveredIdx) / width) * 100}%`,
-                  top: `${(getY(Math.max(chartData[hoveredIdx].f1_toxic, chartData[hoveredIdx].f1_bully)) / height) * 100 - 32}%`,
-                  transform: 'translateX(-50%) translateY(-100%)',
-                }}
-              >
-                <div className="font-bold border-b border-slate-800 pb-1.5 text-slate-300">
-                  Versi: {chartData[hoveredIdx].active_version}
-                </div>
-                <div className="flex justify-between gap-6">
-                  <span className="text-gray-400">F1 Toxicity:</span>
-                  <span className="text-rose-400 font-bold">{chartData[hoveredIdx].f1_toxic.toFixed(4)}</span>
-                </div>
-                <div className="flex justify-between gap-6">
-                  <span className="text-gray-400">F1 Bullying:</span>
-                  <span className="text-indigo-400 font-bold">{chartData[hoveredIdx].f1_bully.toFixed(4)}</span>
-                </div>
-                <div className="text-[8px] text-gray-500 font-medium">
-                  Tanggal: {chartData[hoveredIdx].timestamp.split('T')[0] || chartData[hoveredIdx].timestamp}
-                </div>
-              </m.div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Side: Training Stats Summary & Table */}
-        <div className="w-full lg:w-72 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Metrik Performa Puncak</span>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-rose-50/30 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/20 p-3 rounded-xl flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-rose-500 dark:text-rose-400 uppercase">Tox F1 Peak</span>
-                <span className="text-lg font-black text-rose-700 dark:text-rose-400">
-                  {Math.max(...chartData.map(d => d.f1_toxic)).toFixed(2)}
-                </span>
-              </div>
-              <div className="bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-100 dark:border-indigo-900/20 p-3 rounded-xl flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-indigo-500 dark:text-indigo-400 uppercase">Bully F1 Peak</span>
-                <span className="text-lg font-black text-indigo-700 dark:text-indigo-400">
-                  {Math.max(...chartData.map(d => d.f1_bully)).toFixed(2)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Riwayat Siklus Terakhir</span>
-            <div className="flex flex-col gap-2 bg-gray-50/40 dark:bg-slate-950/15 border border-gray-100 dark:border-gray-800/40 rounded-2xl p-2.5 max-h-36 overflow-y-auto custom-scrollbar">
-              {chartData.slice(-3).reverse().map((run, idx) => (
-                <div key={idx} className="flex justify-between items-center text-[10px] border-b border-gray-100 dark:border-gray-800/30 pb-2 last:border-b-0 last:pb-0">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-gray-800 dark:text-gray-200 truncate max-w-28">{run.active_version}</span>
-                    <span className="text-[8px] text-gray-400 font-semibold">{run.timestamp.split('T')[0] || run.timestamp}</span>
-                  </div>
-                  <div className="flex gap-2 font-mono font-bold">
-                    <span className="text-rose-500">T:{run.f1_toxic.toFixed(2)}</span>
-                    <span className="text-indigo-500">B:{run.f1_bully.toFixed(2)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <m.div
@@ -1149,7 +318,7 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
             </div>
           </m.div>
 
-          {/* Card 4: Tren Riwayat Pelatihan & Drift Performa (Full Width in grid-cols-3) */}
+          {/* Card 4: Tren Riwayat Pelatihan & Drift Performa */}
           <m.div
             variants={itemVariants}
             initial={{ opacity: 0, y: 15 }}
@@ -1171,7 +340,7 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
                 <span className="text-xxs text-gray-400 font-semibold">Mengambil data metrik training...</span>
               </div>
             ) : (
-              renderDashboardHistoryChart()
+              <DashboardHistoryChart historyData={historyData} />
             )}
           </m.div>
         </m.div>
@@ -1179,7 +348,7 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
         {/* Grid panel for Word Cloud and Confidence Density Chart */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4">
           
-          {/* Sebaran Kata Toksik Terpopuler (Interactive Word Cloud) (lg:col-span-7) */}
+          {/* Sebaran Kata Toksik Terpopuler (Interactive Word Cloud) */}
           <m.div
             variants={itemVariants}
             initial={{ opacity: 0, y: 15 }}
@@ -1196,7 +365,6 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
             </div>
 
             <div className="w-full overflow-hidden bg-gray-50/30 dark:bg-slate-950/20 border border-gray-100 dark:border-gray-800/40 rounded-2xl p-4 flex flex-col items-center justify-center min-h-[220px]">
-              {/* Responsive SVG Word Cloud */}
               <svg viewBox="0 0 600 200" className="w-full h-auto max-w-2xl select-none overflow-visible">
                 {(() => {
                   const wordPositions = [
@@ -1239,11 +407,11 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
               </svg>
             </div>
             <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium leading-normal italic text-center">
-              * Arahkan kursor ke atas slang kata untuk melacak rincian kategori tingkat keparahan (*severity*).
+              *Arahkan kursor ke atas slang kata untuk melacak rincian kategori tingkat keparahan (*severity*).
             </p>
           </m.div>
 
-          {/* Grafik Distribusi Densitas Keyakinan (Confidence Density Chart) (lg:col-span-5) */}
+          {/* Grafik Distribusi Densitas Keyakinan */}
           <m.div
             variants={itemVariants}
             initial={{ opacity: 0, y: 15 }}
@@ -1268,24 +436,20 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
                   </linearGradient>
                 </defs>
 
-                {/* Highlight active learning zone (0.4 - 0.7) */}
                 <rect x="176" y="20" width="102" height="140" fill="#fef3c7" className="opacity-25 dark:opacity-[0.06]" />
                 <line x1="176" y1="20" x2="176" y2="160" stroke="#f59e0b" strokeDasharray="3 3" strokeWidth="1" className="opacity-60" />
                 <line x1="278" y1="20" x2="278" y2="160" stroke="#f59e0b" strokeDasharray="3 3" strokeWidth="1" className="opacity-60" />
                 <text x="227" y="15" textAnchor="middle" className="text-[8px] font-bold fill-amber-600 dark:fill-amber-500 uppercase tracking-wider">Zona Ragu (Active Learning)</text>
 
-                {/* Grid Lines */}
                 {[40, 80, 120, 160].map(y => (
                   <line key={y} x1="40" y1={y} x2="380" y2={y} stroke="var(--card-border)" strokeWidth="0.5" strokeDasharray="2 2" className="opacity-50" />
                 ))}
 
-                {/* Area path for density spline */}
                 <path 
                   d="M 40 160 C 80 40, 120 40, 160 110 C 200 150, 240 150, 280 110 C 320 60, 350 65, 380 160 L 380 160 L 40 160 Z" 
                   fill="url(#densityGrad)" 
                 />
 
-                {/* Stroke path for density spline */}
                 <path 
                   d="M 40 160 C 80 40, 120 40, 160 110 C 200 150, 240 150, 280 110 C 320 60, 350 65, 380 160" 
                   fill="none" 
@@ -1294,11 +458,9 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
                   strokeLinecap="round" 
                 />
 
-                {/* Grid axes */}
                 <line x1="40" y1="160" x2="380" y2="160" stroke="var(--card-border)" strokeWidth="1.5" />
                 <line x1="40" y1="20" x2="40" y2="160" stroke="var(--card-border)" strokeWidth="1.5" />
 
-                {/* X-axis labels */}
                 {[
                   { val: '0.0', x: 40 },
                   { val: '0.2', x: 108 },
@@ -1310,13 +472,9 @@ export default function Home({ setActiveTab, theme, toggleTheme, apiStatus, apiU
                   <text key={tick.val} x={tick.x} y="175" textAnchor="middle" className="text-[8px] font-mono font-bold" fill="var(--text-muted)">{tick.val}</text>
                 ))}
 
-                {/* X-axis title */}
                 <text x="210" y="192" textAnchor="middle" className="text-[8px] font-bold" fill="var(--text-muted)">Model Confidence Score</text>
-
-                {/* Y-axis title */}
                 <text x="15" y="90" textAnchor="middle" transform="rotate(-90 15 90)" className="text-[8px] font-bold" fill="var(--text-muted)">Kerapatan (Density)</text>
 
-                {/* Peak highlights */}
                 <circle cx="100" cy="55" r="3.5" fill="#10b981" />
                 <title>Peak Safe: AI sangat percaya diri mendiagnosis kalimat bersih.</title>
                 <circle cx="335" cy="72" r="3.5" fill="#ef4444" />

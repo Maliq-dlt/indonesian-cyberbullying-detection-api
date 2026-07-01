@@ -1,73 +1,94 @@
-# React + TypeScript + Vite
+# BullyGuard ID — Frontend Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Dashboard web untuk sistem deteksi cyberbullying BullyGuard ID, dibangun dengan **React 19**, **Vite 8**, **TypeScript 6**, **TailwindCSS 4**, dan **Zustand** untuk state management.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🚀 Getting Started
 
-## React Compiler
+### Prasyarat
+- **Node.js 20+** dan **npm**
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Instalasi
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Development Server
+```bash
+npm run dev
 ```
+Buka `http://localhost:5173` di browser Anda.
+
+---
+
+## 🧪 Testing
+
+Proyek ini memiliki **45 unit tests** menggunakan Vitest:
+```bash
+npx vitest run
+```
+
+### Test Coverage
+- **Detector components**: InputPanel, ResultCard, ComparisonResultCard, EmptyState, ProbabilityBar
+- **API normalization**: Response parsing, fallback handling, error mapping
+- **Utilities**: Percentage formatting, text truncation
+- **Constants**: Model option validation
+- **XAIHighlightText**: Word importance highlighting
+
+---
+
+## 📂 Struktur Komponen
+
+```text
+src/
+├── App.tsx                  # Thin orchestrator (menggunakan Zustand store)
+├── store/
+│   └── useAppStore.ts       # Zustand global state management
+├── components/
+│   ├── Detector/            # Modul deteksi (7 sub-komponen + hooks + API)
+│   ├── Home/                # Sub-komponen halaman utama
+│   │   ├── ChatSimulator.tsx
+│   │   ├── FeaturesShowcase.tsx
+│   │   └── DashboardHistoryChart.tsx
+│   ├── ActiveLearning.tsx   # Dashboard active learning & retraining
+│   ├── BatchAnalysis.tsx    # Analisis batch multi-teks
+│   ├── Settings.tsx         # Pengaturan API & model
+│   ├── SocialScraper.tsx    # Scraper media sosial (TikTok, X)
+│   ├── Navbar.tsx           # Navigation bar
+│   ├── Sidebar.tsx          # Sidebar navigasi
+│   └── XAIHighlightText.tsx # Highlight teks XAI
+└── main.tsx                 # Entry point
+```
+
+---
+
+## 🔧 Konfigurasi
+
+URL backend API dibaca dari environment variable Vite:
+```env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+---
+
+## 📦 Build Produksi
+```bash
+npm run build
+```
+Output akan berada di folder `dist/`.
+
+### Linting
+```bash
+npm run lint
+```
+
+---
+
+## 🔌 Koneksi Backend
+
+Frontend berkomunikasi dengan backend FastAPI melalui:
+- **REST API**: `POST /predict/hybrid`, `/predict/lexicon`, `/predict/ml`, `/predict/transformers`, `/predict/ensemble`
+- **Versioned Routes**: `/api/v1/predict/*` (recommended)
+- **Authentication**: Header `X-API-Key` atau `Authorization: Bearer <token>`
+- **Offline Fallback**: Mode simulasi lokal saat backend tidak terjangkau

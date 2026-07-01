@@ -1,6 +1,7 @@
 import classifier.database as _database
 import classifier.llm as _llm
 import classifier.predictor as _predictor
+import classifier.predictor_base as _predictor_base
 
 # Expose functions directly (their references do not change)
 from classifier.database import (
@@ -24,7 +25,7 @@ def __getattr__(name):
     if name in ("GEMINI_BASE_URL", "GEMINI_MODEL", "ABUSIVE_WORDS_SET", "RAG_POOL_TEXTS", "RAG_POOL_VECTORS", "RAG_POOL_LABELS"):
         return getattr(_llm, name)
     if name in ("BASE_DIR", "PREPARED_LEXICON", "ML_MODEL", "ML_VECTORIZER", "TRANSFORMER_SESSION", "TRANSFORMER_TOKENIZER", "TRANSFORMER_MODEL", "THRESHOLDS"):
-        return getattr(_predictor, name)
+        return getattr(_predictor_base, name)
     if name in ("PG_POOL", "REDIS_CLIENT"):
         return getattr(_database, name)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
