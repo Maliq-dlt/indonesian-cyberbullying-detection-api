@@ -1,5 +1,5 @@
 from cyberbullying_api.normalizer import AbusiveTrie
-import pytest
+
 
 def test_abusive_trie_search():
     trie = AbusiveTrie()

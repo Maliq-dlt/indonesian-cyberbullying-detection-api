@@ -697,7 +697,8 @@ async def predict_hybrid(text: str) -> HybridResponse:
         try:
             emb = embedding_model.encode([text])[0]
             embedding_json = str(emb.tolist())
-        except Exception:
+        except Exception as e:
+            # Gagal membuat embedding bukan kegagalan fatal, abaikan untuk penyimpanan
             pass
     await save_classification_memory(res, embedding_json)
     return res
@@ -746,7 +747,8 @@ async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], Non
             try:
                 emb = embedding_model.encode([text])[0]
                 embedding_json = str(emb.tolist())
-            except Exception:
+            except Exception as e:
+                # Gagal membuat embedding bukan kegagalan fatal, abaikan untuk penyimpanan
                 pass
         await save_classification_memory(final_res, embedding_json)
         yield {"chunk": final_res.reason, "done": True, "final_data": final_res}

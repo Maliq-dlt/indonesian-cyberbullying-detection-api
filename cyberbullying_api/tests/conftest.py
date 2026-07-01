@@ -31,6 +31,7 @@ def client():
         try:
             os.remove(test_db)
         except Exception:
+            # Mengabaikan kegagalan jika berkas sedang dikunci atau sudah dihapus
             pass
 
     with TestClient(app, headers={"X-API-Key": "test-key"}) as c:

@@ -1,6 +1,5 @@
 import os
 import base64
-import hashlib
 
 def get_encryption_key() -> bytes | None:
     """

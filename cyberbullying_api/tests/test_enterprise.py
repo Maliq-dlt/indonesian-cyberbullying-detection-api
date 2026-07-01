@@ -1,6 +1,5 @@
 import pytest
 import os
-from routes.deps import is_development_env
 
 @pytest.mark.anyio
 async def test_auth_token_success(client):

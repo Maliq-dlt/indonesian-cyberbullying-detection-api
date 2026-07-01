@@ -18,10 +18,9 @@ import socket
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import Header, HTTPException, Request, status, Depends, Security
+from fastapi import Header, HTTPException, Request, status, Depends
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 import jwt
-from datetime import datetime, timezone, timedelta
 import classifier
 
 

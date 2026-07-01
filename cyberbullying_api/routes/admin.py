@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, status, Security
+from fastapi import APIRouter, HTTPException, Depends, status, Security
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 import asyncio
@@ -10,7 +10,7 @@ from models import (
     ScrapeTikTokRequest, ScrapeXRequest, ScrapeResponse, ReallocateRequest, ReallocateResponse,
     UpdateCookiesRequest, BulkReallocateRequest
 )
-from routes.deps import verify_api_key, rate_limit_cloud_llm_and_batch, get_current_user, JWT_SECRET, ALGORITHM
+from routes.deps import rate_limit_cloud_llm_and_batch, get_current_user, JWT_SECRET, ALGORITHM
 import routes.state as state
 
 import sys
