@@ -1,11 +1,11 @@
 """Scraper endpoints — TikTok & X/Twitter social media scraping."""
 
-from fastapi import APIRouter, HTTPException, Depends, Security
 import asyncio
 import logging
 
-from models import ScrapeTikTokRequest, ScrapeXRequest, ScrapeResponse
-from routes.deps import rate_limit_cloud_llm_and_batch, get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Security
+from models import ScrapeResponse, ScrapeTikTokRequest, ScrapeXRequest
+from routes.deps import get_current_user, rate_limit_cloud_llm_and_batch
 
 logger = logging.getLogger("bullyguard")
 

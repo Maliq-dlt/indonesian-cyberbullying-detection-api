@@ -60,7 +60,7 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
-ignore = []
+ignore = ["E501", "B904", "E402", "SIM115", "B008", "SIM102", "SIM117"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "cyberbullying_api/tests"]

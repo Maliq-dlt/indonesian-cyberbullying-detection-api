@@ -11,7 +11,7 @@ export interface HistoryDataPoint {
   active_version: string;
 }
 
-export const mockHistory: HistoryDataPoint[] = [
+const mockHistory: HistoryDataPoint[] = [
   { id: 1, timestamp: '2026-06-01', f1_toxic: 0.81, f1_bully: 0.78, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v1.0.0-mock' },
   { id: 2, timestamp: '2026-06-02', f1_toxic: 0.83, f1_bully: 0.81, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v1.0.1-mock' },
   { id: 3, timestamp: '2026-06-03', f1_toxic: 0.85, f1_bully: 0.83, threshold_toxic: 0.5, threshold_bully: 0.5, active_version: 'v1.1.0-mock' },

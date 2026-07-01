@@ -5,35 +5,58 @@ This module re-exports everything for backward compatibility so that
 ``from classifier.predictor import init_models, predict_hybrid`` still works.
 """
 
-import os
-import time
 import asyncio
 import logging
-import numpy as np
-from typing import List, Dict, Any, AsyncGenerator
+import os
+import time
+from collections.abc import AsyncGenerator
+from typing import Any
 
-from monitoring import INFERENCE_LATENCY
+import numpy as np
 from models import (
-    LexiconResponse, MLResponse, TransformerResponse,
-    EnsembleResponse, HybridResponse, WordImportance, determine_category,
+    EnsembleResponse,
+    HybridResponse,
+    LexiconResponse,
+    MLResponse,
+    TransformerResponse,
+    WordImportance,
+    determine_category,
 )
+from monitoring import INFERENCE_LATENCY
 from normalizer import (
-    normalize_text, contains_word_or_phrase, fuzzy_contains, detect_sentiment_contrast,
+    contains_word_or_phrase,
+    detect_sentiment_contrast,
+    fuzzy_contains,
+    normalize_text,
 )
-from classifier.database import save_classification_memory, get_classification_memory
-from classifier.llm import query_cloud_llm_async, query_cloud_llm_stream_async, GEMINI_API_KEY
+
+import classifier.predictor_base as _base
 from classifier.confidence import (
-    apply_lexicon_evidence, combine_probabilities,
-    get_threshold, is_confident_pair, llm_decision_to_probability,
+    apply_lexicon_evidence,
+    combine_probabilities,
+    get_threshold,
+    is_confident_pair,
+    llm_decision_to_probability,
 )
+from classifier.database import get_classification_memory, save_classification_memory
+from classifier.llm import GEMINI_API_KEY, query_cloud_llm_async, query_cloud_llm_stream_async
 
 # Re-export state from base (single source of truth)
 from classifier.predictor_base import (  # noqa: F401
-    BASE_DIR, PREPARED_LEXICON, ML_MODEL, ML_VECTORIZER,
-    TRANSFORMER_SESSION, TRANSFORMER_TOKENIZER, TRANSFORMER_MODEL, EMBEDDING_MODEL,
-    THRESHOLDS, load_thresholds, get_calibrated_weights, init_models, sigmoid,
+    BASE_DIR,
+    EMBEDDING_MODEL,
+    ML_MODEL,
+    ML_VECTORIZER,
+    PREPARED_LEXICON,
+    THRESHOLDS,
+    TRANSFORMER_MODEL,
+    TRANSFORMER_SESSION,
+    TRANSFORMER_TOKENIZER,
+    get_calibrated_weights,
+    init_models,
+    load_thresholds,
+    sigmoid,
 )
-import classifier.predictor_base as _base
 
 logger = logging.getLogger("bullyguard")
 
@@ -50,7 +73,7 @@ except ImportError:
 
 # ── XAI Explainability ───────────────────────────────────────────────────────
 
-def explain_prediction(text: str) -> List[Any]:
+def explain_prediction(text: str) -> list[Any]:
     ml_model = _base.ML_MODEL
     ml_vectorizer = _base.ML_VECTORIZER
     if ml_model is None or ml_vectorizer is None:
@@ -100,7 +123,7 @@ def explain_prediction(text: str) -> List[Any]:
 
 # ── Transformer Inference ────────────────────────────────────────────────────
 
-def predict_transformer_raw(text: str) -> Dict[str, float]:
+def predict_transformer_raw(text: str) -> dict[str, float]:
     transformer_tokenizer = _base.TRANSFORMER_TOKENIZER
     transformer_session = _base.TRANSFORMER_SESSION
     if transformer_tokenizer is None:
@@ -441,7 +464,7 @@ async def predict_hybrid(text: str) -> HybridResponse:
 
 # ── Streaming Hybrid Prediction ──────────────────────────────────────────────
 
-async def predict_hybrid_stream(text: str) -> AsyncGenerator[Dict[str, Any], None]:
+async def predict_hybrid_stream(text: str) -> AsyncGenerator[dict[str, Any], None]:
     ml_model = _base.ML_MODEL
     ml_vectorizer = _base.ML_VECTORIZER
     embedding_model = _base.EMBEDDING_MODEL

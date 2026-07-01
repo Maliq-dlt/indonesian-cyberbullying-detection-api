@@ -1,14 +1,13 @@
 """Settings endpoints — cookies, webhook config, recalibration."""
 
-from fastapi import APIRouter, HTTPException, Depends, Security
-from pydantic import BaseModel
+import json
 import logging
 import os
-import json
 
-from models import UpdateCookiesRequest
 from classifier.settings_store import get_settings, save_settings
-from classifier.database import get_retraining_history
+from fastapi import APIRouter, HTTPException, Security
+from models import UpdateCookiesRequest
+from pydantic import BaseModel
 from routes.deps import get_current_user, is_safe_webhook_url
 
 logger = logging.getLogger("bullyguard")
@@ -53,9 +52,8 @@ async def api_get_settings():
 
 @router.post("/settings")
 async def api_save_settings(req: SettingsUpdate):
-    if req.webhook_enabled:
-        if not is_safe_webhook_url(req.webhook_url):
-            raise HTTPException(status_code=400, detail="URL Webhook tidak valid atau diblokir (SSRF Protection).")
+    if req.webhook_enabled and not is_safe_webhook_url(req.webhook_url):
+        raise HTTPException(status_code=400, detail="URL Webhook tidak valid atau diblokir (SSRF Protection).")
     return await save_settings({
         "webhook_url": req.webhook_url,
         "webhook_enabled": req.webhook_enabled
@@ -64,8 +62,20 @@ async def api_save_settings(req: SettingsUpdate):
 
 @router.post("/settings/test-webhook")
 async def api_test_webhook(req: TestWebhookRequest):
+    from urllib.parse import urlparse
+    parsed = urlparse(req.webhook_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Skema URL harus http atau https.")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Hostname tidak valid.")
+
     if not is_safe_webhook_url(req.webhook_url):
         raise HTTPException(status_code=400, detail="URL Webhook tidak valid atau diblokir (SSRF Protection).")
+
+    clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    if parsed.query:
+        clean_url += f"?{parsed.query}"
+
     import httpx
     payload = {
         "event": "webhook_test",
@@ -80,23 +90,24 @@ async def api_test_webhook(req: TestWebhookRequest):
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(req.webhook_url, json=payload)
+            res = await client.post(clean_url, json=payload)
             return {
                 "success": True,
                 "status_code": res.status_code,
                 "response": res.text[:200]
             }
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=400, detail="Gagal menghubungi webhook. Periksa URL dan pastikan server webhook aktif.")
 
 
 @router.post("/settings/recalibrate")
 async def api_recalibrate_ensemble():
     try:
-        from classifier.db_config import get_pg_pool, decrypt_text
-        from classifier.predictor import predict_ml, predict_transformer_raw
         import sqlite3
+
         import numpy as np
+        from classifier.db_config import decrypt_text, get_pg_pool
+        from classifier.predictor import predict_ml, predict_transformer_raw
 
         records = []
         pool = await get_pg_pool()

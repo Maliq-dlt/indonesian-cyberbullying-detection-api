@@ -1,6 +1,6 @@
-import os
 import base64
 import logging
+import os
 
 logger = logging.getLogger("bullyguard")
 
@@ -10,7 +10,7 @@ def get_encryption_key() -> bytes | None:
     jika dikonfigurasi, jika tidak menggunakan fallback API_KEY dari .env.
     """
     provider = os.getenv("KMS_PROVIDER", "").strip().lower()
-    
+
     # 1. Mock/Simulator untuk testing dan local run
     if provider == "mock" or provider == "vault-mock":
         return b"mock-vault-secret-key-value-12345"
@@ -23,10 +23,10 @@ def get_encryption_key() -> bytes | None:
         vault_token = os.getenv("VAULT_TOKEN", "").strip()
         secret_path = os.getenv("VAULT_SECRET_PATH", "secret/data/bullyguard").strip()
         secret_key = os.getenv("VAULT_SECRET_KEY", "encryption_key").strip()
-        
+
         if not vault_token:
             raise ValueError("KMS_PROVIDER='vault' diatur tetapi VAULT_TOKEN kosong.")
-            
+
         try:
             import hvac
             client = hvac.Client(url=vault_addr, token=vault_token)
@@ -36,7 +36,7 @@ def get_encryption_key() -> bytes | None:
             except Exception:
                 response = client.read(secret_path)
                 key_data = response['data'][secret_key]
-            
+
             return key_data.encode("utf-8")
         except ImportError:
             logger.warning("hvac library not installed, failed to load key from Vault")
@@ -50,7 +50,7 @@ def get_encryption_key() -> bytes | None:
         key_id = os.getenv("AWS_KMS_KEY_ID", "").strip()
         if not key_id:
             raise ValueError("KMS_PROVIDER='aws' diatur tetapi AWS_KMS_KEY_ID kosong.")
-            
+
         try:
             import boto3
             kms_client = boto3.client('kms')
@@ -59,7 +59,7 @@ def get_encryption_key() -> bytes | None:
                 # Generate a transient data key using GenerateDataKey
                 response = kms_client.generate_data_key(KeyId=key_id, KeySpec='AES_256')
                 return response['Plaintext']
-            
+
             ciphertext = base64.b64decode(encrypted_key_b64)
             response = kms_client.decrypt(CiphertextBlob=ciphertext, KeyId=key_id)
             return response['Plaintext']

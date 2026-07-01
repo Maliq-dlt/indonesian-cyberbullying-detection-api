@@ -11,13 +11,11 @@ Provides:
     used during data-augmentation rounds.
 """
 
-import os
 import json
+import os
 import random
 
 import httpx
-
-from normalizer import normalize_text
 
 # ---------------------------------------------------------------------------
 # Cloud LLM configuration (read from environment at import time)
@@ -122,7 +120,7 @@ def augment_text_with_llm(text: str, is_bully: bool) -> list[str]:
         "temperature": 0.5,
         "stream": False
     }
-    
+
     headers = {
         "Authorization": f"Bearer {GEMINI_API_KEY}",
         "Content-Type": "application/json"
@@ -184,12 +182,11 @@ def perturb_text(text: str, abusive_words: set) -> str:
                     w = w[0] + "*" * (len(w) - 2) + w[-1]
             elif p_type == "repeat":
                 w = w + w[-1] * random.randint(1, 3)
-            elif p_type == "typo":
-                if len(w) > 3:
-                    idx = random.randint(1, len(w) - 2)
-                    w_list = list(w)
-                    w_list[idx], w_list[idx + 1] = w_list[idx + 1], w_list[idx]
-                    w = "".join(w_list)
+            elif p_type == "typo" and len(w) > 3:
+                idx = random.randint(1, len(w) - 2)
+                w_list = list(w)
+                w_list[idx], w_list[idx + 1] = w_list[idx + 1], w_list[idx]
+                w = "".join(w_list)
 
         new_words.append(w)
 

@@ -1,10 +1,7 @@
-import re
-import json
-import hashlib
-import urllib.parse
-import os
 import asyncio
-from typing import List, Tuple
+import os
+import re
+import urllib.parse
 from datetime import datetime
 
 try:
@@ -154,7 +151,7 @@ async def auto_open_comment_panel(page):
             if await item.count() > 0 and await item.is_visible(timeout=1500):
                 await item.click(timeout=3000)
                 await page.wait_for_timeout(4000)
-                
+
                 # Klik tab "Komentar" secara spesifik jika tab "Anda mungkin suka" aktif secara default
                 try:
                     await page.evaluate("""
@@ -277,7 +274,7 @@ async def smart_scroll_comment_panel(page):
         return False
 
 
-async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) -> List[str]:
+async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) -> list[str]:
     """
     Mengikis komentar TikTok menggunakan Playwright persistent context
     dan network response interception.
@@ -427,7 +424,7 @@ async def scrape_tiktok_comments_playwright(url: str, max_comments: int = 20) ->
     return comments[:max_comments]
 
 
-async def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> Tuple[List[str], bool]:
+async def scrape_tiktok_comments(url_or_id: str, max_comments: int = 20) -> tuple[list[str], bool]:
     """
     Melakukan scraping komentar dari video TikTok secara riil menggunakan
     Playwright persistent context + network interception (utama),

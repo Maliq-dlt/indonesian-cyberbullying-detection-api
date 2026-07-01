@@ -14,11 +14,11 @@ an automatic SQLite fallback).
 
 from __future__ import annotations
 
-import os
-import glob
-import sqlite3
 import asyncio
-from typing import Callable, Optional
+import glob
+import os
+import sqlite3
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -27,7 +27,6 @@ try:
 except ImportError:
     asyncpg = None  # type: ignore[assignment]
 
-from normalizer import init_slang_map, normalize_text
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +36,7 @@ from normalizer import init_slang_map, normalize_text
 def load_twitter_dataset(
     path: str,
     clean_fn: Callable[[str], str],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the Twitter hate-speech CSV (``data.csv``).
 
     Expected columns in the source file: ``Tweet``, ``Abusive``, ``HS``.
@@ -70,7 +69,7 @@ def load_instagram_dataset(
     path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the Instagram cyberbullying XLSX dataset.
 
     Expected columns: ``Komentar``, ``Kategori`` (``Bullying`` /
@@ -112,7 +111,7 @@ def load_combined_dataset(
     path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the combined / merged CSV dataset.
 
     Expected columns: ``String``, ``Label`` (e.g. ``Bullying``,
@@ -307,7 +306,7 @@ def load_mendeley_dataset(
     folder_path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the Mendeley cyberbullying dataset (Instagram, Twitter, Youtube).
 
     Downsamples the Youtube dataset (non-bullying) to match a reasonable ratio.
@@ -332,23 +331,23 @@ def load_mendeley_dataset(
         try:
             df = pd.read_csv(file_path)
             df = df.dropna(subset=["Text", "Label"])
-            
+
             # YouTube downsampling
             if platform == "youtube":
                 df_bully = df[df["Label"] == 1]
                 df_non_bully = df[df["Label"] == 0]
-                
+
                 # downsample non-bully to max 10000
                 if len(df_non_bully) > 10000:
                     df_non_bully = df_non_bully.sample(n=10000, random_state=42)
-                
+
                 df = pd.concat([df_bully, df_non_bully], ignore_index=True)
                 print(f"Youtube Mendeley downsampled: {len(df_bully)} bullying, {len(df_non_bully)} non-bullying.")
 
             df["text_clean"] = df["Text"].apply(clean_fn)
             df["is_bully"] = df["Label"] == 1
             df["is_toxic"] = df["text_clean"].apply(check_toxic_fn)
-            
+
             dfs.append(df[["text_clean", "is_toxic", "is_bully"]])
             print(f"Berhasil memuat dataset Mendeley {platform} ({len(df)} baris).")
         except Exception as e:
@@ -363,7 +362,7 @@ def load_tiktok_rhiosutoyo_dataset(
     path: str,
     clean_fn: Callable[[str], str],
     check_toxic_fn: Callable[[str], bool],
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """Load the TikTok cyberbullying dataset (Dataset-Research.csv).
 
     Expected columns: 'comment', 'sentiment'

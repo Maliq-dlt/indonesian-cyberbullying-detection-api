@@ -1,16 +1,17 @@
-import os
-import sys
-import random
 import json
-import pandas as pd
-import numpy as np
+import os
+import random
+
 import joblib
-from sklearn.model_selection import train_test_split
+import numpy as np
+import pandas as pd
+from dotenv import load_dotenv
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.multioutput import MultiOutputClassifier
 from sklearn.metrics import classification_report, f1_score
-from dotenv import load_dotenv
+from sklearn.model_selection import train_test_split
+from sklearn.multioutput import MultiOutputClassifier
+
 if os.path.exists(".env"):
     load_dotenv(".env")
 elif os.path.exists("../.env"):
@@ -22,13 +23,19 @@ if __name__ != "__main__":
     raise ImportError("This script is intended to be run as a standalone script, not imported.")
 
 from normalizer import init_slang_map, normalize_text
-
 from training import (
-    augment_text_with_llm, perturb_text,
-    sarcasm_raw, slang_praise_raw, GEMINI_API_KEY, GEMINI_BASE_URL,
-    load_twitter_dataset, load_instagram_dataset,
-    load_combined_dataset, ingest_scraped_csv, ingest_database_memory,
-    load_mendeley_dataset, load_tiktok_rhiosutoyo_dataset
+    GEMINI_API_KEY,
+    augment_text_with_llm,
+    ingest_database_memory,
+    ingest_scraped_csv,
+    load_combined_dataset,
+    load_instagram_dataset,
+    load_mendeley_dataset,
+    load_tiktok_rhiosutoyo_dataset,
+    load_twitter_dataset,
+    perturb_text,
+    sarcasm_raw,
+    slang_praise_raw,
 )
 
 # Tentukan direktori dasar dinamis untuk pathing absolut
@@ -86,9 +93,9 @@ if new_records:
                 df_combined["is_toxic"] = df_combined["clean_text"].apply(check_toxic_by_lexicon)
         else:
             df_combined = pd.DataFrame(columns=["Label", "clean_text", "String", "encoded_label", "is_toxic"])
-        
+
         existing_strings = set(df_combined["String"].dropna().str.strip().str.lower().unique())
-        
+
         added_count = 0
         appended_list = []
         for rec in new_records:
@@ -97,13 +104,10 @@ if new_records:
                 clean_t = clean_and_normalize(rec["String"])
                 is_bully = rec["Label"] == "Bullying"
                 encoded_l = 0.0 if is_bully else 1.0
-                
+
                 # Gunakan is_toxic dari record jika tersedia, jika tidak gunakan leksikon
-                if "is_toxic" in rec:
-                    is_toxic = bool(rec["is_toxic"])
-                else:
-                    is_toxic = check_toxic_by_lexicon(clean_t)
-                
+                is_toxic = bool(rec["is_toxic"]) if "is_toxic" in rec else check_toxic_by_lexicon(clean_t)
+
                 new_row = {
                     "Label": rec["Label"],
                     "clean_text": clean_t,
@@ -114,7 +118,7 @@ if new_records:
                 appended_list.append(new_row)
                 existing_strings.add(normalized_check)
                 added_count += 1
-                
+
                 # Opsi 4: LLM-based Data Augmentation
                 if GEMINI_API_KEY:
                     print(f"  -> Menghasilkan augmentasi LLM untuk teks: '{rec['String']}'")
@@ -132,7 +136,7 @@ if new_records:
                             })
                             existing_strings.add(var_norm)
                             added_count += 1
-        
+
         if appended_list:
             df_to_append = pd.DataFrame(appended_list)
             df_combined = pd.concat([df_combined, df_to_append], ignore_index=True)
@@ -140,7 +144,7 @@ if new_records:
             print(f"Sukses mengintegrasikan {added_count} sampel baru secara unik ke {DATASET_COMBINED_PATH}!")
         else:
             print("Seluruh sampel baru sudah ada dalam dataset (duplikat diabaikan).")
-            
+
         # Pindahkan atau rename file scraper agar tidak diproses berulang kali
         for file_path in new_files:
             try:
@@ -243,7 +247,7 @@ print(f"Jumlah data augmentasi setelah difilter untuk mencegah kebocoran: {len(d
 # 3. Terapkan Perturbasi Slang/Typo acak HANYA pada train set yang mengandung unsur toxic
 print("Melakukan augmentasi perturbasi teks (typo/leet) secara dinamis pada train set...")
 perturbed_records = []
-for idx, row in train_df.iterrows():
+for _idx, row in train_df.iterrows():
     if row['is_toxic'] and random.random() < 0.3:
         perturbed_text = perturb_text(row['text_clean'], abusive_words)
         if perturbed_text and perturbed_text != row['text_clean']:
@@ -256,17 +260,18 @@ for idx, row in train_df.iterrows():
 # 3.5. Ambil data tervalidasi dari database PostgreSQL / SQLite (Active Learning Oversampling)
 validated_records = []
 import asyncio
-from classifier.database import get_pg_pool, decrypt_text
 import sqlite3
+
+from classifier.database import decrypt_text, get_pg_pool
+
 
 def run_async(coro):
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-        
+
     if loop and loop.is_running():
-        import threading
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=1) as executor:
             return executor.submit(lambda: asyncio.run(coro)).result()
@@ -352,6 +357,7 @@ X_test_tfidf = vectorizer.transform(X_test)
 # 7. Melatih Ulang Model Baru
 print("Melatih ulang Multi-Label Classifier dengan Kalibrasi Probabilitas (Platt Scaling)...")
 from sklearn.calibration import CalibratedClassifierCV
+
 base_lr = LogisticRegression(max_iter=1500, class_weight='balanced', C=1.5, random_state=42)
 # Gunakan CalibratedClassifierCV untuk melakukan kalibrasi probabilitas via 5-fold cross-validation
 calibrated_lr = CalibratedClassifierCV(estimator=base_lr, method='sigmoid', cv=5)
@@ -396,20 +402,20 @@ if os.path.exists(old_model_path) and os.path.exists(old_vect_path):
         old_clf = joblib.load(old_model_path)
         old_vect = joblib.load(old_vect_path)
         X_test_old_tfidf = old_vect.transform(X_test)
-        
+
         old_thresholds = { "threshold_toxic": 0.5, "threshold_bully": 0.5 }
         old_thresholds_path = os.path.join(BASE_DIR, "models", "thresholds.json")
         if os.path.exists(old_thresholds_path):
-            with open(old_thresholds_path, "r") as f:
+            with open(old_thresholds_path) as f:
                 old_thresholds = json.load(f)
-                
+
         old_probs = old_clf.predict_proba(X_test_old_tfidf)
         old_probs_toxic = old_probs[0][:, 1]
         old_probs_bully = old_probs[1][:, 1]
-        
+
         old_preds_toxic = (old_probs_toxic >= old_thresholds.get("threshold_toxic", 0.5)).astype(int)
         old_preds_bully = (old_probs_bully >= old_thresholds.get("threshold_bully", 0.5)).astype(int)
-        
+
         old_f1_toxic = f1_score(y_test['is_toxic'], old_preds_toxic, zero_division=0)
         old_f1_bully = f1_score(y_test['is_bully'], old_preds_bully, zero_division=0)
         print(f"Perbandingan F1-Score -> Model Lama Toxic: {old_f1_toxic:.4f} | Model Baru Toxic: {new_f1_toxic:.4f}")
@@ -425,6 +431,7 @@ if old_f1_toxic > 0.0 and (old_f1_toxic - new_f1_toxic > 0.08 or old_f1_bully - 
 
 # 10. Menyimpan Model & Vectorizer dengan Versioning & Metadata
 import datetime
+
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 versioned_model_name = f"model_lr_{timestamp}.joblib"
@@ -482,7 +489,6 @@ except Exception as db_err:
     print(f"Warning: Gagal menyimpan riwayat retraining ke database: {str(db_err)}")
 
 print("\n=== HASIL EVALUASI RETRAINING DENGAN AMBANG BATAS TERKALIBRASI ===")
-from sklearn.metrics import classification_report
 print("1. Target: TOXICITY (is_toxic)")
 print(classification_report(y_test['is_toxic'], preds_toxic))
 print("2. Target: BULLYING (is_bully)")
@@ -498,7 +504,7 @@ async def cleanup_resources():
             print("PostgreSQL connection pool berhasil ditutup secara bersih.")
         except Exception as e:
             print(f"Warning: Gagal menutup PostgreSQL connection pool: {e}")
-            
+
     if db_mod.REDIS_CLIENT is not None:
         try:
             await db_mod.REDIS_CLIENT.close()

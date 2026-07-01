@@ -1,15 +1,23 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Security
-from fastapi.responses import StreamingResponse
 import asyncio
 import json
 import logging
+
 import classifier
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
+from fastapi.responses import StreamingResponse
 from models import (
-    TextRequest, LexiconResponse, MLResponse, TransformerResponse, EnsembleResponse, HybridResponse,
-    BatchTextRequest, BatchResponse, BatchItemResponse
+    BatchItemResponse,
+    BatchResponse,
+    BatchTextRequest,
+    EnsembleResponse,
+    HybridResponse,
+    LexiconResponse,
+    MLResponse,
+    TextRequest,
+    TransformerResponse,
 )
-from routes.deps import rate_limit_cloud_llm_and_batch, get_current_user
 from monitoring import PREDICTIONS_TOTAL
+from routes.deps import get_current_user, rate_limit_cloud_llm_and_batch
 
 logger = logging.getLogger("bullyguard")
 
@@ -58,38 +66,37 @@ async def send_webhook_notification(webhook_url: str, payload: dict):
 async def predict_hybrid(req: TextRequest, background_tasks: BackgroundTasks):
     if classifier.ML_MODEL is None or classifier.ML_VECTORIZER is None:
         raise HTTPException(status_code=503, detail="Model ML belum termuat.")
-    
+
     import time
     start_time = time.perf_counter()
     res = await classifier.predict_hybrid(req.text)
     execution_time_ms = (time.perf_counter() - start_time) * 1000.0
     res.execution_time = round(execution_time_ms, 2)
-    
+
     try:
         from classifier.settings_store import get_settings
         settings = await get_settings()
-        if settings.get("webhook_enabled") and settings.get("webhook_url"):
-            if res.is_toxic or res.is_bully:
-                payload = {
-                    "event": "cyberbullying_detected",
-                    "text": res.text,
-                    "is_toxic": res.is_toxic,
-                    "is_bully": res.is_bully,
-                    "probability_toxic": res.probability_toxic,
-                    "probability_bully": res.probability_bully,
-                    "category": res.category,
-                    "decision_source": res.decision_source,
-                    "reason": res.reason
-                }
-                background_tasks.add_task(send_webhook_notification, settings["webhook_url"], payload)
+        if settings.get("webhook_enabled") and settings.get("webhook_url") and (res.is_toxic or res.is_bully):
+            payload = {
+                "event": "cyberbullying_detected",
+                "text": res.text,
+                "is_toxic": res.is_toxic,
+                "is_bully": res.is_bully,
+                "probability_toxic": res.probability_toxic,
+                "probability_bully": res.probability_bully,
+                "category": res.category,
+                "decision_source": res.decision_source,
+                "reason": res.reason
+            }
+            background_tasks.add_task(send_webhook_notification, settings["webhook_url"], payload)
     except Exception as e:
         logger.warning("Failed to prepare webhook task", extra={"error": str(e)})
-        
+
     try:
         PREDICTIONS_TOTAL.labels(decision_source=res.decision_source, category=res.category).inc()
     except Exception as exc:
         logger.warning("Failed to record prediction metric", extra={"error": str(exc)})
-        
+
     return res
 
 @router.post("/batch", response_model=BatchResponse, dependencies=[Depends(rate_limit_cloud_llm_and_batch)])
@@ -99,14 +106,14 @@ async def predict_batch(req: BatchTextRequest):
             raise HTTPException(status_code=422, detail="Setiap teks dalam batch tidak boleh kosong.")
         if len(text) > 500:
             raise HTTPException(status_code=422, detail="Panjang setiap teks dalam batch maksimal 500 karakter.")
-            
+
     _batch_sem = asyncio.Semaphore(5)
     async def _limited_predict(t):
         async with _batch_sem:
             return await classifier.predict_hybrid(t)
     tasks = [_limited_predict(text) for text in req.texts]
     predictions = await asyncio.gather(*tasks)
-    
+
     results = []
     for pred in predictions:
         results.append(BatchItemResponse(

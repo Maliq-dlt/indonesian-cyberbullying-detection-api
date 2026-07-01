@@ -10,11 +10,11 @@ compatibility. All route logic has been moved to:
 """
 
 from fastapi import APIRouter
-from routes.auth import public_router
-from routes.scraper import router as scraper_router
+from routes.auth import public_router as public_router
 from routes.hitl import router as hitl_router
-from routes.training import router as training_router
+from routes.scraper import router as scraper_router
 from routes.settings import router as settings_router
+from routes.training import router as training_router
 
 # Compose a single admin_router from all sub-modules
 router = APIRouter()

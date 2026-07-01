@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { m, AnimatePresence } from 'framer-motion';
 import { Shield, Activity } from 'lucide-react';
 
-export const simulatedComments = [
+const simulatedComments = [
   {
     author: "user_anon88",
     avatar: "A",

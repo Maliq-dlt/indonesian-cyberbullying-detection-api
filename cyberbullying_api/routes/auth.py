@@ -1,13 +1,13 @@
 """Authentication endpoints — login for JWT access token."""
 
-from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.security import OAuth2PasswordRequestForm
 import logging
 import os
-import jwt
 from datetime import datetime, timedelta, timezone
 
-from routes.deps import JWT_SECRET, ALGORITHM
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from routes.deps import ALGORITHM, JWT_SECRET
 
 logger = logging.getLogger("bullyguard")
 
@@ -23,10 +23,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     authenticated = False
     scopes = []
 
-    if form_data.username == expected_username and form_data.password == expected_password:
-        authenticated = True
-        scopes = ["predict", "admin"]
-    elif form_data.username == "apikey" and expected_api_key and form_data.password == expected_api_key:
+    if form_data.username == expected_username and form_data.password == expected_password or form_data.username == "apikey" and expected_api_key and form_data.password == expected_api_key:
         authenticated = True
         scopes = ["predict", "admin"]
     elif form_data.username == "guest" and form_data.password == "guest":

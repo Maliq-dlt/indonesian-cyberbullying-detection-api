@@ -5,19 +5,20 @@ import sys
 if sys.platform.startswith('win'):
     try:
         if hasattr(sys.stdout, 'reconfigure'):
-            getattr(sys.stdout, 'reconfigure')(encoding='utf-8')
+            sys.stdout.reconfigure(encoding='utf-8')
         if hasattr(sys.stderr, 'reconfigure'):
-            getattr(sys.stderr, 'reconfigure')(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
     except Exception:
         pass
 
-import torch
-import warnings
 import shutil
+import warnings
+
 import onnx
 import onnx.shape_inference
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from onnxruntime.quantization import quantize_dynamic, QuantType
+import torch
+from onnxruntime.quantization import QuantType, quantize_dynamic
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 warnings.filterwarnings("ignore")
 
@@ -42,7 +43,7 @@ def export_to_onnx():
     quantized_path = os.path.join(models_dir, "model_quantized.onnx")
 
     print(f"=== Menyiapkan Ekspor ONNX untuk model: {model_name} ===")
-    
+
     # 1. Unduh/Muat model PyTorch
     print("Memuat model PyTorch dari Hugging Face...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -52,7 +53,7 @@ def export_to_onnx():
     # 2. Siapkan input dummy
     dummy_text = "Semangat belajarnya ya, jangan menyerah!"
     inputs = tokenizer(dummy_text, return_tensors="pt")
-    
+
     input_ids = inputs["input_ids"]
     attention_mask = inputs["attention_mask"]
 
@@ -82,7 +83,7 @@ def export_to_onnx():
         extra_options={"DefaultTensorType": onnx.TensorProto.FLOAT}
     )
     print(f"Kuantisasi selesai! Model terkuantisasi disimpan di: {quantized_path}")
-    
+
     # Bersihkan file model.onnx mentah untuk menghemat ruang
     if os.path.exists(onnx_path):
         os.remove(onnx_path)

@@ -16,16 +16,14 @@ import ipaddress
 import logging
 import os
 import socket
-from typing import Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger("bullyguard")
 
-from fastapi import Header, HTTPException, Request, status, Depends
-from fastapi.security import OAuth2PasswordBearer, SecurityScopes
-import jwt
 import classifier
-
+import jwt
+from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 
 NON_PRODUCTION_ENVS = {"local", "dev", "development", "test", "testing"}
 
@@ -55,7 +53,7 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def verify_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> None:
+def verify_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
     """Validate the X-API-Key header for protected endpoints.
 
     Local development may allow an empty API_KEY only when
@@ -238,8 +236,8 @@ ALGORITHM = "HS256"
 
 async def get_current_user(
     security_scopes: SecurityScopes,
-    token: Optional[str] = Depends(oauth2_scheme),
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")
+    token: str | None = Depends(oauth2_scheme),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key")
 ) -> dict:
     # 1. Dev mode bypass jika diizinkan dan token serta API Key kosong
     if is_development_env() and _bool_env("ALLOW_MISSING_API_KEY_IN_DEV", True) and not token and not x_api_key:

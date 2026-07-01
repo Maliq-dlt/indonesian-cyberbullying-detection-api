@@ -1,5 +1,6 @@
 import pytest
 
+
 def test_predict_lexicon_safe(client):
     """Menguji bahwa kalimat positif diklasifikasikan sebagai AMAN oleh leksikon."""
     payload = {"text": "Semangat belajarnya ya, jangan menyerah!"}
@@ -103,7 +104,7 @@ def test_predict_text_length_validation(client):
     """Menguji batas karakter input (max 500) dan min (1)."""
     response = client.post("/predict/lexicon", json={"text": ""})
     assert response.status_code == 422
-    
+
     long_text = "anjing " * 100
     response = client.post("/predict/lexicon", json={"text": long_text})
     assert response.status_code == 422
@@ -112,11 +113,11 @@ def test_predict_batch_constraints(client):
     """Menguji batasan pada input batch."""
     response = client.post("/predict/batch", json={"texts": []})
     assert response.status_code == 422
-    
+
     payload = {"texts": ["Semangat!"] * 51}
     response = client.post("/predict/batch", json=payload)
     assert response.status_code == 422
-    
+
     long_text = "goblok " * 100
     payload = {"texts": ["Semangat!", long_text]}
     response = client.post("/predict/batch", json=payload)
@@ -129,10 +130,11 @@ def anyio_backend():
 @pytest.mark.anyio
 async def test_sqlite_write_concurrency():
     """Menguji bahwa penyimpanan klasifikasi memori secara paralel ke SQLite tidak memicu Lock Error."""
-    from classifier.database import save_classification_memory, get_classification_memory
-    from models import HybridResponse
     import asyncio
-    
+
+    from classifier.database import get_classification_memory, save_classification_memory
+    from models import HybridResponse
+
     res_list = [
         HybridResponse(
             text=f"Teks tes konkurensi SQLite ke-{i}",
@@ -146,10 +148,10 @@ async def test_sqlite_write_concurrency():
         )
         for i in range(10)
     ]
-    
+
     tasks = [save_classification_memory(res) for res in res_list]
     await asyncio.gather(*tasks)
-    
+
     retrieved = await get_classification_memory("Teks tes konkurensi SQLite ke-5")
     assert retrieved is not None
     assert retrieved.text == "Teks tes konkurensi SQLite ke-5"
@@ -157,19 +159,20 @@ async def test_sqlite_write_concurrency():
 @pytest.mark.anyio
 async def test_semantic_caching():
     """Menguji kecocokan semantik cache (Semantic Caching) menggunakan SQLite fallback."""
-    from classifier.database import save_classification_memory, get_classification_memory
+    import json
+
+    from classifier.database import get_classification_memory, save_classification_memory
     from classifier.predictor import EMBEDDING_MODEL
     from models import HybridResponse
-    import json
-    
+
     if EMBEDDING_MODEL is None:
         pytest.skip("SentenceTransformer EMBEDDING_MODEL tidak dimuat.")
-        
+
     text_1 = "Gue benci banget sama orang itu karena dia jahat"
     text_2 = "Gue benci banget sama orang itu karena dia jahat."
-    
+
     emb_json = json.dumps(EMBEDDING_MODEL.encode([text_1])[0].tolist())
-    
+
     res = HybridResponse(
         text=text_1,
         is_toxic=True,
@@ -181,9 +184,9 @@ async def test_semantic_caching():
         reason="Komentar mengandung ujaran kebencian."
     )
     await save_classification_memory(res, emb_json)
-    
+
     cached_res = await get_classification_memory(text_2)
-    
+
     assert cached_res is not None
     assert "Semantic Cache Match" in cached_res.decision_source
     assert cached_res.is_toxic is True

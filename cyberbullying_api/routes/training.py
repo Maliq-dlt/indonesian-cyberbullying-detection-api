@@ -1,14 +1,15 @@
 """Training endpoints — model training, reload, logs streaming, history."""
 
-from fastapi import APIRouter, HTTPException, Depends, Security
-from fastapi.responses import StreamingResponse
 import asyncio
+import contextlib
 import logging
 import os
 import sys
 
 import classifier
 import routes.state as state
+from fastapi import APIRouter, HTTPException, Security
+from fastapi.responses import StreamingResponse
 from routes.deps import get_current_user
 
 logger = logging.getLogger("bullyguard")
@@ -67,7 +68,7 @@ async def api_start_training(model_type: str = "both"):
                         await r.set("training_status", "running")
                     except Exception as redis_err:
                         logger.warning("Failed to update training status in Redis", extra={"error": str(redis_err)})
-                getattr(run_retrain_task, "delay")(model_type)
+                run_retrain_task.delay(model_type)
                 return {"success": True, "message": f"Proses pelatihan ulang ({model_type.upper()}) berhasil dimulai di Celery worker di latar belakang."}
             except Exception as e:
                 logger.error("Error starting Celery retrain, falling back to local", extra={"error": str(e)})
@@ -92,10 +93,8 @@ async def api_start_training(model_type: str = "both"):
         try:
             import subprocess
             if state.LOG_FILE_HANDLE is not None:
-                try:
+                with contextlib.suppress(Exception):
                     state.LOG_FILE_HANDLE.close()
-                except Exception:
-                    pass
             state.LOG_FILE_HANDLE = open(log_path, "a", encoding="utf-8", buffering=1)
             try:
                 if r:
@@ -119,10 +118,8 @@ async def api_start_training(model_type: str = "both"):
                         if proc.returncode == 0 and remaining_scripts:
                             next_script = remaining_scripts[0]
                             logger.info("Running next training script", extra={"script": next_script})
-                            try:
+                            with contextlib.suppress(Exception):
                                 log_handle.write(f"\n>>> Menjalankan {os.path.basename(next_script)}...\n")
-                            except Exception:
-                                pass
                             next_proc = subprocess.Popen(
                                 [sys.executable, "-u", next_script],
                                 stdout=log_handle,
@@ -131,10 +128,8 @@ async def api_start_training(model_type: str = "both"):
                             await monitor_training(next_proc, log_handle, remaining_scripts[1:])
                             return
 
-                        try:
+                        with contextlib.suppress(Exception):
                             log_handle.close()
-                        except Exception:
-                            pass
 
                         try:
                             r_client = await classifier.get_redis()
@@ -201,7 +196,7 @@ async def api_stream_logs():
         )
 
     async def log_generator():
-        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(log_path, encoding="utf-8", errors="ignore") as f:
             for line in f:
                 yield f"data: {line}"
                 await asyncio.sleep(0.01)

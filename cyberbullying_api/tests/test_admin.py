@@ -1,5 +1,8 @@
-import pytest
+import contextlib
 import os
+
+import pytest
+
 
 @pytest.fixture
 def anyio_backend():
@@ -68,7 +71,7 @@ async def test_api_categorized_and_reallocate(client):
     """Menguji endpoint penarikan data kuadran dan relokasi (Active Learning)."""
     from classifier.database import save_classification_memory
     from models import HybridResponse
-    
+
     test_text = "Kalimat pengujian relokasi active learning"
     res = HybridResponse(
         text=test_text,
@@ -81,20 +84,20 @@ async def test_api_categorized_and_reallocate(client):
         reason="Testing reallocation"
     )
     await save_classification_memory(res)
-    
+
     response = client.get("/api/data/categorized?limit=50")
     assert response.status_code == 200
     data = response.json()
     assert "toxic_bully" in data
     assert "non_toxic_non_bully" in data
-    
+
     found_init = False
     for item in data["non_toxic_non_bully"]:
         if item["text"] == test_text:
             found_init = True
             break
     assert found_init is True
-    
+
     payload = {
         "text": test_text,
         "new_is_toxic": True,
@@ -103,11 +106,11 @@ async def test_api_categorized_and_reallocate(client):
     realloc_resp = client.post("/api/data/reallocate", json=payload)
     assert realloc_resp.status_code == 200
     assert realloc_resp.json()["success"] is True
-    
+
     response = client.get("/api/data/categorized?limit=50")
     assert response.status_code == 200
     data = response.json()
-    
+
     found_moved = False
     for item in data["toxic_bully"]:
         if item["text"] == test_text:
@@ -118,20 +121,21 @@ async def test_api_categorized_and_reallocate(client):
 
 def test_api_train_and_logs(client):
     """Menguji endpoint start training dan streaming logs dengan mock subprocess."""
-    import routes.state as state
-    from unittest.mock import patch
     import subprocess
     import sys
-    
+    from unittest.mock import patch
+
+    import routes.state as state
+
     with patch("subprocess.Popen") as mock_popen:
         mock_process = subprocess.Popen([sys.executable, "-c", "print('=== Memulai Pelatihan Ulang ===')"])
         mock_popen.return_value = mock_process
-        
+
         try:
             response = client.post("/api/train/start")
             assert response.status_code == 200
             assert response.json()["success"] is True
-            
+
             with client.stream("GET", "/api/train/logs") as stream_resp:
                 assert stream_resp.status_code == 200
                 first_line = next(stream_resp.iter_lines())
@@ -146,24 +150,23 @@ def test_api_train_and_logs(client):
                     pass
                 state.TRAINING_PROCESS = None
             if state.LOG_FILE_HANDLE is not None:
-                try:
+                with contextlib.suppress(Exception):
                     state.LOG_FILE_HANDLE.close()
-                except Exception:
-                    pass
                 state.LOG_FILE_HANDLE = None
 
 @pytest.mark.anyio
 async def test_key_rotation_utility():
     """Menguji utilitas rotasi kunci rotate_key.py terhadap SQLite."""
-    from classifier.database import save_classification_memory
-    from rotate_key import rotate_sqlite_database, get_fernet_cipher
-    from models import HybridResponse
-    import sqlite3
     import hashlib
-    
+    import sqlite3
+
+    from classifier.database import save_classification_memory
+    from models import HybridResponse
+    from rotate_key import get_fernet_cipher, rotate_sqlite_database
+
     old_key = os.getenv("API_KEY", "") or "default_secure_fallback_key_for_cyberbullying_api_classification_memory"
     new_key = "new_super_secure_key_for_test_rotation"
-    
+
     test_text = "Kalimat pengujian rotasi kunci aman"
     res = HybridResponse(
         text=test_text,
@@ -176,30 +179,30 @@ async def test_key_rotation_utility():
         reason="Testing Key Rotation Utility"
     )
     await save_classification_memory(res)
-    
+
     from classifier.db_config import get_sqlite_db_path
     db_path = get_sqlite_db_path()
-    
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT encrypted_text FROM classification_memory WHERE text_hash = ?", (hashlib.sha256(test_text.encode("utf-8")).hexdigest(),))
     old_ciphertext = cursor.fetchone()[0]
     conn.close()
-    
+
     rotate_sqlite_database(old_key, new_key, db_path)
-    
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT encrypted_text FROM classification_memory WHERE text_hash = ?", (hashlib.sha256(test_text.encode("utf-8")).hexdigest(),))
     new_ciphertext = cursor.fetchone()[0]
     conn.close()
-    
+
     assert old_ciphertext != new_ciphertext
-    
+
     new_cipher = get_fernet_cipher(new_key)
     decrypted = new_cipher.decrypt(new_ciphertext.encode("utf-8")).decode("utf-8")
     assert decrypted == test_text
-    
+
     rotate_sqlite_database(new_key, old_key, db_path)
 
 def test_api_update_cookies(client):
@@ -207,13 +210,13 @@ def test_api_update_cookies(client):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cookie_path = os.path.join(base_dir, "cookies_tiktok.json")
     backup_path = os.path.join(base_dir, "cookies_tiktok.json.bak")
-    
+
     import shutil
     has_backup = False
     if os.path.exists(cookie_path):
         shutil.copyfile(cookie_path, backup_path)
         has_backup = True
-        
+
     try:
         payload = {
             "platform": "tiktok",
@@ -244,7 +247,7 @@ async def test_api_get_categorized_data_with_filters(client):
     """Menguji penyaringan kueri pada GET /api/data/categorized."""
     from classifier.database import save_classification_memory
     from models import HybridResponse
-    
+
     res1 = HybridResponse(
         text="Kalimat uji spesifik untuk pencarian aktif satu",
         is_toxic=True,
@@ -273,12 +276,12 @@ async def test_api_get_categorized_data_with_filters(client):
     data = response.json()
     assert len(data["toxic_bully"]) >= 1
     assert "aktif satu" in data["toxic_bully"][0]["text"]
-    
+
     response = client.get("/api/data/categorized?confidence_min=0.9&confidence_max=1.0")
     assert response.status_code == 200
     data = response.json()
     assert len(data["toxic_bully"]) >= 1
-    
+
     response = client.get("/api/data/categorized?decision_source=FilterTestTwo")
     assert response.status_code == 200
     data = response.json()
@@ -307,7 +310,7 @@ async def test_api_reallocate_data_bulk(client):
     data = response.json()
     assert data["success"] is True
     assert "data berhasil direlokasi" in data["message"]
-    
+
     response = client.get("/api/data/categorized?search=spesifik")
     assert response.status_code == 200
     data = response.json()

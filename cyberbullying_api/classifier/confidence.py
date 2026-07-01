@@ -14,9 +14,9 @@ predictor.py and easy to unit test.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
-
+from typing import Any
 
 DEFAULT_THRESHOLD = 0.5
 

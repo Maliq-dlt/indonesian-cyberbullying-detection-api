@@ -4,21 +4,22 @@ This module holds all shared mutable state and initialization logic so that
 other predictor sub-modules can import from here without circular imports.
 """
 
-import os
-import re
 import json
+import logging
+import os
+import subprocess
+import sys
+import threading
+from typing import Any
+
 import joblib
 import numpy as np
 import pandas as pd
-import subprocess
-import threading
-import sys
-import logging
-from typing import Any
 
 logger = logging.getLogger("bullyguard")
 
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
 try:
     import torch
 except ImportError:
@@ -34,9 +35,10 @@ try:
 except ImportError:
     SentenceTransformer = None
 
-from normalizer import init_slang_map, prepare_lexicon, BASE_CYBERBULLYING_LEXICON
-from classifier.database import init_cache_db
+from normalizer import BASE_CYBERBULLYING_LEXICON, init_slang_map, prepare_lexicon
+
 import classifier.llm as llm_module
+from classifier.database import init_cache_db
 
 # ── Path ──────────────────────────────────────────────────────────────────────
 
@@ -66,7 +68,7 @@ def load_thresholds():
     thresholds_path = os.path.join(BASE_DIR, "models", "thresholds.json")
     if os.path.exists(thresholds_path):
         try:
-            with open(thresholds_path, "r") as f:
+            with open(thresholds_path) as f:
                 THRESHOLDS = json.load(f)
             logger.info("Thresholds loaded", extra={"toxic": THRESHOLDS['threshold_toxic'], "bully": THRESHOLDS['threshold_bully']})
         except Exception as e:

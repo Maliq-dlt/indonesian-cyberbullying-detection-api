@@ -1,5 +1,7 @@
-import pytest
 import os
+
+import pytest
+
 
 @pytest.mark.anyio
 async def test_auth_token_success(client):
@@ -53,7 +55,7 @@ async def test_rbac_token_scopes(client):
     # Disable allow missing api key bypass temporarily to force token validation
     orig_bypass = os.environ.get("ALLOW_MISSING_API_KEY_IN_DEV")
     os.environ["ALLOW_MISSING_API_KEY_IN_DEV"] = "false"
-    
+
     try:
         # 1. Get token with ONLY predict scope
         payload = {
@@ -64,16 +66,16 @@ async def test_rbac_token_scopes(client):
         resp = client.post("/api/auth/token", data=payload)
         assert resp.status_code == 200
         token = resp.json()["access_token"]
-        
+
         # 2. Test prediction route with predict token -> Success
         headers = {"Authorization": f"Bearer {token}"}
         resp_pred = client.post("/predict/lexicon", json={"text": "halo apa kabar"}, headers=headers)
         assert resp_pred.status_code == 200
-        
+
         # 3. Test admin route with predict token -> Forbidden (403)
         resp_admin = client.get("/api/settings", headers=headers)
         assert resp_admin.status_code == 403
-        
+
         # 4. Test admin route with invalid token -> Unauthorized (401)
         headers_invalid = {"Authorization": "Bearer invalidtoken123"}
         resp_invalid = client.get("/api/settings", headers=headers_invalid)
@@ -88,7 +90,7 @@ async def test_rbac_token_scopes(client):
 async def test_prometheus_metrics_endpoint(client):
     # Trigger a request first to ensure requests_total counter is populated
     client.get("/")
-    
+
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "cyberbullying_requests_total" in response.text
@@ -109,7 +111,7 @@ def test_onnx_gpu_provider_config():
         import onnxruntime as ort
     except ImportError:
         ort = None
-        
+
     if ort is not None:
         available = ort.get_available_providers()
         assert "CPUExecutionProvider" in available

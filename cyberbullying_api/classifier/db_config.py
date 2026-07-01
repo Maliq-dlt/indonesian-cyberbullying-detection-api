@@ -1,11 +1,9 @@
-import os
-import re
-import json
 import asyncio
 import base64
 import hashlib
 import logging
-from typing import List, Dict, Any
+import os
+import re
 import time
 
 logger = logging.getLogger("bullyguard")
@@ -17,6 +15,8 @@ except ImportError:
     asyncpg = None
     redis = None
     logger.warning("asyncpg atau redis tidak terinstal. Modul Database mungkin tidak beroperasi.")
+
+import contextlib
 
 from cryptography.fernet import Fernet
 
@@ -40,7 +40,7 @@ elif not api_key:
     _dev_key_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", ".dev_encryption_key")
     os.makedirs(os.path.dirname(_dev_key_path), exist_ok=True)
     if os.path.exists(_dev_key_path):
-        with open(_dev_key_path, "r") as _f:
+        with open(_dev_key_path) as _f:
             key_source = _f.read().strip().encode("utf-8")
     else:
         import secrets
@@ -120,26 +120,26 @@ async def get_pg_pool():
     current_time = time.time()
     if PG_POOL is None and current_time < PG_FAILED_UNTIL:
         return None
-        
+
     if PG_POOL is None and asyncpg is not None:
         try:
             PG_POOL = await asyncpg.create_pool(PG_URL, min_size=1, max_size=10, timeout=2.0)
             async with PG_POOL.acquire() as conn:
                 await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-                
+
                 # Cek jika tabel classification_memory menggunakan skema lama (kolom 'text' ada)
                 has_old_text = False
                 try:
                     table_info = await conn.fetchrow("""
-                        SELECT column_name 
-                        FROM information_schema.columns 
+                        SELECT column_name
+                        FROM information_schema.columns
                         WHERE table_name='classification_memory' AND column_name='text'
                     """)
                     if table_info:
                         has_old_text = True
                 except Exception:
                     pass
-                
+
                 if has_old_text:
                     logger.info("Melakukan migrasi PostgreSQL ke skema baru yang terenkripsi...")
                     await conn.execute("ALTER TABLE classification_memory RENAME TO classification_memory_old;")
@@ -165,11 +165,11 @@ async def get_pg_pool():
                         text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
                         enc_text = encrypt_text(text)
                         await conn.execute("""
-                            INSERT INTO classification_memory 
+                            INSERT INTO classification_memory
                             (text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, probability_toxic, probability_bully, timestamp, is_validated, embedding)
                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                        """, 
-                        text_hash, enc_text, row["is_toxic"], row["is_bully"], row["reason"], row["decision_source"], 
+                        """,
+                        text_hash, enc_text, row["is_toxic"], row["is_bully"], row["reason"], row["decision_source"],
                         row["confidence"], row["probability_toxic"], row["probability_bully"], row["timestamp"], row["is_validated"], row["embedding"])
                     await conn.execute("DROP TABLE classification_memory_old;")
                     logger.info("Migrasi PostgreSQL selesai.")
@@ -228,9 +228,9 @@ async def get_redis():
     if REDIS_CLIENT is None and redis is not None:
         try:
             REDIS_CLIENT = redis.from_url(
-                REDIS_URL, 
-                decode_responses=True, 
-                socket_timeout=1.5, 
+                REDIS_URL,
+                decode_responses=True,
+                socket_timeout=1.5,
                 socket_connect_timeout=1.5
             )
             await REDIS_CLIENT.ping()
@@ -245,17 +245,17 @@ def init_sqlite_db(db_path: str):
     import sqlite3
     conn = sqlite3.connect(db_path, timeout=30.0)
     cursor = conn.cursor()
-    
+
     # Periksa apakah tabel classification_memory sudah ada dan menggunakan skema lama (kolom 'text' ada)
     cursor.execute("PRAGMA table_info(classification_memory)")
     columns = cursor.fetchall()
-    
+
     has_old_text = False
     if columns:
         col_names = [col[1] for col in columns]
         if "text" in col_names:
             has_old_text = True
-            
+
     if has_old_text:
         logger.info("Melakukan migrasi SQLite ke skema baru yang terenkripsi...")
         cursor.execute("ALTER TABLE classification_memory RENAME TO classification_memory_old")
@@ -282,7 +282,7 @@ def init_sqlite_db(db_path: str):
             text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
             enc_text = encrypt_text(text)
             cursor.execute("""
-                INSERT INTO classification_memory 
+                INSERT INTO classification_memory
                 (text_hash, encrypted_text, is_toxic, is_bully, reason, decision_source, confidence, probability_toxic, probability_bully, timestamp, is_validated, embedding)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
             """, (
@@ -308,19 +308,13 @@ def init_sqlite_db(db_path: str):
                 embedding TEXT
             )
         """)
-        try:
+        with contextlib.suppress(Exception):
             cursor.execute("ALTER TABLE classification_memory ADD COLUMN probability_toxic REAL;")
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             cursor.execute("ALTER TABLE classification_memory ADD COLUMN probability_bully REAL;")
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             cursor.execute("ALTER TABLE classification_memory ADD COLUMN embedding TEXT;")
-        except Exception:
-            pass
-        
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS retraining_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -347,7 +341,7 @@ def init_cache_db():
     masked_pg = re.sub(r'(://[^:]*:)([^@/]+)(@)', r'\1***\3', PG_URL)
     masked_redis = re.sub(r'(://[^:]*:)([^@/]+)(@)', r'\1***\3', REDIS_URL)
     logger.info(f"Sistem Infrastruktur siap menggunakan PostgreSQL ({masked_pg}) dan Redis ({masked_redis}) secara lazy.")
-    
+
     try:
         db_path = get_sqlite_db_path()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)

@@ -6,15 +6,14 @@ replace_leet, fuzzy_contains, detect_sentiment_contrast, contains_word_or_phrase
 
 import pytest
 from cyberbullying_api.normalizer import (
+    LEET_MAP,
+    contains_word_or_phrase,
+    detect_sentiment_contrast,
     edit_distance_one,
+    fuzzy_contains,
+    normalize_text,
     reduce_repeated_chars,
     replace_leet,
-    fuzzy_contains,
-    detect_sentiment_contrast,
-    contains_word_or_phrase,
-    normalize_text,
-    AbusiveTrie,
-    LEET_MAP,
 )
 
 

@@ -12,7 +12,7 @@ import asyncio
 import logging
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 # Configure structured JSON logging for production observability
 logging.basicConfig(
@@ -25,6 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger("bullyguard")
 
 from dotenv import load_dotenv
+
 if os.path.exists(".env"):
     load_dotenv(".env")
 elif os.path.exists("../.env"):
@@ -32,19 +33,20 @@ elif os.path.exists("../.env"):
 else:
     load_dotenv()
 
-from fastapi import Depends, FastAPI, Response, Request
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 import time
 import uuid
+
 import classifier
 import routes.state as state
-from routes.admin import router as admin_router, public_router as auth_router
+from fastapi import Depends, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from monitoring import REQUESTS_LATENCY, REQUESTS_TOTAL
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from routes.admin import public_router as auth_router
+from routes.admin import router as admin_router
 from routes.deps import verify_api_key
 from routes.predict import router as predict_router
-from monitoring import REQUESTS_TOTAL, REQUESTS_LATENCY
-
+from starlette.middleware.base import BaseHTTPMiddleware
 
 NON_PRODUCTION_ENVS = {"local", "dev", "development", "test", "testing"}
 
@@ -129,17 +131,13 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         pubsub_task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await pubsub_task
-        except asyncio.CancelledError:
-            pass
 
         try:
             if state.LOG_FILE_HANDLE is not None:
-                try:
+                with suppress(Exception):
                     state.LOG_FILE_HANDLE.close()
-                except Exception:
-                    pass
                 logger.info("Training log file handle closed.")
 
             pool = getattr(classifier, "PG_POOL", None)
@@ -198,18 +196,18 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.url.path == "/metrics":
             return await call_next(request)
-            
+
         start_time = time.perf_counter()
         response = await call_next(request)
         process_time = time.perf_counter() - start_time
-        
+
         path = request.url.path
         method = request.method
         status = str(response.status_code)
-        
+
         REQUESTS_TOTAL.labels(method=method, endpoint=path, status=status).inc()
         REQUESTS_LATENCY.labels(endpoint=path).observe(process_time)
-        
+
         return response
 
 # === Security Headers Middleware ===
@@ -253,7 +251,7 @@ app.add_middleware(PrometheusMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=False if "*" in allowed_origins else True,
+    allow_credentials="*" not in allowed_origins,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "X-API-Key", "Authorization", "X-Request-ID"],
 )
@@ -305,7 +303,7 @@ async def health_check(response: Response):
             health_status["database"] = f"error: {str(e)}"
             health_status["status"] = "unhealthy"
             response.status_code = 503
-    
+
     # Test Redis
     redis_client = await classifier.get_redis()
     if redis_client:

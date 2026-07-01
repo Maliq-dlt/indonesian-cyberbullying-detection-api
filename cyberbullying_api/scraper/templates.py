@@ -1,5 +1,4 @@
 import random
-from typing import List
 
 # Daftar instance Nitter publik untuk guest X scraping tanpa API Key
 NITTER_INSTANCES = [
@@ -9,7 +8,7 @@ NITTER_INSTANCES = [
 ]
 
 USERNAMES = [
-    "malik_dlt", "cyber_fighter", "budi_santoso", "siti_nur", "andi_pratama", 
+    "malik_dlt", "cyber_fighter", "budi_santoso", "siti_nur", "andi_pratama",
     "dina_amelia", "rizky_ramadhan", "ayu_lestari", "eko_prasetyo", "mega_putri",
     "fajar_subekti", "wulan_sari", "gilang_dirga", "nanda_saputra", "putra_bangsa"
 ]
@@ -63,11 +62,11 @@ TOXIC_BULLYING_TEMPLATES = [
     "dasar manusia sampah ga ada gunanya hidup di dunia ini"
 ]
 
-def generate_dynamic_comments(query_or_url: str, max_items: int = 20) -> List[str]:
+def generate_dynamic_comments(query_or_url: str, max_items: int = 20) -> list[str]:
     """Menghasilkan teks komentar/tweet tiruan yang sangat dinamis untuk simulasi scraper."""
     print(f"Generating dynamic template-based fallback comments/tweets for query: {query_or_url}")
     results = []
-    
+
     # Distribusi kategori yang seimbang
     categories = [
         ("safe", SAFE_TEMPLATES),
@@ -75,22 +74,22 @@ def generate_dynamic_comments(query_or_url: str, max_items: int = 20) -> List[st
         ("sarcasm", SARCASM_TEMPLATES),
         ("toxic", TOXIC_BULLYING_TEMPLATES)
     ]
-    
+
     attempts = 0
     while len(results) < max_items and attempts < 100:
         attempts += 1
         cat_name, templates = random.choice(categories)
         template = random.choice(templates)
-        
+
         # Tambahkan variasi username secara acak
         if random.random() < 0.4:
             username = random.choice(USERNAMES)
             comment = f"@{username} {template}"
         else:
             comment = template
-            
+
         if comment not in results:
             results.append(comment)
-            
+
     random.shuffle(results)
     return results[:max_items]

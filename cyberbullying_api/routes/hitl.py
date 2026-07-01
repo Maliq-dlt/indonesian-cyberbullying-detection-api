@@ -1,9 +1,9 @@
 """Human-in-the-loop endpoints — categorized data, reallocate, bulk reallocate."""
 
-from fastapi import APIRouter, HTTPException, Depends, Security
 import logging
 
-from models import ReallocateRequest, ReallocateResponse, BulkReallocateRequest
+from fastapi import APIRouter, HTTPException, Security
+from models import BulkReallocateRequest, ReallocateRequest, ReallocateResponse
 from routes.deps import get_current_user
 
 logger = logging.getLogger("bullyguard")

@@ -1,10 +1,10 @@
-import re
 import html
-import os
-import unicodedata
-import pandas as pd
 import logging
-from typing import List, Dict, Any
+import os
+import re
+import unicodedata
+
+import pandas as pd
 
 logger = logging.getLogger("bullyguard")
 
@@ -61,11 +61,11 @@ class AbusiveTrie:
 
 # Set kata hubung, kata ganti, dan kata kerja/sifat umum bahasa Indonesia untuk mencegah salah koreksi
 INDONESIAN_COMMON_WORDS = {
-    "sampai", "kamu", "sekali", "untuk", "dengan", "dalam", "akan", "bisa", "dapat", 
+    "sampai", "kamu", "sekali", "untuk", "dengan", "dalam", "akan", "bisa", "dapat",
     "oleh", "atau", "pada", "juga", "dari", "telah", "tapi", "tetapi", "bagi", "serta",
-    "yaitu", "yakni", "kami", "kita", "dia", "mereka", "saya", "aku", "anda", "ingin", 
-    "harus", "bukan", "tidak", "belum", "sangat", "lebih", "paling", "hanya", "saja", 
-    "baru", "lama", "banyak", "sedikit", "semua", "setiap", "adalah", "ialah", "merupakan", 
+    "yaitu", "yakni", "kami", "kita", "dia", "mereka", "saya", "aku", "anda", "ingin",
+    "harus", "bukan", "tidak", "belum", "sangat", "lebih", "paling", "hanya", "saja",
+    "baru", "lama", "banyak", "sedikit", "semua", "setiap", "adalah", "ialah", "merupakan",
     "bahwa", "seperti", "bagai", "bagaikan", "maka", "wah", "nilai", "ujian", "ujianmu"
 }
 
@@ -85,11 +85,11 @@ def edit_distance_one(s1: str, s2: str) -> bool:
     len1, len2 = len(s1), len(s2)
     if abs(len1 - len2) > 1:
         return False
-        
+
     if len1 == len2:
         # Substitusi tunggal
         diffs = 0
-        for c1, c2 in zip(s1, s2):
+        for c1, c2 in zip(s1, s2, strict=False):
             if c1 != c2:
                 diffs += 1
                 if diffs > 1:
@@ -129,16 +129,16 @@ def get_close_match_abusive(word: str) -> str | None:
             return ab_w
     return None
 
-def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
+def init_slang_map(alay_path: str, singkatan_path: str) -> dict[str, str]:
     """Memuat peta slang dari CSV dan memperbarui dictionary global SLANG_MAP."""
     global SLANG_MAP, ABUSIVE_WORDS_SET, FORMAL_WORDS_SET
     alay_map = {}
     singkatan_map = {}
-    
+
     try:
         if alay_path and os.path.exists(alay_path):
             alay_df = pd.read_csv(alay_path, header=None, names=['slang', 'formal'], encoding='latin-1')
-            alay_map = dict(zip(alay_df['slang'], alay_df['formal']))
+            alay_map = dict(zip(alay_df['slang'], alay_df['formal'], strict=False))
     except Exception as e:
         logger.warning(f"Gagal memuat new_kamusalay.csv di normalizer: {e}")
 
@@ -146,7 +146,7 @@ def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
         if singkatan_path and os.path.exists(singkatan_path):
             singkatan_df = pd.read_csv(singkatan_path)
             singkatan_df = singkatan_df.dropna(subset=['singkatan', 'asli'])
-            singkatan_map = dict(zip(singkatan_df['singkatan'], singkatan_df['asli']))
+            singkatan_map = dict(zip(singkatan_df['singkatan'], singkatan_df['asli'], strict=False))
     except Exception as e:
         logger.warning(f"Gagal memuat kamus_singkatan.csv di normalizer: {e}")
 
@@ -171,11 +171,11 @@ def init_slang_map(alay_path: str, singkatan_path: str) -> Dict[str, str]:
         logger.warning(f"Gagal memuat abusive.csv di normalizer: {e}")
 
     SLANG_MAP = {**singkatan_map, **alay_map}
-    
+
     # Populasi set kata formal bahasa Indonesia
     FORMAL_WORDS_SET = set(alay_map.values()) | set(singkatan_map.values()) | set(alay_map.keys()) | set(singkatan_map.keys())
     FORMAL_WORDS_SET.update(INDONESIAN_COMMON_WORDS)
-    
+
     return SLANG_MAP
 
 def replace_leet(text: str) -> str:
@@ -190,7 +190,7 @@ def reduce_repeated_chars(text: str, max_repeat: int = 2) -> str:
         return REPEATED_CHAR_ANY_RE.sub(lambda m: m.group(1), text)
     return REPEATED_CHAR_RE.sub(lambda m: m.group(1) * max_repeat, text)
 
-def normalize_text(text: str, reduce_repeats: bool = True) -> Dict[str, str]:
+def normalize_text(text: str, reduce_repeats: bool = True) -> dict[str, str]:
     """Melakukan normalisasi teks lengkap (leetspeak, slang, singkatan, huruf berulang)."""
     raw = html.unescape(text)
     raw = unicodedata.normalize("NFKC", raw)
@@ -199,7 +199,7 @@ def normalize_text(text: str, reduce_repeats: bool = True) -> Dict[str, str]:
     leet_replaced = replace_leet(raw)
     spaced = NON_ALNUM_RE.sub(" ", leet_replaced)
     spaced = MULTISPACE_RE.sub(" ", spaced).strip()
-    
+
     # Slang mapping & spell correction untuk kata kasar
     if SLANG_MAP:
         words = spaced.split()
@@ -216,7 +216,7 @@ def normalize_text(text: str, reduce_repeats: bool = True) -> Dict[str, str]:
                 else:
                     normalized_words.append(w)
         spaced = " ".join(normalized_words)
-        
+
     compact_raw = NON_ALNUM_RE.sub("", leet_replaced)
     if reduce_repeats:
         spaced = reduce_repeated_chars(spaced, max_repeat=2)
@@ -225,7 +225,7 @@ def normalize_text(text: str, reduce_repeats: bool = True) -> Dict[str, str]:
     else:
         compact = compact_raw
         compact_strict = compact_raw
-        
+
     return {
         "raw": text,
         "spaced": spaced,
@@ -233,7 +233,7 @@ def normalize_text(text: str, reduce_repeats: bool = True) -> Dict[str, str]:
         "compact_strict": compact_strict,
     }
 
-def prepare_lexicon(lexicon: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def prepare_lexicon(lexicon: list[dict[str, str]]) -> list[dict[str, str]]:
     """Menormalisasi frasa kamus leksikon agar sesuai dengan teks komentar."""
     prepared = []
     for item in lexicon:
@@ -257,69 +257,69 @@ def fuzzy_contains(compact_text: str, compact_pattern: str, threshold: float = 0
     """Mencocokkan kata berdasar kesamaan difflib (fuzzy matching) untuk kata tersamar secara efisien."""
     if not compact_text or not compact_pattern:
         return False
-    
+
     # Batasi panjang teks untuk menghindari CPU exhaustion
     if len(compact_text) > 200:
         compact_text = compact_text[:200]
-        
+
     n = len(compact_pattern)
     if n < 5 or len(compact_text) < max(3, n - max_delta):
         return False
-        
+
     min_len = max(3, n - max_delta)
     max_len = n + max_delta
-    
+
+    import math
     from collections import Counter
     from difflib import SequenceMatcher
-    import math
-    
+
     p_counts = Counter(compact_pattern)
-    
+
     for size in range(min_len, max_len + 1):
         if size > len(compact_text):
             continue
-            
+
         min_overlap = math.ceil(threshold * (size + n) / 2)
-        
+
         # O(1) sliding window count
         s_counts = Counter(compact_text[:size])
         overlap = sum(min(s_counts[c], p_counts.get(c, 0)) for c in s_counts)
-        
+
         if overlap >= min_overlap:
             segment = compact_text[0:size]
             if SequenceMatcher(None, segment, compact_pattern).ratio() >= threshold:
                 return True
-                
+
         for i in range(1, len(compact_text) - size + 1):
             char_out = compact_text[i - 1]
             char_in = compact_text[i + size - 1]
-            
+
             if s_counts[char_out] <= p_counts.get(char_out, 0):
                 overlap -= 1
             s_counts[char_out] -= 1
-            
+
             s_counts[char_in] = s_counts.get(char_in, 0) + 1
             if s_counts[char_in] <= p_counts.get(char_in, 0):
                 overlap += 1
-                
+
             if overlap >= min_overlap:
                 segment = compact_text[i:i + size]
                 if SequenceMatcher(None, segment, compact_pattern).ratio() >= threshold:
                     return True
-                    
+
     return False
 
 
 def detect_sentiment_contrast(spaced_text: str) -> bool:
     """Mendeteksi kontras sentimen sederhana (pujian + indikator kegagalan/ejekan) untuk menyaring sarkasme awal."""
     text_lower = spaced_text.lower()
-    
+
     pos_words = ["pintar", "pinter", "hebat", "ganteng", "cantik", "indah", "cakep", "rajin", "cepat", "cepet", "suci", "sopan", "baik", "mulia"]
     neg_words = ["nol", "0", "salah", "gagal", "spakbor", "badut", "monyet", "panci", "gosong", "sirkus", "siang", "sore", "deadline", "menit", "tahun", "minus", "kasar", "bayaran", "belakang"]
-    
+
     has_pos = any(w in text_lower for w in pos_words)
     has_neg = any(w in text_lower for w in neg_words)
-    
+
     return has_pos and has_neg
 
 BASE_CYBERBULLYING_LEXICON = [

@@ -1,27 +1,27 @@
 import os
-import sys
-import torch
-import pandas as pd
-import numpy as np
-import warnings
 import shutil
-from sklearn.model_selection import train_test_split
+import sys
+
+import numpy as np
+import pandas as pd
+import torch
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
 from transformers import (
-    AutoTokenizer, 
-    AutoModelForSequenceClassification, 
-    Trainer, 
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    Trainer,
     TrainingArguments,
-    DataCollatorWithPadding
 )
 
 # Konfigurasikan encoding output konsol ke UTF-8 di Windows agar tidak crash saat mencetak karakter Unicode
 if sys.platform.startswith('win'):
     try:
         if hasattr(sys.stdout, 'reconfigure'):
-            getattr(sys.stdout, 'reconfigure')(encoding='utf-8')
+            sys.stdout.reconfigure(encoding='utf-8')
         if hasattr(sys.stderr, 'reconfigure'):
-            getattr(sys.stderr, 'reconfigure')(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
     except Exception:
         pass
 
@@ -35,11 +35,11 @@ if BASE_DIR not in sys.path:
 
 from normalizer import init_slang_map, normalize_text
 from training import (
-    load_twitter_dataset, 
-    load_instagram_dataset, 
-    load_combined_dataset, 
-    load_mendeley_dataset, 
-    load_tiktok_rhiosutoyo_dataset
+    load_combined_dataset,
+    load_instagram_dataset,
+    load_mendeley_dataset,
+    load_tiktok_rhiosutoyo_dataset,
+    load_twitter_dataset,
 )
 
 print("=== Skrip Pelatihan Mandiri Model Transformer (Fine-Tuning) & Auto-Export ONNX ===")
@@ -179,8 +179,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device yang digunakan: {device.upper()}")
 
 model = AutoModelForSequenceClassification.from_pretrained(
-    MODEL_NAME, 
-    num_labels=2, 
+    MODEL_NAME,
+    num_labels=2,
     problem_type="multi_label_classification"
 )
 model.to(device)
@@ -191,7 +191,7 @@ def compute_metrics(pred):
     logits = pred.predictions[0] if isinstance(pred.predictions, tuple) else pred.predictions
     probs = 1 / (1 + np.exp(-logits))
     preds = (probs >= 0.5).astype(int)
-    
+
     acc = accuracy_score(labels, preds)
     f1 = f1_score(labels, preds, average='macro', zero_division=0)
     precision = precision_score(labels, preds, average='macro', zero_division=0)
@@ -245,13 +245,13 @@ def export_fine_tuned_to_onnx(model_dir, output_dir):
     try:
         import onnx
         import onnx.shape_inference
-        from onnxruntime.quantization import quantize_dynamic, QuantType
+        from onnxruntime.quantization import QuantType, quantize_dynamic
     except ImportError as e:
         print(f"Warning: onnx / onnxruntime tidak tersedia untuk ekspor langsung ({e})")
         return
-        
+
     print("\n=== Mengekspor model hasil fine-tuning ke ONNX & Kuantisasi INT8 ===")
-    
+
     # Bypass shape inference wrapper robust untuk Windows
     original_infer_shapes_path = onnx.shape_inference.infer_shapes_path
     def robust_infer_shapes_path(model_path, output_path, *args, **kwargs):
@@ -311,11 +311,11 @@ def export_fine_tuned_to_onnx(model_dir, output_dir):
         "nahiar_hatespeech-abusive-xlm-roberta-v1",
         "fine_tuned_transformer"
     ]
-    
+
     # Tambahkan absolute path slug
     abs_dir = os.path.abspath(model_dir)
     slugs.append(abs_dir.replace("/", "_").replace("\\", "_").replace(".", "_"))
-    
+
     # Tambahkan relative path slug dari base dan parent
     parent_dir = os.path.dirname(BASE_DIR)
     rel_dir_base = os.path.relpath(model_dir, BASE_DIR)
