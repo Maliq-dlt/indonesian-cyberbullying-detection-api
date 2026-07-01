@@ -98,7 +98,20 @@ jobs:
           -e API_KEY=smoke_test_key_12345 \
           -e ALLOWED_ORIGINS=http://localhost:3000 \
           bullyguard-id:test
-        sleep 20
+        echo "Waiting for container to start (up to 90s)..."
+        for i in $(seq 1 18); do
+          sleep 5
+          if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+            echo "Health check passed after $((i * 5))s"
+            break
+          fi
+          echo "Attempt $i/18: not ready yet..."
+          if [ $i -eq 18 ]; then
+            echo "Container logs:"
+            docker logs bullyguard-test
+            exit 1
+          fi
+        done
         curl -sf http://localhost:8000/health || exit 1
         curl -sf http://localhost:8000/ || exit 1
 
